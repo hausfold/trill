@@ -1,0 +1,269 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXContainerItemProxy section */
+		A20000000000000000000003 = {
+			isa = PBXContainerItemProxy;
+			containerPortal = A20000000000000000000010;
+			proxyType = 1;
+			remoteGlobalIDString = A20000000000000000000011;
+			remoteInfo = Trill;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXFileReference section */
+		A20000000000000000000004 = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Trill.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		A20000000000000000000005 = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = TrillTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+/* End PBXFileReference section */
+
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		A20000000000000000000006 = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (Config/Trill.entitlements,);
+			target = A20000000000000000000011;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
+/* Begin PBXFileSystemSynchronizedRootGroup section */
+		A20000000000000000000007 = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (A20000000000000000000006,);
+			path = Trill;
+			sourceTree = "<group>";
+		};
+		A20000000000000000000008 = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = TrillTests;
+			sourceTree = "<group>";
+		};
+/* End PBXFileSystemSynchronizedRootGroup section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		A20000000000000000000009 = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+		A2000000000000000000000A = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		A2000000000000000000000B = {
+			isa = PBXGroup;
+			children = (
+				A20000000000000000000007,
+				A20000000000000000000008,
+				A2000000000000000000000C,
+			);
+			sourceTree = "<group>";
+		};
+		A2000000000000000000000C = {
+			isa = PBXGroup;
+			children = (A20000000000000000000004, A20000000000000000000005,);
+			name = Products;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		A20000000000000000000011 = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A20000000000000000000030;
+			buildPhases = (A20000000000000000000013, A20000000000000000000009, A20000000000000000000014,);
+			buildRules = ();
+			dependencies = ();
+			fileSystemSynchronizedGroups = (A20000000000000000000007,);
+			name = Trill;
+			packageProductDependencies = ();
+			productName = Trill;
+			productReference = A20000000000000000000004;
+			productType = "com.apple.product-type.application";
+		};
+		A20000000000000000000012 = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A20000000000000000000031;
+			buildPhases = (A20000000000000000000015, A2000000000000000000000A, A20000000000000000000016,);
+			buildRules = ();
+			dependencies = (A20000000000000000000017,);
+			fileSystemSynchronizedGroups = (A20000000000000000000008,);
+			name = TrillTests;
+			packageProductDependencies = ();
+			productName = TrillTests;
+			productReference = A20000000000000000000005;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		A20000000000000000000010 = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 2660;
+				LastUpgradeCheck = 2660;
+				TargetAttributes = {
+					A20000000000000000000011 = {CreatedOnToolsVersion = 26.6;};
+					A20000000000000000000012 = {CreatedOnToolsVersion = 26.6; TestTargetID = A20000000000000000000011;};
+				};
+			};
+			buildConfigurationList = A20000000000000000000032;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (en, Base,);
+			mainGroup = A2000000000000000000000B;
+			minimizedProjectReferenceProxies = 1;
+			preferredProjectObjectVersion = 77;
+			productRefGroup = A2000000000000000000000C;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (A20000000000000000000011, A20000000000000000000012,);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		A20000000000000000000014 = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+		A20000000000000000000016 = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		A20000000000000000000013 = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+		A20000000000000000000015 = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		A20000000000000000000017 = {isa = PBXTargetDependency; target = A20000000000000000000011; targetProxy = A20000000000000000000003;};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		A20000000000000000000040 = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				ONLY_ACTIVE_ARCH = YES;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		A20000000000000000000041 = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				COPY_PHASE_STRIP = YES;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				SWIFT_COMPILATION_MODE = wholemodule;
+			};
+			name = Release;
+		};
+		A20000000000000000000042 = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = Trill/Config/Trill.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 88M28542LQ;
+				ENABLE_APP_SANDBOX = NO;
+				ENABLE_HARDENED_RUNTIME = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = Trill;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
+				INFOPLIST_KEY_LSBackgroundOnly = NO;
+				INFOPLIST_KEY_LSUIElement = YES;
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/../Frameworks";
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.hausfold.trill.debug;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_STRICT_CONCURRENCY = targeted;
+				SWIFT_VERSION = 6.0;
+			};
+			name = Debug;
+		};
+		A20000000000000000000043 = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = Trill/Config/Trill.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 88M28542LQ;
+				ENABLE_APP_SANDBOX = NO;
+				ENABLE_HARDENED_RUNTIME = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = Trill;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
+				INFOPLIST_KEY_LSBackgroundOnly = NO;
+				INFOPLIST_KEY_LSUIElement = YES;
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/../Frameworks";
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.hausfold.trill;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_STRICT_CONCURRENCY = targeted;
+				SWIFT_VERSION = 6.0;
+			};
+			name = Release;
+		};
+		A20000000000000000000044 = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = 88M28542LQ;
+				GENERATE_INFOPLIST_FILE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.hausfold.trill.tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_STRICT_CONCURRENCY = targeted;
+				SWIFT_VERSION = 6.0;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Trill.app/Contents/MacOS/Trill";
+			};
+			name = Debug;
+		};
+		A20000000000000000000045 = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = 88M28542LQ;
+				GENERATE_INFOPLIST_FILE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.hausfold.trill.tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_STRICT_CONCURRENCY = targeted;
+				SWIFT_VERSION = 6.0;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Trill.app/Contents/MacOS/Trill";
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		A20000000000000000000030 = {isa = XCConfigurationList; buildConfigurations = (A20000000000000000000042, A20000000000000000000043,); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release;};
+		A20000000000000000000031 = {isa = XCConfigurationList; buildConfigurations = (A20000000000000000000044, A20000000000000000000045,); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release;};
+		A20000000000000000000032 = {isa = XCConfigurationList; buildConfigurations = (A20000000000000000000040, A20000000000000000000041,); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release;};
+/* End XCConfigurationList section */
+	};
+	rootObject = A20000000000000000000010;
+}
