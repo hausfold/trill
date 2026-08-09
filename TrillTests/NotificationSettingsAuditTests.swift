@@ -302,7 +302,14 @@ final class NotificationSettingsAuditTests: XCTestCase {
     }
 
     func testEachFindingGetsItsOwnBannerUpToTheLimit() {
-        let findings = NotificationSettingsAudit.findings(scope: .everything, settings: fixture)
+        // `isInstalled` is injected here for the same reason as everywhere else
+        // in this file: the default probes LaunchServices, so the fixture's
+        // findings would depend on which apps happen to be on the machine
+        // running the tests. This one call was missing it, which passed on a
+        // Mac with Reminders and Slack installed and failed on a bare runner.
+        let findings = NotificationSettingsAudit.findings(
+            scope: .everything, settings: fixture, isInstalled: { _ in true }
+        )
         let events = NotificationSettingsAudit.bannerEvents(for: findings)
         XCTAssertEqual(events.count, 2)
         XCTAssertEqual(events.first?.actions.first?.kind, .silenceNative)
@@ -355,7 +362,9 @@ final class NotificationSettingsAuditTests: XCTestCase {
     }
 
     func testBannersShareAThreadSoTheyCoalesceRatherThanPileUp() {
-        let findings = NotificationSettingsAudit.findings(scope: .everything, settings: fixture)
+        let findings = NotificationSettingsAudit.findings(
+            scope: .everything, settings: fixture, isInstalled: { _ in true }
+        )
         let threads = Set(NotificationSettingsAudit.bannerEvents(for: findings).compactMap(\.thread))
         XCTAssertEqual(threads, ["trill-doctor"])
     }
