@@ -7,9 +7,9 @@
 # evaluate any of it. This installs Determinate Nix once, puts it on PATH for
 # the rest of the session, and points Nix at the agent proxy's CA.
 #
-# Copied verbatim from the workshop, on purpose: trill is incubating and will
-# eject to its own repo (BOOTSTRAP.md), so it carries the whole standard layer
-# already rather than growing one afterwards.
+# Copied verbatim from the workshop, on purpose: this repo was scaffolded inside
+# the workshop's incubator and carried the whole standard layer from day one, so
+# ejecting it to hausfold/trill (2026-08-09) was a move, not a rebuild.
 #
 # Wired up as:
 #   Claude Code  .claude/settings.json  → SessionStart hook

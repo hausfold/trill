@@ -5,7 +5,7 @@
 #
 # WHY THIS EXISTS (the Full Disk Access bug it fixes permanently)
 #
-# `xcodebuild … CODE_SIGNING_ALLOWED=NO` — the command in BOOTSTRAP.md, fine
+# `xcodebuild … CODE_SIGNING_ALLOWED=NO` — the command CI runs, fine
 # for tests — produces an **ad-hoc signed** bundle. macOS stores a TCC grant
 # (Full Disk Access) against the app's *designated requirement*, and for an
 # ad-hoc bundle that requirement pins the binary's **cdhash**, which changes on
