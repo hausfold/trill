@@ -12,6 +12,8 @@ your notifications, without the noise — a native, local, scriptable visual lay
 ![themed by nebelung](https://img.shields.io/badge/themed_by-nebelung-c9a8f1?labelColor=202020)
 ![license](https://img.shields.io/badge/license-MIT-d7d7d7?labelColor=202020)
 
+<sub>**pre-release** · trill is still in the incubator. every path that could lose your work is either reversible by design or stops to ask you first — that's the intent, not a warranty. run it on a machine you can afford to rebuild, and tell us what breaks.</sub>
+
 </div>
 
 ---
