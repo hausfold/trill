@@ -21,7 +21,7 @@ your notifications, without the noise — a native, local, scriptable visual lay
 A cat doesn't meow at everything. A trill is the small chirred note it makes in
 passing — enough to register that something happened, not enough to stop anyone's
 afternoon. That's trill: a quiet notification compositor that draws small, flat,
-silent banners — and gives every script, tool, and nebelhaus app one visual
+silent banners — and gives every script, tool, and haus app one visual
 language for "something happened."
 
 It is **not** a drop-in replacement for Notification Center, because Apple
@@ -100,7 +100,7 @@ trill doctor --notify   # …and put the findings on screen, click to be walked 
 
 Three lanes, in order of honesty:
 
-1. **First-party** (shipping): anything local speaks the socket. Nebelhaus
+1. **First-party** (shipping): anything local speaks the socket. haus
    apps, scripts, CI — clean, supported, forever.
 2. **System Mirror** (experimental, off by default): reads the `usernoted`
    store read-only under Full Disk Access and redraws other apps' banners.
