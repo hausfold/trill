@@ -27,9 +27,9 @@ it's launched, themed at the source, or packaged.
 | Want to change… | Repo |
 |---|---|
 | the trill app (compositor, providers, rules, CLI, inbox) | **you are here** |
-| how trill is *installed* on the system (flake wiring, launchd) | `nebelhaus` (the rice) |
+| how trill is *installed* on the system (flake wiring, launchd) | `haus` (the layer) |
 | the palette trill is themed with (source hex) | `nebelung` |
-| DND / Focus toggling ("Hush") | `nebelhaus` (the rice) — trill only deep-links there |
+| DND / Focus toggling ("Hush") | `haus` (the layer) — trill only deep-links there |
 | trill's Homebrew cask (once released) | `homebrew-tap` — CI-owned. The `trill` cask token is free. |
 | the flake's release pin (`nix/release.nix`) | this repo — **CI-owned**; never hand-bump |
 
