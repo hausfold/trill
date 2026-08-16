@@ -116,6 +116,40 @@ Trill/
 TrillTests/      geometry, policy, pipeline — pure logic tests, no display
 ```
 
+## The agent surface (`ai/SKILL.md`)
+
+**Don't confuse it with this file.** `AGENTS.md` is for an agent working **on**
+trill, from a checkout. [`ai/SKILL.md`](./ai/SKILL.md) is for an agent **using**
+it — on a stranger's Mac, with no checkout, when their human says *"tell me when
+this finishes"*. It is the routing document that makes that sentence work first
+try: the verbs, the six exit codes, the rules file, and when the answer is
+something else entirely.
+
+It is bound by the family standard, [the workshop's
+`notes/agent-surface.md`](https://github.com/hausfold/workshop/blob/main/notes/agent-surface.md) —
+≤150 lines, no flag dumps (that's `trill help`), and the `description`
+frontmatter names **the phrases a user says**, not the features trill has. A
+description written as a feature summary is true, well written, and never loads.
+
+Two of this repo's invariants have to survive into that file or an agent will
+promise what trill deliberately won't do: **there is no sound**, and **trill
+reads Apple's notification settings but never writes them** — `doctor` names the
+noisy apps and the clicking stays the user's. The third is exit **5**: *can't
+tell* is a verdict, and an agent that renders it as "all quiet" reproduces the
+bug that already shipped once.
+
+`nix/skill.nix` ships it as `pkgs.trill-skill` (`$out/trill/SKILL.md`); the
+build fails if the frontmatter is missing, because a skill without it is
+installed, listed, and never loaded. ⚠️ **Nothing consumes that package yet** —
+trill is not a haus flake input and carries no lock edge on purpose, so until
+the planned leaf overlay lands, a user gets this skill from `trill skill
+install` once that verb exists. Don't add trill to `bench`'s `FAMILY` to fix
+that.
+
+**Every claim in it must be runnable.** When you change a verb, a flag or an
+exit code, change `ai/SKILL.md` in the same PR — a stale line there is a
+confidently-wrong instruction with a nice format.
+
 ## Verifying
 
 `xcodebuild -project Trill.xcodeproj -scheme Trill test` (or let CI run it).
