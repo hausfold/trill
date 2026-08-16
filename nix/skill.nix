@@ -4,7 +4,7 @@
 # one that gets embedded in the binary when `trill skill` lands. This derivation
 # is how a *consumer* WILL get it. ⚠️ Nothing consumes it today: unlike the rest
 # of the family, trill is deliberately not a haus flake input and carries no
-# lock edge (the workshop's AGENTS.md, and §9 of notes/hausfold-rename.md), so
+# lock edge (the workshop's AGENTS.md has the rule), so
 # haus cannot reach `pkgs.trill-skill` at all until the planned leaf overlay
 # lands. Don't "fix" that by adding trill to bench's FAMILY. A standalone user will get the identical
 # bytes from `trill skill install` — step 4 of the standard's rollout, not a
