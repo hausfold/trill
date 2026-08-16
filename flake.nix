@@ -37,6 +37,14 @@
           inherit (release) version sha256;
           prebuilt = prebuilt.outPath;
         };
+
+        # The agent skill (ai/SKILL.md), so a consumer can install it without
+        # installing trill itself. ⚠️ Nothing consumes it yet — trill is
+        # deliberately not a haus flake input (no lock edge, not in bench's
+        # FAMILY), so this waits on the planned leaf overlay. Its own package
+        # rather than a file inside `trill`: it is pure and tiny, while `trill`
+        # wraps a macOS-only notarized ZIP. See nix/skill.nix.
+        trill-skill = final.callPackage ./nix/skill.nix { };
       };
 
       packages = forAll (
@@ -47,6 +55,7 @@
         {
           default = pkgs.trill;
           trill = pkgs.trill;
+          trill-skill = pkgs.trill-skill;
         }
       );
     };
