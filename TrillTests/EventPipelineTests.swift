@@ -84,7 +84,7 @@ final class EventPipelineTests: XCTestCase {
             "--symbol", "checkmark.circle",
             "--thread", "deploys",
             "--urgency", "low",
-            "--url", "https://nebelhaus.com",
+            "--url", "https://hausfold.co",
         ])
         guard case .success(let event) = result else { return XCTFail("parse failed") }
         XCTAssertEqual(event.title, "Landing page shipped")
@@ -207,7 +207,7 @@ final class EventPipelineTests: XCTestCase {
         // itself as pressable, so this is the whole no-dead-buttons rule.
         let withAction = NotificationEvent(
             source: "ci", title: "build green",
-            actions: [.init(id: "o", label: "Open", kind: .openURL, target: "https://nebelhaus.com")]
+            actions: [.init(id: "o", label: "Open", kind: .openURL, target: "https://hausfold.co")]
         )
         XCTAssertTrue(withAction.hasDefaultAction)
 
