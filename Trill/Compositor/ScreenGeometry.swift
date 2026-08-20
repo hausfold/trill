@@ -9,6 +9,106 @@ struct ScreenDescriptor: Sendable, Equatable {
     var frame: CGRect
     /// Bounds minus menu bar / Dock — banners never overlap either.
     var visibleFrame: CGRect
+    /// Where the desktop's *own* windows sit on this display: the rect a
+    /// third-party bar and the window manager's gaps have already been
+    /// subtracted from. `nil` when nothing could be measured, in which case
+    /// placement falls back to `visibleFrame` inset by `BannerGeometry.inset`.
+    ///
+    /// This exists because `visibleFrame` only knows about Apple's furniture.
+    /// A user running sketchybar (or any overlay bar) with the menu bar
+    /// auto-hidden has a strip at the top of the screen that macOS considers
+    /// free real estate and they consider occupied — and a tiling WM leaves a
+    /// gap that a banner flush to the corner visibly disagrees with. See
+    /// `DesktopLayout`.
+    var contentFrame: CGRect?
+}
+
+/// Reads the desktop the user actually arranged — overlay bars and the top
+/// right window's own corner — and hands the compositor a rect to align to.
+/// Pure: the platform probe (`DesktopLayoutProbe`) collects the rects, this
+/// decides what they mean, so every rule here is testable without a display.
+enum DesktopLayout {
+    /// One on-screen window, as much of it as placement cares about.
+    struct Window: Sendable, Equatable {
+        /// Bottom-left-origin global coordinates, like `ScreenDescriptor`.
+        var frame: CGRect
+        /// Anything not at the normal window level: a bar, a HUD, a panel —
+        /// furniture rather than content. Banners keep off it; they never
+        /// align to it.
+        var isOverlay: Bool
+    }
+
+    /// A bar is an overlay that spans nearly the whole width of the display
+    /// and hugs one of its edges. Narrower than this and it is a HUD, which
+    /// banners are allowed to overlap.
+    static let barWidthShare: CGFloat = 0.8
+    /// A bar is also *short*. Anything taller is a curtain — a fullscreen
+    /// overlay, a wallpaper app — and subtracting it would leave no screen.
+    static let barHeightShare: CGFloat = 0.25
+    /// Slack when asking whether an edge touches an edge. Bars are commonly
+    /// a point or two off from where their config says they are.
+    static let edgeTolerance: CGFloat = 2
+    /// Smaller than this in either direction and a window is a palette, a
+    /// tooltip or a progress sheet — not something a banner should line up
+    /// with.
+    static let minimumWindowSide: CGFloat = 200
+
+    /// `visibleFrame` minus any bar hugging its top or bottom edge. This is
+    /// the "don't cover sketchybar" rule, and it is deliberately written
+    /// against *shape*, not against any one app's name: trill has no business
+    /// knowing which bar its user runs.
+    static func usableFrame(visible: CGRect, windows: [Window]) -> CGRect {
+        var top = visible.maxY
+        var bottom = visible.minY
+
+        for window in windows where window.isOverlay {
+            let frame = window.frame
+            guard frame.width >= visible.width * barWidthShare,
+                  frame.height <= visible.height * barHeightShare,
+                  frame.intersects(visible)
+            else { continue }
+            if frame.maxY >= visible.maxY - edgeTolerance {
+                top = min(top, frame.minY)
+            }
+            if frame.minY <= visible.minY + edgeTolerance {
+                bottom = max(bottom, frame.maxY)
+            }
+        }
+
+        guard top - bottom > 0 else { return visible }
+        return CGRect(x: visible.minX, y: bottom, width: visible.width, height: top - bottom)
+    }
+
+    /// The rect banners lay themselves out inside. When an ordinary window is
+    /// open in the top half of the display, that window's own top-right
+    /// corner *is* the anchor — so the stack reads as one more pane of the
+    /// layout rather than as something pasted over it. With nothing to line
+    /// up with, it falls back to the usable frame inset all round.
+    ///
+    /// A window taller than the usable frame is ignored: it is fullscreen, or
+    /// it is sitting over the bar, and either way its corner is not a gap the
+    /// user chose.
+    static func anchor(visible: CGRect, windows: [Window], inset: CGFloat) -> CGRect {
+        let usable = usableFrame(visible: visible, windows: windows)
+        let aligned = windows
+            .filter { window in
+                !window.isOverlay
+                    && window.frame.width >= minimumWindowSide
+                    && window.frame.height >= minimumWindowSide
+                    && window.frame.maxY >= usable.midY
+                    && window.frame.maxY <= usable.maxY + edgeTolerance
+                    && window.frame.intersects(usable)
+            }
+            .max { $0.frame.maxX < $1.frame.maxX }
+
+        guard let corner = aligned?.frame else {
+            return usable.insetBy(dx: inset, dy: inset)
+        }
+        let top = min(corner.maxY, usable.maxY)
+        let right = min(corner.maxX, usable.maxX)
+        let bottom = max(min(corner.minY, top), usable.minY)
+        return CGRect(x: usable.minX, y: bottom, width: right - usable.minX, height: top - bottom)
+    }
 }
 
 /// Where banners live and how they stack. Top-right, dealt downward like a
@@ -43,6 +143,21 @@ enum BannerGeometry {
     /// idea isn't rediscovered and re-shipped.
     static let step: CGFloat = 0
 
+    // MARK: - Where the stack sits
+
+    /// The rect the whole stack lays itself out inside — every other function
+    /// here measures from this and never from `visibleFrame` directly.
+    ///
+    /// It is the desktop's own window grid when the platform could measure one
+    /// (`ScreenDescriptor.contentFrame`), so the top card's corner lands on the
+    /// same corner the user's top-right window has: clear of an overlay bar,
+    /// and in the window manager's gap rather than 12pt from a screen edge
+    /// nobody's windows use. With nothing measured it is the visible frame
+    /// inset all round, which is the behaviour that shipped first.
+    static func anchor(on screen: ScreenDescriptor) -> CGRect {
+        screen.contentFrame ?? screen.visibleFrame.insetBy(dx: inset, dy: inset)
+    }
+
     // MARK: - Expanded folds
 
     /// A hovered banner with folded thread-mates grows a list of them (see
@@ -70,9 +185,9 @@ enum BannerGeometry {
     /// a different height depending on unrelated traffic.
     static func foldRowCapacity(on screen: ScreenDescriptor, index: Int) -> Int {
         guard index >= 0 else { return 0 }
-        let visible = screen.visibleFrame
-        let top = visible.maxY - inset - CGFloat(index) * (size.height - overlap)
-        let room = top - (visible.minY + inset) - size.height - foldListInset
+        let area = anchor(on: screen)
+        let top = area.maxY - CGFloat(index) * (size.height - overlap)
+        let room = top - area.minY - size.height - foldListInset
         guard room >= foldRowHeight else { return 0 }
         return Int(room / foldRowHeight)
     }
@@ -121,7 +236,7 @@ enum BannerGeometry {
     /// pushes off screen is dropped by the compositor and comes straight back
     /// on unhover.
     static func capacity(on screen: ScreenDescriptor, bannerSize: CGSize = size) -> Int {
-        let usable = screen.visibleFrame.height - inset * 2
+        let usable = anchor(on: screen).height
         guard usable >= bannerSize.height else { return 0 }
         let advance = max(1, bannerSize.height - overlap)
         return 1 + Int((usable - bannerSize.height) / advance)
@@ -133,19 +248,22 @@ enum BannerGeometry {
     /// form. A card that would escape the visible frame — and every card
     /// after it, since it only gets worse — comes back nil.
     static func stackFrames(on screen: ScreenDescriptor, sizes: [CGSize]) -> [CGRect?] {
-        let visible = screen.visibleFrame
+        let area = anchor(on: screen)
         var frames: [CGRect?] = []
-        var top = visible.maxY - inset
+        var top = area.maxY
         var escaped = false
 
         for (index, cardSize) in sizes.enumerated() {
-            let x = visible.maxX - inset - cardSize.width - CGFloat(index) * step
+            let x = area.maxX - cardSize.width - CGFloat(index) * step
             let frame = CGRect(
                 origin: CGPoint(x: x, y: top - cardSize.height),
                 size: cardSize
             )
-            let fits = visible.contains(frame) || visible.intersection(frame) == frame
-            escaped = escaped || !fits
+            // Only the vertical bound can rule a card out. A card is wider
+            // than the anchor whenever the window it lines up with is narrow,
+            // and hanging past that window's left edge is fine — running off
+            // the bottom of the display is not.
+            escaped = escaped || frame.minY < area.minY - 0.5
             frames.append(escaped ? nil : frame)
             top -= cardSize.height - overlap
         }

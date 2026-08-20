@@ -65,6 +65,40 @@ re-presentation. Capacity shrink pushes overflow back into the waiting line
 — covered by unit test, no display required, thanks to the pure
 `ScreenDescriptor`/`BannerGeometry` split.
 
+### The screen already has furniture on it
+
+`NSScreen.visibleFrame` knows about the menu bar and the Dock and nothing
+else. Someone running a third-party bar (sketchybar, a status HUD) with the
+menu bar auto-hidden has a strip at the top that AppKit calls free and they
+call occupied — banners landed on top of it — and a tiling window manager
+leaves an outer gap that a card 12pt from the screen edge misses by a few
+points, which reads as a mistake rather than as a choice.
+
+So placement measures the desktop instead of assuming it.
+`DesktopLayoutProbe` (Platform) asks the window server for on-screen bounds,
+`DesktopLayout` (pure) decides what they mean, and the answer lands in
+`ScreenDescriptor.contentFrame`; `BannerGeometry.anchor` is the single place
+every other function measures from. Two rules, both written against *shape*
+rather than any app's name:
+
+- **A bar is an overlay that spans nearly the whole display and hugs an
+  edge.** It is subtracted from the usable frame. A narrow overlay is a HUD
+  and a tall one is a curtain (the wallpaper, a screen tint) — neither
+  shortens the screen.
+- **The rightmost ordinary window in the top half of the display donates its
+  top-right corner.** The stack hangs from *that* point, so it reads as one
+  more pane of the layout. A window taller than the usable frame is
+  fullscreen or is sitting over the bar; its corner is not a gap anyone
+  chose, so it is ignored. With nothing to line up with, the anchor is the
+  usable frame inset all round — the behaviour that shipped first.
+
+`DesktopLayoutProbe` deliberately does **not** pass
+`.excludeDesktopElements`: sketchybar draws at `kCGBackstopMenuLevel` (-20),
+so the flag that sounds like "skip the wallpaper" also skips the bar the rule
+exists for. It reads bounds, level and pid only — never `kCGWindowName`, and
+trill never asks for Screen Recording. A notification compositor that reads
+window titles is the thing this app promises it isn't.
+
 ### Bursts
 
 Thread-mates arriving inside the coalesce window fold into the existing

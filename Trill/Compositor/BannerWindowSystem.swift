@@ -175,15 +175,3 @@ final class BannerWindowSystem {
         }
     }
 }
-
-extension ScreenDescriptor {
-    @MainActor
-    init(screen: NSScreen) {
-        let number = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")]
-        self.init(
-            id: (number as? NSNumber)?.stringValue ?? screen.localizedName,
-            frame: screen.frame,
-            visibleFrame: screen.visibleFrame
-        )
-    }
-}
