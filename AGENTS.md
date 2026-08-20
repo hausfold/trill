@@ -6,17 +6,10 @@ experimental read-only mirror of Apple's `usernoted` store behind a flag).
 Part of the [hausfold](https://github.com/hausfold) family; stands alone
 like pounce and perch.
 
-> **This app was called `flick` until 2026-08-08.** A trill is the small
-> chirred note a cat makes in passing, which is what a quiet notification
-> compositor is; an ear-flick was the second-best version of the same image.
-> Don't "restore" the flick name.
-
-**This file is the one set of instructions, for every agent.** Claude Code,
-Codex, OpenCode, Cursor, Copilot — TUI or GUI — all read *this*, directly or
-through a one-line pointer. Nothing harness-specific belongs here; when a flow
-needs per-client wiring (a hook, a slash command), the wiring lives in that
-client's own file and the *content* stays here or in `.agents/`. The map of
-which tool reads which file is [`.agents/README.md`](./.agents/README.md).
+**This file is the one set of instructions, for every agent** — Claude Code,
+Codex, OpenCode, Cursor, Copilot alike, directly or through a one-line pointer.
+Per-client wiring lives in that client's own file; the content stays here or in
+[`.agents/`](./.agents/README.md).
 
 ## Am I in the right repo? (routing)
 
@@ -30,7 +23,7 @@ it's launched, themed at the source, or packaged.
 | how trill is *installed* on the system (flake wiring, launchd) | `haus` (the layer) |
 | the palette trill is themed with (source hex) | `nebelung` |
 | DND / Focus toggling ("Hush") | `haus` (the layer) — trill only deep-links there |
-| trill's Homebrew cask (once released) | `homebrew-tap` — CI-owned. The `trill` cask token is free. |
+| trill's Homebrew cask (once released) | `homebrew-tap` — CI-owned. The `trill` cask token is free |
 | the flake's release pin (`nix/release.nix`) | this repo — **CI-owned**; never hand-bump |
 
 > **Whatever agent you are, enforce this.** A color hex, a launchd plist, or a
@@ -77,11 +70,11 @@ never into a broken pipeline. Corollaries:
   minutes of watching, while the group container took that change within
   seconds. Every write-up online names ncprefs, which is exactly why it's a
   trap; trill shipped it once and the helper panel looked broken as a result.
-  That container is TCC-protected, so the read needs **Full Disk Access** —
-  and therefore the audit has **three** verdicts, not two: noisy, quiet, and
-  *can't tell*. `readAll()` returns nil for the third; rendering it as "all
-  quiet" is the bug that must never come back (`trill doctor` exits **5**,
-  Settings says "can't tell", the helper still walks but confirms nothing).
+  That container is TCC-protected, so the read needs **Full Disk Access** — and
+  therefore the audit has **three** verdicts, not two: noisy, quiet, and *can't
+  tell*. `readAll()` returns nil for the third; rendering it as "all quiet" is
+  the bug that must never come back (`trill doctor` exits **5**, Settings says
+  "can't tell", the helper still walks but confirms nothing).
 - **The helper advances on the user's word, not on a watch.** Because that
   store needs FDA and can't be assumed readable, the walkthrough's **Done**
   button is the mechanism and the poll is a bonus that ticks apps off where
@@ -143,8 +136,8 @@ build fails if the frontmatter is missing, because a skill without it is
 installed, listed, and never loaded. ⚠️ **Nothing consumes that package yet** —
 trill is not a haus flake input and carries no lock edge on purpose, so until
 the planned leaf overlay lands, a user gets this skill from `trill skill
-install` once that verb exists. Don't add trill to `bench`'s `FAMILY` to fix
-that.
+install` once that verb exists. **Don't add trill to `bench`'s `FAMILY` to fix
+that.**
 
 **Every claim in it must be runnable.** When you change a verb, a flag or an
 exit code, change `ai/SKILL.md` in the same PR — a stale line there is a
@@ -159,14 +152,13 @@ be. Feel-testing banners needs a real session: build, run, `trill send`.
 
 **Debug builds carry their own bundle id (`com.hausfold.trill.debug`) — leave
 it that way.** TCC keys Full Disk Access by *bundle id*, one row per id, and
-rewrites that row's stored code requirement to whichever binary asked last.
-While the Debug build shared the release id, every `xcodebuild test` launched
-an Apple-Development-signed host that asked for FDA, failed to match, and took
-the row over — after which the installed Developer-ID app was denied, silently,
-because `kTCCServiceSystemPolicyAllFiles` never prompts. It cost an afternoon
-of "the grant keeps dropping" and looked like a signing bug. The Debug build
-also gets its own `Application Support/Trill (debug)` so a test run can't bind
-the installed daemon's socket or write its database.
+rewrites that row's stored code requirement to whichever binary asked last. If
+Debug shared the release id, every `xcodebuild test` would launch an
+Apple-Development-signed host, ask for FDA, fail to match, and take the row
+over — after which the installed Developer-ID app is denied silently, because
+`kTCCServiceSystemPolicyAllFiles` never prompts. It reads as a signing bug and
+isn't. Debug also gets its own `Application Support/Trill (debug)` so a test run
+can't bind the installed daemon's socket or write its database.
 
 **Feel-test with `scripts/dev-install.sh`, not a bare `xcodebuild`.** A
 `CODE_SIGNING_ALLOWED=NO` build is ad-hoc signed, and macOS pins a TCC grant

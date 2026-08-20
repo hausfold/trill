@@ -13,9 +13,9 @@ The short version:
   read-only mirror of Apple's `usernoted` store behind a flag).
 - **This repo owns the compositor and nothing else** — the daemon, its
   providers, the rules engine, the banner/inbox UI, the `trill` CLI. How trill
-  is *launched* (launchd, login item, the CLI shim on PATH) belongs to the
-  rice; its colors belong to `nebelung`; DND/Focus toggling is the rice's
-  "Hush" and trill only deep-links there.
+  is *launched* (launchd, login item, the CLI shim on PATH) belongs to haus;
+  its colors belong to `nebelung`; DND/Focus toggling is haus's "Hush" and
+  trill only deep-links there.
 - **The compositor never blocks on — or trusts — a provider.** Each one is
   supervised in its own task, speaks only `NotificationEvent`, advertises
   health from an explicit `probe()`, and fails *closed into "off with a
