@@ -124,14 +124,14 @@ struct BannerView: View {
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
                     Text(event.source)
-                        .font(.caption.weight(.medium))
+                        .font(.footnote.weight(.medium))
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                     if entry.coalescedCount > 0 {
                         // Collapsed this is the whole receipt; expanded it is
                         // the label on the list underneath.
                         Text("+\(entry.coalescedCount) more")
-                            .font(.caption)
+                            .font(.footnote)
                             .foregroundStyle(.tertiary)
                     }
                     // The banner body is the click target (`performDefault`
@@ -141,7 +141,7 @@ struct BannerView: View {
                     // adding a button row: the banner's height is fixed.
                     if let action = event.actions.first, event.actions.count == 1 {
                         Text(action.label)
-                            .font(.caption2.weight(.medium))
+                            .font(.caption.weight(.medium))
                             .foregroundStyle(.tint)
                             .lineLimit(1)
                             .padding(.horizontal, 5)
@@ -154,7 +154,7 @@ struct BannerView: View {
                     if hovering {
                         Button(action: onDismiss) {
                             Image(systemName: "xmark")
-                                .font(.system(size: 9, weight: .bold))
+                                .font(.system(size: 10, weight: .bold))
                         }
                         .buttonStyle(.plain)
                         .foregroundStyle(.secondary)
@@ -163,12 +163,12 @@ struct BannerView: View {
                 }
 
                 Text(event.title)
-                    .font(.title3.weight(titleWeight))
+                    .font(.title2.weight(titleWeight))
                     .lineLimit(1)
 
                 if !redacted, let body = event.body ?? event.subtitle {
                     Text(body)
-                        .font(.subheadline)
+                        .font(.callout)
                         .foregroundStyle(.secondary)
                         .lineLimit(2)
                 }
@@ -176,9 +176,9 @@ struct BannerView: View {
 
             if let symbol = event.symbol {
                 Image(systemName: symbol)
-                    .font(.system(size: 16, weight: .regular))
+                    .font(.system(size: 18, weight: .regular))
                     .foregroundStyle(urgencyAccent)
-                    .frame(width: 22, height: 22)
+                    .frame(width: 24, height: 24)
                     .padding(.top, 2)
             }
         }
@@ -221,7 +221,7 @@ struct BannerView: View {
                 // Not a button: it stands for several events, so there is no
                 // single thing for a click to do.
                 Text("and \(entry.coalescedCount - listedFolds.count) earlier")
-                    .font(.caption2)
+                    .font(.caption)
                     .foregroundStyle(.tertiary)
                     .frame(height: BannerGeometry.foldRowHeight)
                     .padding(.horizontal, 12)
@@ -242,13 +242,13 @@ struct BannerView: View {
         let live = folded.hasDefaultAction
         let content = HStack(spacing: 6) {
             Text(folded.title)
-                .font(.caption)
+                .font(.footnote)
                 .lineLimit(1)
             // Privacy is per event, so a redacted thread-mate keeps
             // its body to itself even when the face is visible.
             if folded.privacy != .redacted, let body = folded.body ?? folded.subtitle {
                 Text(body)
-                    .font(.caption)
+                    .font(.footnote)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
             }
