@@ -127,7 +127,7 @@ enum BannerGeometry {
     /// The card's full height *including* the strip its successor laps over
     /// — the reading area is `height - overlap`, which is the number that
     /// used to be the whole card. Grow both together or text starts clipping.
-    static let size = CGSize(width: 360, height: 82)
+    static let size = CGSize(width: 360, height: 92)
     static let inset: CGFloat = 12
 
     /// How far each card laps over the one above it. Small on purpose: the
@@ -165,7 +165,7 @@ enum BannerGeometry {
     /// the panel that has to be resized around it: the height is *computed*,
     /// never measured, because `NSHostingView.fittingSize` is stale in the
     /// same turn as the state change that grows the view.
-    static let foldRowHeight: CGFloat = 18
+    static let foldRowHeight: CGFloat = 20
     /// Divider plus the padding above and below the list. The bottom share of
     /// it is at least `overlap`, so the card below still has only padding to
     /// tuck over once a fold is open.
