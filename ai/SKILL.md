@@ -24,6 +24,8 @@ work. There is no sound, ever — don't promise one.
 | put a banner on screen | `trill send --title "Deploy landed"` |
 | …with detail | `trill send --title "Build failed" --body "3 tests red" --urgency critical` |
 | …clickable | `trill send --title "PR open" --url https://github.com/…` |
+| …with up to 3 buttons | `trill send --title "PR open" --action "Open PR=https://…" --action "Diff=https://…"` |
+| …saying what it asks of the user | `trill send --title "Lane blocked" --kind ask` |
 | …attributed to something | `trill send --title "…" --source deploy --symbol checkmark.circle` |
 | …hiding the detail on a shared screen | `trill send --title "…" --body "…" --redact` |
 | announce a long command when it ends | `make build; trill send --title "build done"` |
@@ -33,9 +35,15 @@ work. There is no sound, ever — don't promise one.
 | …every app, as JSON | `trill doctor --all --json` |
 | everything, exhaustively | `trill help` |
 
-`--urgency` is `low`, `normal` (default) or `critical`. `--thread <name>`
-groups related banners. `--source <slug>` is what the user's rules file matches
-on — give a long-running job its own source so they can route it later.
+`--kind` colors the banner by what it asks of the user: `ask` (blocked on
+them), `fault` (broke), `chat` (a human), `pulse` (in flight), `done`
+(finished well), `note` (fyi, the default). `--urgency` is the loudness —
+`low`, `normal` (default) or `critical` — and is a different axis: a fault can
+be low, a note can be critical. `--thread <name>` groups related banners.
+`--source <slug>` is what the user's rules file matches on — give a
+long-running job its own source so they can route it later. `--action
+"Label=https://…"` (or `Label=app:bundle.id`, repeatable) adds buttons; the
+first one is also what clicking the banner body does.
 
 ## Exit codes — check these, they mean different recoveries
 

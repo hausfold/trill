@@ -111,36 +111,38 @@ enum DesktopLayout {
     }
 }
 
-/// Where banners live and how they stack. Top-right, dealt downward like a
-/// deck — clamped to the visible frame, deliberately *near* Apple's geometry
-/// so muscle memory holds, without gluing to their exact metrics.
+/// Where banners live and how they stack. Top-right, a spaced column —
+/// clamped to the visible frame, deliberately *near* Apple's geometry so
+/// muscle memory holds, without gluing to their exact metrics.
 ///
-/// **Why a deck and not a list.** Distinct banners used to sit in separate
-/// rects 8pt apart, which read as a form, not as a pile of things that
-/// arrived. Each card now laps a few points *over* the card above it, and
-/// every panel casts a real shadow — so a run of banners reads as one stack
-/// with depth. The z-order comes free: panels are created newest-last and
-/// `orderFrontRegardless` puts each new one in front, so a newer card (lower
-/// on screen) covers the bottom edge of its elder — dealt, not shuffled.
-/// This is a deliberate look, not an accident of spacing.
+/// **A column, not a deck.** Cards used to lap 6pt over one another so a
+/// burst read as one pile with depth. Feel-testing voted the other way: the
+/// lap read as banners *colliding*, and hiding an elder card's bottom edge
+/// cost more than the depth bought. Each card now keeps a small gap and its
+/// own complete shadow — a column of discrete things that arrived. Z-order
+/// still runs newest-in-front (panels are created newest-last with
+/// `orderFrontRegardless`), which only matters while a hovered fold grows
+/// over its neighbours.
 enum BannerGeometry {
-    /// The card's full height *including* the strip its successor laps over
-    /// — the reading area is `height - overlap`, which is the number that
-    /// used to be the whole card. Grow both together or text starts clipping.
+    /// The collapsed face — all of it reading area now that nothing laps it.
     static let size = CGSize(width: 360, height: 92)
     static let inset: CGFloat = 12
 
-    /// How far each card laps over the one above it. Small on purpose: the
-    /// covered strip is the elder card's bottom padding, and anything much
-    /// larger starts eating a two-line body.
-    static let overlap: CGFloat = 6
+    /// Breathing room between cards. Enough that two shadows never merge
+    /// into one smear; small enough that a burst still reads as one stack.
+    static let gap: CGFloat = 8
+
+    /// Height the pill row adds when an event draws 2–3 action pills
+    /// (`NotificationEvent.pillActions`): 22pt of pill plus the seam between
+    /// it and the face's bottom padding. A single action never pays this —
+    /// it rides the meta row as an inline label.
+    static let actionRowHeight: CGFloat = 30
 
     /// Lateral step per card, each one deeper in the stack sitting this much
     /// further *left*. **Deliberately zero.** A fanned version went to a
     /// feel-test first and the drift read as misalignment rather than as
-    /// depth — and it only gets worse the deeper the stack goes. The lap and
-    /// the shadow carry the effect on their own. Kept as a knob, at 0, so the
-    /// idea isn't rediscovered and re-shipped.
+    /// depth — and it only gets worse the deeper the stack goes. Kept as a
+    /// knob, at 0, so the idea isn't rediscovered and re-shipped.
     static let step: CGFloat = 0
 
     // MARK: - Where the stack sits
@@ -166,30 +168,38 @@ enum BannerGeometry {
     /// never measured, because `NSHostingView.fittingSize` is stale in the
     /// same turn as the state change that grows the view.
     static let foldRowHeight: CGFloat = 20
-    /// Divider plus the padding above and below the list. The bottom share of
-    /// it is at least `overlap`, so the card below still has only padding to
-    /// tuck over once a fold is open.
+    /// Divider plus the padding above and below the list.
     static let foldListInset: CGFloat = 12
 
-    /// The most rows a card at `index` in the stack can grow before its own
-    /// bottom edge leaves the visible frame. **This is the cap — there is no
-    /// magic row count.** A ten-message thread lists all ten because ten fit;
-    /// a two-hundred-message one lists what fits and admits the rest in a
-    /// single "and N earlier" line, because a card taller than the display is
-    /// worse than no card at all.
+    /// The most rows a card can grow before its own bottom edge leaves the
+    /// visible frame. **This is the cap — there is no magic row count.** A
+    /// ten-message thread lists all ten because ten fit; a two-hundred-message
+    /// one lists what fits and admits the rest in a single "and N earlier"
+    /// line, because a card taller than the display is worse than no card.
     ///
-    /// Only the *collapsed* cards above the hovered one are counted against
-    /// it. Cards below are allowed to be pushed off screen: they are still in
-    /// the queue and come straight back on unhover, and letting the fold stop
-    /// growing at whatever happens to be beneath it would make the same burst
-    /// a different height depending on unrelated traffic.
-    static func foldRowCapacity(on screen: ScreenDescriptor, index: Int) -> Int {
-        guard index >= 0 else { return 0 }
+    /// `above` is the height the collapsed cards over the hovered one already
+    /// spent (their heights plus a gap each) and `cardHeight` is the hovered
+    /// card's own collapsed height — cards vary now that a pill row exists,
+    /// so the caller sums real heights rather than multiplying an index.
+    /// Cards *below* are not counted: they are allowed to be pushed off
+    /// screen, stay in the queue, and come straight back on unhover.
+    static func foldRowCapacity(
+        on screen: ScreenDescriptor,
+        above: CGFloat,
+        cardHeight: CGFloat = size.height
+    ) -> Int {
+        guard above >= 0 else { return 0 }
         let area = anchor(on: screen)
-        let top = area.maxY - CGFloat(index) * (size.height - overlap)
-        let room = top - area.minY - size.height - foldListInset
+        let top = area.maxY - above
+        let room = top - area.minY - cardHeight - foldListInset
         guard room >= foldRowHeight else { return 0 }
         return Int(room / foldRowHeight)
+    }
+
+    /// Height already spent above the card at `index`, given every card's
+    /// collapsed size — the `above` that `foldRowCapacity` wants.
+    static func heightAbove(index: Int, sizes: [CGSize]) -> CGFloat {
+        sizes.prefix(max(index, 0)).reduce(0) { $0 + $1.height + gap }
     }
 
     /// Folded events the expanded list names one by one, given the total rows
@@ -213,17 +223,24 @@ enum BannerGeometry {
         return listed + (folded > listed ? 1 : 0)
     }
 
-    /// Size of one card. Collapsed is always `size`; expanded adds exactly
-    /// the fold list's rows, so the panel and the view agree on the number
-    /// without either of them measuring anything. `maxRows` comes from
-    /// `foldRowCapacity` — the view is handed it rather than deriving it,
-    /// because the view must not know what screen it is on.
-    static func cardSize(foldedCount: Int, expanded: Bool, maxRows: Int) -> CGSize {
+    /// Size of one card. Collapsed is `size` plus the pill row when the
+    /// event draws one; expanded adds exactly the fold list's rows, so the
+    /// panel and the view agree on the number without either of them
+    /// measuring anything. `maxRows` comes from `foldRowCapacity` — the view
+    /// is handed it rather than deriving it, because the view must not know
+    /// what screen it is on.
+    static func cardSize(
+        foldedCount: Int,
+        expanded: Bool,
+        maxRows: Int,
+        actionCount: Int = 0
+    ) -> CGSize {
+        let base = size.height + (actionCount >= 2 ? actionRowHeight : 0)
         let rows = expanded ? foldRowCount(folded: foldedCount, maxRows: maxRows) : 0
-        guard rows > 0 else { return size }
+        guard rows > 0 else { return CGSize(width: size.width, height: base) }
         return CGSize(
             width: size.width,
-            height: size.height + foldListInset + CGFloat(rows) * foldRowHeight
+            height: base + foldListInset + CGFloat(rows) * foldRowHeight
         )
     }
 
@@ -238,7 +255,7 @@ enum BannerGeometry {
     static func capacity(on screen: ScreenDescriptor, bannerSize: CGSize = size) -> Int {
         let usable = anchor(on: screen).height
         guard usable >= bannerSize.height else { return 0 }
-        let advance = max(1, bannerSize.height - overlap)
+        let advance = max(1, bannerSize.height + gap)
         return 1 + Int((usable - bannerSize.height) / advance)
     }
 
@@ -265,7 +282,7 @@ enum BannerGeometry {
             // the bottom of the display is not.
             escaped = escaped || frame.minY < area.minY - 0.5
             frames.append(escaped ? nil : frame)
-            top -= cardSize.height - overlap
+            top -= cardSize.height + gap
         }
         return frames
     }

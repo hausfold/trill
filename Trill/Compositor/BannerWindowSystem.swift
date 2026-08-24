@@ -45,6 +45,8 @@ final class BannerWindowSystem {
         screenObserver = nil
         panels.values.forEach { $0.close() }
         panels.removeAll()
+        overflowBadge?.close()
+        overflowBadge = nil
         queue.onVisibleChanged = nil
     }
 
@@ -56,6 +58,17 @@ final class BannerWindowSystem {
         NSScreen.screens.first.map(ScreenDescriptor.init(screen:))
     }
 
+    /// Every card's collapsed footprint — the face plus its pill row when
+    /// the event draws one. Both the fold budget and the layout start here.
+    private static func collapsedSizes(for entries: [BannerQueue.Entry]) -> [CGSize] {
+        entries.map { entry in
+            BannerGeometry.cardSize(
+                foldedCount: 0, expanded: false, maxRows: 0,
+                actionCount: entry.event.pillActions.count
+            )
+        }
+    }
+
     /// How many fold rows each card may draw. The screen decides — this is
     /// the whole of the "fill the screen" rule, and the only place that knows
     /// both the display and where each card sits on it. `BannerView` is handed
@@ -65,9 +78,14 @@ final class BannerWindowSystem {
     /// height can never pay for a named row the view has no event for. The
     /// `+ 1` is the "and N earlier" line, which needs no event.
     private static func foldRows(for entries: [BannerQueue.Entry], on screen: ScreenDescriptor) -> [Int] {
-        entries.indices.map { index in
+        let collapsed = collapsedSizes(for: entries)
+        return entries.indices.map { index in
             min(
-                BannerGeometry.foldRowCapacity(on: screen, index: index),
+                BannerGeometry.foldRowCapacity(
+                    on: screen,
+                    above: BannerGeometry.heightAbove(index: index, sizes: collapsed),
+                    cardHeight: collapsed[index].height
+                ),
                 entries[index].folded.count + 1
             )
         }
@@ -84,21 +102,27 @@ final class BannerWindowSystem {
                 BannerGeometry.cardSize(
                     foldedCount: entries[index].coalescedCount,
                     expanded: entries[index].expanded,
-                    maxRows: rows[index]
+                    maxRows: rows[index],
+                    actionCount: entries[index].event.pillActions.count
                 )
             }
         )
     }
 
+    /// The screen is the whole of the cap now. A `min(capacity, 3)` used to
+    /// sit here from the first feel-test; it made every display behave like
+    /// a laptop with a window open, and burying banner four was the thing
+    /// the overflow badge exists to *report*, not enforce.
     private func syncCapacity() {
-        let capacity = targetScreen.map { BannerGeometry.capacity(on: $0) } ?? 0
-        queue.setCapacity(min(capacity, 3))
+        queue.setCapacity(targetScreen.map { BannerGeometry.capacity(on: $0) } ?? 0)
     }
 
     private func render(_ entries: [BannerQueue.Entry]) {
         guard let screen = targetScreen else {
             panels.values.forEach { $0.close() }
             panels.removeAll()
+            overflowBadge?.close()
+            overflowBadge = nil
             return
         }
 
@@ -151,6 +175,12 @@ final class BannerWindowSystem {
                 self?.actionRouter.performDefault(for: entry.event)
                 self?.queue.dismiss(id: entry.id)
             }
+            // A pill runs *its* action and takes the banner down, same as the
+            // face: the card asked a question, and any pill answers it.
+            let action: (NotificationEvent.Action) -> Void = { [weak self] chosen in
+                self?.actionRouter.perform(chosen, for: entry.event)
+                self?.queue.dismiss(id: entry.id)
+            }
             // A row of an open fold runs *its* event's action and then takes
             // the whole banner down: you opened the thread to deal with it,
             // and you just did. Leaving the card up would put you back in
@@ -163,15 +193,40 @@ final class BannerWindowSystem {
                 existing.update(
                     entry: entry, maxFoldRows: rows[index], frame: frame,
                     onHover: hover, onDismiss: dismiss,
-                    onActivate: activate, onActivateFolded: activateFolded
+                    onActivate: activate, onAction: action,
+                    onActivateFolded: activateFolded
                 )
             } else {
                 panels[entry.id] = BannerPanelController(
                     entry: entry, maxFoldRows: rows[index], frame: frame,
                     onHover: hover, onDismiss: dismiss,
-                    onActivate: activate, onActivateFolded: activateFolded
+                    onActivate: activate, onAction: action,
+                    onActivateFolded: activateFolded
                 )
             }
+        }
+
+        renderOverflowBadge(under: frames, on: screen)
+    }
+
+    /// The queue can hold more than the display fits, and until now that was
+    /// invisible — events looked late rather than waiting. When anything is
+    /// waiting, a small "⌄ N waiting" tag hangs off the bottom card's
+    /// trailing corner. It is a *report*, not a control: no click, no hover,
+    /// and it disappears the moment the line drains.
+    private var overflowBadge: OverflowBadgeController?
+
+    private func renderOverflowBadge(under frames: [CGRect?], on screen: ScreenDescriptor) {
+        let waiting = queue.waitingCount
+        guard waiting > 0, let last = frames.compactMap({ $0 }).last else {
+            overflowBadge?.close()
+            overflowBadge = nil
+            return
+        }
+        if let overflowBadge {
+            overflowBadge.update(count: waiting, under: last)
+        } else {
+            overflowBadge = OverflowBadgeController(count: waiting, under: last)
         }
     }
 }

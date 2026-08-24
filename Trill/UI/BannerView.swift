@@ -1,14 +1,20 @@
 import SwiftUI
 
-/// The banner surface. Flat, quiet, nebelung-shaped: thin source accent,
-/// small symbol, no sound, no bounce, eight points of motion at most —
-/// and none at all under Reduce Motion.
+/// The banner surface. Flat, quiet, nebelung-shaped: kind-hued glyph chip,
+/// no sound, no bounce, eight points of motion at most — and none at all
+/// under Reduce Motion.
+///
+/// **Hue says what it is, weight says how much it matters.** The event's
+/// `kind` owns the color (via `BannerTheme`) and shows on the glyph chip,
+/// the fold-count pill and the action pills; `urgency` owns the intensity —
+/// low dims the card, normal colors only the chip, critical fills the chip
+/// solid, tints the border and bolds the title. The two never fight because
+/// they color different things.
 ///
 /// A coalesced banner shows the newest thread-mate on its face and a count
 /// of what folded in behind it; hovering deepens that count into an actual
 /// list, and every line of that list is its own button. Hover already pauses
-/// the dismiss clock, so the list stays up as long as you are reading it,
-/// and the banner costs nothing extra when you're not.
+/// the dismiss clock, so the list stays up as long as you are reading it.
 struct BannerView: View {
     let entry: BannerQueue.Entry
     /// Rows the fold may draw, handed down by the compositor from
@@ -20,6 +26,8 @@ struct BannerView: View {
     var onHover: (Bool) -> Void
     var onDismiss: () -> Void
     var onActivate: () -> Void
+    /// Click on one pill of the action row: that action, not the default.
+    var onAction: (NotificationEvent.Action) -> Void
     /// Click on one line of the fold: that line's own event, not the face's.
     var onActivateFolded: (NotificationEvent) -> Void
 
@@ -33,6 +41,8 @@ struct BannerView: View {
 
     private var event: NotificationEvent { entry.event }
     private var redacted: Bool { event.privacy == .redacted }
+    private var kindColor: Color { BannerTheme.current().color(for: event.kind) }
+    private var pills: [NotificationEvent.Action] { event.pillActions }
 
     /// The same arithmetic the compositor sized the panel with — never a
     /// measured height (`fittingSize` lags a state change by a turn on
@@ -41,25 +51,17 @@ struct BannerView: View {
         BannerGeometry.cardSize(
             foldedCount: entry.coalescedCount,
             expanded: entry.expanded,
-            maxRows: maxFoldRows
+            maxRows: maxFoldRows,
+            actionCount: pills.count
         )
-    }
-
-    private var urgencyAccent: Color {
-        switch event.urgency {
-        case .low: return .secondary
-        case .normal: return .accentColor
-        case .critical: return .red
-        }
-    }
-
-    private var titleWeight: Font.Weight {
-        event.urgency == .critical ? .bold : .semibold
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             face
+            if !pills.isEmpty {
+                actionRow
+            }
             // `maxFoldRows` is part of the condition, not just of the
             // contents: on a screen too short to pay for a single row
             // `cardSize` returns the bare face, and a list drawn anyway —
@@ -75,14 +77,20 @@ struct BannerView: View {
                 .fill(.regularMaterial)
                 .overlay(
                     RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .strokeBorder(.separator, lineWidth: 1)
+                        .strokeBorder(
+                            event.urgency == .critical
+                                ? AnyShapeStyle(kindColor.opacity(0.5))
+                                : AnyShapeStyle(.separator),
+                            lineWidth: 1
+                        )
                 )
         )
+        // Low urgency is *present but ignorable*: the whole card recedes.
+        .opacity(event.urgency == .low ? 0.82 : 1)
         // Shaped for *hover* — the card has to keep the queue's hover while
         // the pointer crosses the gaps between rows, or the fold would
         // collapse under its own list. Clicking is not the card's job: the
-        // face and each fold row carry their own target, because a folded
-        // line that ran the face's action would be a lie about what it is.
+        // face, each pill and each fold row carry their own target.
         .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
         .onHover { inside in
             hovering = inside
@@ -101,54 +109,54 @@ struct BannerView: View {
                 arrived = true
             }
         }
-        // `.contain`, not `.combine`: the fold rows are individually
-        // actionable now, so VoiceOver has to be able to reach them. The face
+        // `.contain`, not `.combine`: pills and fold rows are individually
+        // actionable, so VoiceOver has to be able to reach them. The face
         // combines into one element of its own just below.
         .accessibilityElement(children: .contain)
     }
 
     /// The face: what a banner has always been. Its height is fixed whether
-    /// or not the fold list is showing, so expanding never reflows the part
-    /// you were already reading — and the bottom `BannerGeometry.overlap`
-    /// points of it are padding the next card in the stack tucks over.
+    /// or not the pill row or fold list is showing, so growing never reflows
+    /// the part you were already reading.
     private var face: some View {
         HStack(alignment: .top, spacing: 10) {
-            // Thin source accent. Hex values stay in nebelung; until the
-            // palette wiring lands this rides the system accent — except
-            // urgency, which always wins so critical reads as critical.
-            Capsule()
-                .fill(urgencyAccent)
-                .frame(width: 3)
-                .padding(.vertical, 2)
+            chip
 
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
                     Text(event.source)
                         .font(.footnote.weight(.medium))
+                        .monospaced()
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
+                    TimelineView(.periodic(from: .now, by: 30)) { context in
+                        Text(Self.age(of: event.timestamp, at: context.date))
+                            .font(.footnote)
+                            .foregroundStyle(.tertiary)
+                    }
                     if entry.coalescedCount > 0 {
                         // Collapsed this is the whole receipt; expanded it is
                         // the label on the list underneath.
-                        Text("+\(entry.coalescedCount) more")
-                            .font(.footnote)
-                            .foregroundStyle(.tertiary)
+                        Text("+\(entry.coalescedCount)")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(kindColor)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 1)
+                            .background(Capsule().fill(kindColor.opacity(0.14)))
                     }
                     // The banner body is the click target (`performDefault`
                     // runs the first action), so a single-action event needs
                     // to *say* what clicking does — otherwise the action is
                     // real but invisible. Rides the existing row rather than
-                    // adding a button row: the banner's height is fixed.
-                    if let action = event.actions.first, event.actions.count == 1 {
+                    // adding a pill row: one action doesn't pay for a row.
+                    if let action = event.actions.first, pills.isEmpty, event.actions.count == 1 {
                         Text(action.label)
                             .font(.caption.weight(.medium))
-                            .foregroundStyle(.tint)
+                            .foregroundStyle(kindColor)
                             .lineLimit(1)
                             .padding(.horizontal, 5)
                             .padding(.vertical, 1)
-                            .background(
-                                Capsule().fill(Color.accentColor.opacity(0.14))
-                            )
+                            .background(Capsule().fill(kindColor.opacity(0.14)))
                     }
                     Spacer(minLength: 0)
                     if hovering {
@@ -163,7 +171,8 @@ struct BannerView: View {
                 }
 
                 Text(event.title)
-                    .font(.title2.weight(titleWeight))
+                    .font(.title2.weight(event.urgency == .critical ? .bold : .semibold))
+                    .foregroundStyle(event.urgency == .low ? AnyShapeStyle(.secondary) : AnyShapeStyle(.primary))
                     .lineLimit(1)
 
                 if !redacted, let body = event.body ?? event.subtitle {
@@ -172,14 +181,6 @@ struct BannerView: View {
                         .foregroundStyle(.secondary)
                         .lineLimit(2)
                 }
-            }
-
-            if let symbol = event.symbol {
-                Image(systemName: symbol)
-                    .font(.system(size: 18, weight: .regular))
-                    .foregroundStyle(urgencyAccent)
-                    .frame(width: 24, height: 24)
-                    .padding(.top, 2)
             }
         }
         .padding(.horizontal, 12)
@@ -198,6 +199,81 @@ struct BannerView: View {
         .onTapGesture(perform: onActivate)
         .accessibilityElement(children: .combine)
         .accessibilityLabel(faceAccessibilityText)
+    }
+
+    /// The kind chip: a 30pt rounded square whose hue *is* the event's kind,
+    /// carrying the event's symbol (or the kind's own glyph when it brought
+    /// none). Weight lives here too — low goes grey, critical fills solid.
+    /// This replaced the 3pt accent capsule: a colored sliver read as
+    /// decoration; a filled chip reads from across the room.
+    private var chip: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(chipBackground)
+            Image(systemName: event.symbol ?? event.kind.defaultSymbol)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(chipGlyph)
+        }
+        .frame(width: 30, height: 30)
+        .padding(.top, 2)
+        .accessibilityHidden(true) // the face's label already says the kind's job
+    }
+
+    private var chipBackground: Color {
+        switch event.urgency {
+        case .low: Color.primary.opacity(0.06)
+        case .normal: kindColor.opacity(0.16)
+        case .critical: kindColor
+        }
+    }
+
+    private var chipGlyph: Color {
+        switch event.urgency {
+        case .low: .secondary
+        case .normal: kindColor
+        // Dark glyph on the filled chip — the one place the card goes loud.
+        case .critical: .black.opacity(0.75)
+        }
+    }
+
+    /// 2–3 pills under the face. The first is the primary — same action the
+    /// card click runs, tinted to say so; the rest stay neutral. Only
+    /// performable actions get here (`pillActions`): trill draws no dead
+    /// buttons.
+    private var actionRow: some View {
+        HStack(spacing: 6) {
+            ForEach(Array(pills.enumerated()), id: \.element.id) { index, action in
+                Button { onAction(action) } label: {
+                    Text(action.label)
+                        .font(.caption.weight(.semibold))
+                        .lineLimit(1)
+                        .foregroundStyle(index == 0 ? kindColor : Color.secondary)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 4)
+                        .background(
+                            Capsule().fill(
+                                index == 0
+                                    ? AnyShapeStyle(kindColor.opacity(0.14))
+                                    : AnyShapeStyle(Color.primary.opacity(0.06))
+                            )
+                        )
+                        .overlay(
+                            Capsule().strokeBorder(
+                                index == 0 ? kindColor.opacity(0.3) : Color.primary.opacity(0.08),
+                                lineWidth: 1
+                            )
+                        )
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(action.label)
+            }
+            Spacer(minLength: 0)
+        }
+        // 12 to match the face's margin, 52 to clear the chip column so the
+        // pills align with the text they belong to.
+        .padding(.leading, 52)
+        .padding(.trailing, 12)
+        .frame(height: BannerGeometry.actionRowHeight, alignment: .top)
     }
 
     /// The fold, opened. One line per thread-mate, newest first, and each
@@ -227,8 +303,7 @@ struct BannerView: View {
                     .padding(.horizontal, 12)
             }
         }
-        // Divider (1) + 5 above + 6 below == BannerGeometry.foldListInset,
-        // and the 6 below is what the next card tucks over.
+        // Divider (1) + 5 above + 6 below == BannerGeometry.foldListInset.
         .padding(.bottom, 6)
     }
 
@@ -297,5 +372,18 @@ struct BannerView: View {
         let head = "\(event.source): \(event.title)"
         guard entry.coalescedCount > 0 else { return head }
         return "\(head), \(entry.coalescedCount) more in this thread"
+    }
+
+    /// A banner that survived a busy stack for a while must admit its age.
+    /// Compact on purpose — this sits between the source slug and the fold
+    /// count, and "4 minutes ago" would eat the row.
+    static func age(of timestamp: Date, at now: Date) -> String {
+        let seconds = now.timeIntervalSince(timestamp)
+        switch seconds {
+        case ..<60: return "now"
+        case ..<3600: return "\(Int(seconds / 60))m"
+        case ..<86400: return "\(Int(seconds / 3600))h"
+        default: return "\(Int(seconds / 86400))d"
+        }
     }
 }

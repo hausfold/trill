@@ -53,6 +53,9 @@ final class BannerQueue {
     var onVisibleChanged: (([Entry]) -> Void)?
 
     private(set) var visible: [Entry] = []
+    /// Held back until a slot frees. Kept ordered by urgency (critical
+    /// first), arrival order within a rank — a burst of chatter can delay a
+    /// critical's *slot*, never bury it behind twenty notes.
     private var waiting: [Entry] = []
     private var capacity: Int
     /// Which banner the pointer is over, if any. Hover both pauses the queue
@@ -89,13 +92,29 @@ final class BannerQueue {
         }
 
         let entry = Entry(event: event)
-        if visible.count < capacity && !paused {
+        // Hover does NOT gate arrivals: a new card appends at the bottom of
+        // the stack, so nothing moves under the cursor — and its dismiss
+        // timer stays unarmed while the queue is paused (`armDismiss`), so
+        // it waits with everything else. It used to be held in `waiting`,
+        // which read as "I sent five and three showed" whenever the pointer
+        // happened to rest on the stack. Only a *freed slot* refilling is
+        // still deferred to unhover: a refill can follow a dismissal above
+        // the cursor, and that does shift cards.
+        if visible.count < capacity {
             show(entry)
         } else {
-            waiting.append(entry)
+            // After every waiting entry of equal-or-higher urgency: a new
+            // arrival never queue-jumps its own rank.
+            let index = waiting.firstIndex { $0.event.urgency < event.urgency }
+                ?? waiting.endIndex
+            waiting.insert(entry, at: index)
         }
         notify()
     }
+
+    /// How many entries the display doesn't have room for right now — what
+    /// the compositor's overflow badge counts.
+    var waitingCount: Int { waiting.count }
 
     /// Fold `latest` into an existing banner/queued entry for its thread.
     /// The newest content wins the face of the banner; the events behind it
@@ -167,7 +186,12 @@ final class BannerQueue {
         while visible.count > capacity {
             let overflow = visible.removeLast()
             dismissTimers.removeValue(forKey: overflow.id)?.cancel()
-            waiting.insert(overflow, at: 0)
+            // Ahead of its own rank, not just at the front: it was already
+            // on screen, so it refills before anything that never was —
+            // without letting a demoted note cut in front of a critical.
+            let index = waiting.firstIndex { $0.event.urgency <= overflow.event.urgency }
+                ?? waiting.endIndex
+            waiting.insert(overflow, at: index)
             if hoveredID == overflow.id {
                 // The card under the pointer just left the screen with the
                 // display it was on. No exit event is coming for a panel

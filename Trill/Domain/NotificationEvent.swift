@@ -25,6 +25,38 @@ struct NotificationEvent: Codable, Sendable, Identifiable, Equatable {
         case visible, redacted
     }
 
+    /// What the event asks of the reader — a different axis than urgency
+    /// (a `fault` can be minor; a `note` can be critical). Kind owns the
+    /// banner's hue, urgency owns its weight; the two never fight because
+    /// they color different things.
+    enum Kind: String, Codable, Sendable, CaseIterable {
+        /// Blocked on the user: a lane wanting permission, a review request.
+        case ask
+        /// Something broke or degraded.
+        case fault
+        /// A human wrote words at you.
+        case chat
+        /// A long-running thing, progressing.
+        case pulse
+        /// Something you were waiting on finished well.
+        case done
+        /// FYI — the default, the quiet backbone.
+        case note
+
+        /// Glyph drawn when the event carries no `symbol` of its own. Bare
+        /// shapes, not `.circle` variants: the chip is already the container.
+        var defaultSymbol: String {
+            switch self {
+            case .ask: "questionmark"
+            case .fault: "exclamationmark.triangle.fill"
+            case .chat: "bubble.left.fill"
+            case .pulse: "arrow.triangle.2.circlepath"
+            case .done: "checkmark"
+            case .note: "info"
+            }
+        }
+    }
+
     /// An action the *source* can honor. Providers advertise what they can
     /// actually do (the family's capability pattern); the renderer never invents
     /// buttons the source can't back.
@@ -62,6 +94,20 @@ struct NotificationEvent: Codable, Sendable, Identifiable, Equatable {
             guard let target, let url = URL(string: target) else { return false }
             return openableSchemes.contains(url.scheme?.lowercased() ?? "")
         }
+
+        /// Would `ActionRouter.perform` do something for this action? Every
+        /// surface that draws an action asks *this* before drawing it as
+        /// pressable — trill draws no dead buttons, so the pill row, the fold
+        /// rows and the router all have to answer identically. A `command`
+        /// action is not performable because hooks aren't wired yet (PRD M2)
+        /// and the router only logs.
+        var isPerformable: Bool {
+            switch kind {
+            case .openApp, .silenceNative: true
+            case .openURL: Self.opensAsURL(target)
+            case .command: false
+            }
+        }
     }
 
     var id: String
@@ -78,6 +124,7 @@ struct NotificationEvent: Codable, Sendable, Identifiable, Equatable {
 
     /// Events sharing a thread coalesce under burst pressure.
     var thread: String?
+    var kind: Kind
     var urgency: Urgency
     var privacy: Privacy
 
@@ -93,6 +140,7 @@ struct NotificationEvent: Codable, Sendable, Identifiable, Equatable {
         body: String? = nil,
         symbol: String? = nil,
         thread: String? = nil,
+        kind: Kind = .note,
         urgency: Urgency = .normal,
         privacy: Privacy = .visible,
         actions: [Action] = [],
@@ -106,6 +154,7 @@ struct NotificationEvent: Codable, Sendable, Identifiable, Equatable {
         self.body = body
         self.symbol = symbol
         self.thread = thread
+        self.kind = kind
         self.urgency = urgency
         self.privacy = privacy
         self.actions = actions
@@ -113,7 +162,7 @@ struct NotificationEvent: Codable, Sendable, Identifiable, Equatable {
     }
 
     enum CodingKeys: String, CodingKey {
-        case id, source, timestamp, title, subtitle, body, symbol, thread, urgency, privacy, actions, metadata
+        case id, source, timestamp, title, subtitle, body, symbol, thread, kind, urgency, privacy, actions, metadata
     }
 
     init(from decoder: Decoder) throws {
@@ -127,6 +176,11 @@ struct NotificationEvent: Codable, Sendable, Identifiable, Equatable {
         self.symbol = try container.decodeIfPresent(String.self, forKey: .symbol)
         self.thread = try container.decodeIfPresent(String.self, forKey: .thread)
         self.urgency = try container.decodeIfPresent(Urgency.self, forKey: .urgency) ?? .normal
+        // Events that predate `kind` (or senders that never learned it) keep
+        // their old reading: critical used to render red, so an un-kinded
+        // critical stays red by becoming a fault. Everything else is a note.
+        self.kind = try container.decodeIfPresent(Kind.self, forKey: .kind)
+            ?? (urgency == .critical ? .fault : .note)
         self.privacy = try container.decodeIfPresent(Privacy.self, forKey: .privacy) ?? .visible
         self.actions = try container.decodeIfPresent([Action].self, forKey: .actions) ?? []
         self.metadata = try container.decodeIfPresent([String: String].self, forKey: .metadata) ?? [:]
@@ -152,11 +206,18 @@ extension NotificationEvent {
     /// about what's installed.
     var hasDefaultAction: Bool {
         guard let action = actions.first else { return source.contains(".") }
-        switch action.kind {
-        case .openApp, .silenceNative: return true
-        case .openURL: return Action.opensAsURL(action.target)
-        case .command: return false
-        }
+        return action.isPerformable
+    }
+
+    /// The actions the banner draws as its pill row: only when the event
+    /// carries more than one (a single action rides the meta row as an inline
+    /// label, and the card click *is* it), only the performable ones (no dead
+    /// buttons), and at most `Limits.drawnActions` — the card is a glance,
+    /// anything past three belongs to the inbox.
+    var pillActions: [Action] {
+        let performable = actions.filter(\.isPerformable)
+        guard performable.count >= 2 else { return [] }
+        return Array(performable.prefix(Limits.drawnActions))
     }
 
     /// Field caps: a banner is a glance, not a document. Oversized input is
@@ -166,6 +227,8 @@ extension NotificationEvent {
         static let subtitle = 200
         static let body = 1000
         static let metadataPairs = 32
+        /// Pills a banner will draw. More survive in the payload and inbox.
+        static let drawnActions = 3
     }
 
     /// Canonical form used for dedupe, persistence, and rendering.

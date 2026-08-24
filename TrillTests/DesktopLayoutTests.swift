@@ -133,7 +133,7 @@ final class DesktopLayoutTests: XCTestCase {
             id: "laptop",
             frame: bare,
             visibleFrame: bare,
-            contentFrame: CGRect(x: 10, y: 33, width: 1491, height: 903)
+            contentFrame: CGRect(x: 10, y: 83, width: 1491, height: 853)
         )
         let first = try XCTUnwrap(BannerGeometry.slotFrame(on: screen, index: 0))
         XCTAssertEqual(first.maxX, 1501, "the card's right edge is the window's right edge")
