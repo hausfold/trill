@@ -4,7 +4,9 @@ import Foundation
 ///
 ///   trill send --title "Deploy landed" [--body …] [--source deploy]
 ///              [--symbol checkmark.circle] [--thread deploys]
+///              [--kind ask|fault|chat|pulse|done|note]
 ///              [--urgency low|normal|critical] [--redact] [--url https://…]
+///              [--action "Label=https://…"]…
 ///   echo '{"title":"Backup complete"}' | trill send --json
 ///   trill ping
 ///
@@ -64,6 +66,7 @@ enum TrillCLI {
         var source = "cli"
         var symbol: String?
         var thread: String?
+        var kind: NotificationEvent.Kind?
         var urgency = NotificationEvent.Urgency.normal
         var privacy = NotificationEvent.Privacy.visible
         var actions: [NotificationEvent.Action] = []
@@ -84,9 +87,34 @@ enum TrillCLI {
                     return .failure("--urgency wants low|normal|critical")
                 }
                 urgency = parsed
+            case "--kind":
+                guard let raw = value(), let parsed = NotificationEvent.Kind(rawValue: raw) else {
+                    return .failure("--kind wants ask|fault|chat|pulse|done|note")
+                }
+                kind = parsed
             case "--url":
                 guard let raw = value() else { return .failure("--url wants a value") }
                 actions.append(.init(id: "url", label: "Open", kind: .openURL, target: raw))
+            case "--action":
+                // "Label=target": a web/file URL, or app:BUNDLE.ID to
+                // activate an app. The label is what the pill says, so the
+                // `=` split takes the *first* one — labels keep their own.
+                guard let raw = value(), let eq = raw.firstIndex(of: "="),
+                      eq != raw.startIndex, raw.index(after: eq) != raw.endIndex
+                else {
+                    return .failure("--action wants \"Label=https://…\" or \"Label=app:bundle.id\"")
+                }
+                let label = String(raw[..<eq])
+                let target = String(raw[raw.index(after: eq)...])
+                let action: NotificationEvent.Action
+                if target.hasPrefix("app:") {
+                    action = .init(id: "action-\(actions.count)", label: label, kind: .openApp, target: String(target.dropFirst(4)))
+                } else if NotificationEvent.Action.opensAsURL(target) {
+                    action = .init(id: "action-\(actions.count)", label: label, kind: .openURL, target: target)
+                } else {
+                    return .failure("--action target must be an http(s)/file URL or app:bundle.id")
+                }
+                actions.append(action)
             default:
                 return .failure("unknown flag '\(flag)' (see `trill help`)")
             }
@@ -97,7 +125,11 @@ enum TrillCLI {
         }
         return .success(NotificationEvent(
             source: source, title: title, subtitle: subtitle, body: body,
-            symbol: symbol, thread: thread, urgency: urgency, privacy: privacy,
+            symbol: symbol, thread: thread,
+            // Same inference the decoder applies to un-kinded events: an
+            // unlabeled critical keeps its old red reading by being a fault.
+            kind: kind ?? (urgency == .critical ? .fault : .note),
+            urgency: urgency, privacy: privacy,
             actions: actions
         ))
     }
@@ -279,12 +311,23 @@ enum TrillCLI {
 
     usage:
       trill send --title TEXT [--body TEXT] [--subtitle TEXT] [--source NAME]
-                 [--symbol SFNAME] [--thread NAME] [--urgency low|normal|critical]
-                 [--redact] [--url URL]
+                 [--symbol SFNAME] [--thread NAME]
+                 [--kind ask|fault|chat|pulse|done|note]
+                 [--urgency low|normal|critical] [--redact] [--url URL]
+                 [--action "Label=https://…"] [--action "Label=app:bundle.id"]
       trill send --json          # full NotificationEvent JSON on stdin
       trill ping                 # is the daemon up?
       trill doctor [--all] [--notify] [--json] [BUNDLE_ID …]
       trill help
+
+    --kind says what the event asks of the reader and colors the banner:
+    ask (blocked on you) · fault (broke) · chat (a human) · pulse (in flight)
+    · done (finished well) · note (fyi, the default). Unlabeled critical
+    events render as fault. --urgency stays the loudness: low dims, critical
+    bolds — still silent.
+
+    --action adds a button (up to 3 drawn; the first is also what clicking
+    the banner body does). --url is shorthand for --action "Open=URL".
 
     doctor asks macOS which apps still draw their own banners or play their
     own sounds — the ones you'd otherwise see twice. With no arguments it

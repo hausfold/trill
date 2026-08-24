@@ -438,6 +438,8 @@ enum NotificationSettingsAudit {
                 body: "macOS is drawing these itself, so you'll see everything twice.",
                 symbol: "bell.badge.slash",
                 thread: "trill-doctor",
+                // The banner wants two clicks from the user — that's an ask.
+                kind: .ask,
                 // The exact apps this banner counted — not "re-audit and see".
                 actions: [action(target: actionTarget(for: findings))]
             )]
@@ -450,6 +452,7 @@ enum NotificationSettingsAudit {
                 body: finding.complaint,
                 symbol: "bell.badge.slash",
                 thread: "trill-doctor",
+                kind: .ask,
                 actions: [action(target: actionTarget(for: [finding]))]
             )
         }

@@ -316,6 +316,24 @@ final class EventPipelineTests: XCTestCase {
     }
 
     @MainActor
+    func testArrivalsDuringHoverStillShowWhenSlotsAreFree() {
+        let queue = BannerQueue(capacity: 5, displayDuration: .seconds(3600))
+        queue.enqueue(NotificationEvent(id: "1", source: "s", title: "first"))
+        queue.setHover(true, id: "1")
+
+        // The pointer resting on the stack must not turn "I sent three" into
+        // "one showed": a new card appends below and moves nothing.
+        queue.enqueue(NotificationEvent(id: "2", source: "s", title: "second"))
+        queue.enqueue(NotificationEvent(id: "3", source: "s", title: "third"))
+        XCTAssertEqual(queue.visible.map(\.id), ["1", "2", "3"])
+        XCTAssertEqual(queue.waitingCount, 0)
+
+        // Unhover arms their clocks; nothing is lost in the meantime.
+        queue.setHover(false, id: "1")
+        XCTAssertEqual(queue.visible.count, 3)
+    }
+
+    @MainActor
     func testDismissingTheHoveredBannerUnsticksTheQueue() {
         let queue = BannerQueue(capacity: 1, displayDuration: .seconds(3600))
         queue.enqueue(NotificationEvent(id: "1", source: "s", title: "first"))

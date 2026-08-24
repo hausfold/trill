@@ -16,15 +16,15 @@ final class ScreenGeometryTests: XCTestCase {
         visibleFrame: CGRect(x: 1512, y: 0, width: 2560, height: 1415)
     )
 
-    func testSlotsDealDownwardFromTopRightAsAStack() throws {
+    func testSlotsStackDownwardFromTopRightWithAGap() throws {
         let first = try XCTUnwrap(BannerGeometry.slotFrame(on: laptop, index: 0))
         let second = try XCTUnwrap(BannerGeometry.slotFrame(on: laptop, index: 1))
 
         XCTAssertEqual(first.maxX, laptop.visibleFrame.maxX - BannerGeometry.inset)
         XCTAssertEqual(first.maxY, laptop.visibleFrame.maxY - BannerGeometry.inset)
         XCTAssertEqual(
-            second.maxY - first.minY, BannerGeometry.overlap,
-            "each card laps over its elder's bottom edge — a deck, not a spaced list"
+            first.minY - second.maxY, BannerGeometry.gap,
+            "each card keeps a gap from its elder — a column of discrete cards, never touching"
         )
         XCTAssertEqual(
             first.minX - second.minX, BannerGeometry.step,
@@ -68,6 +68,30 @@ final class ScreenGeometryTests: XCTestCase {
         )
         XCTAssertEqual(BannerGeometry.capacity(on: tiny), 0)
         XCTAssertNil(BannerGeometry.slotFrame(on: tiny, index: 0))
+    }
+
+    // MARK: - Action pill row
+
+    func testPillRowPaysForItsHeightOnlyWhenTwoOrMoreActionsDraw() {
+        XCTAssertEqual(
+            BannerGeometry.cardSize(foldedCount: 0, expanded: false, maxRows: 0, actionCount: 0),
+            BannerGeometry.size
+        )
+        XCTAssertEqual(
+            BannerGeometry.cardSize(foldedCount: 0, expanded: false, maxRows: 0, actionCount: 1),
+            BannerGeometry.size,
+            "one action rides the meta row as an inline label — no pill row, no extra height"
+        )
+        XCTAssertEqual(
+            BannerGeometry.cardSize(foldedCount: 0, expanded: false, maxRows: 0, actionCount: 2).height,
+            BannerGeometry.size.height + BannerGeometry.actionRowHeight
+        )
+        // Pills and an expanded fold stack their costs — the view draws both.
+        XCTAssertEqual(
+            BannerGeometry.cardSize(foldedCount: 2, expanded: true, maxRows: 40, actionCount: 3).height,
+            BannerGeometry.size.height + BannerGeometry.actionRowHeight
+                + BannerGeometry.foldListInset + 2 * BannerGeometry.foldRowHeight
+        )
     }
 
     // MARK: - Expanded folds
@@ -141,22 +165,37 @@ final class ScreenGeometryTests: XCTestCase {
     }
 
     func testFoldRowCapacityFillsTheScreenAndShrinksDownTheStack() {
-        let top = BannerGeometry.foldRowCapacity(on: laptop, index: 0)
+        let sizes = Array(repeating: BannerGeometry.size, count: 2)
+        let top = BannerGeometry.foldRowCapacity(on: laptop, above: 0)
         XCTAssertGreaterThan(
             top, 10,
             "a 944pt visible frame has room for a normal burst — 10 rows — many times over"
         )
 
-        // A card further down the deck starts lower, so it has less room.
-        let second = BannerGeometry.foldRowCapacity(on: laptop, index: 1)
+        // A card further down the stack starts lower, so it has less room.
+        let second = BannerGeometry.foldRowCapacity(
+            on: laptop,
+            above: BannerGeometry.heightAbove(index: 1, sizes: sizes)
+        )
         XCTAssertEqual(
             top - second,
-            Int((BannerGeometry.size.height - BannerGeometry.overlap) / BannerGeometry.foldRowHeight),
+            Int((BannerGeometry.size.height + BannerGeometry.gap) / BannerGeometry.foldRowHeight),
             "each card down the stack loses the rows its predecessor's advance cost"
         )
         XCTAssertGreaterThan(
-            BannerGeometry.foldRowCapacity(on: external, index: 0), top,
+            BannerGeometry.foldRowCapacity(on: external, above: 0), top,
             "a taller display lists more of the same burst"
+        )
+
+        // A pill-carrying card above costs its extra height too — `heightAbove`
+        // sums real sizes, not an index times a constant.
+        let tallAbove = BannerGeometry.heightAbove(
+            index: 1,
+            sizes: [BannerGeometry.cardSize(foldedCount: 0, expanded: false, maxRows: 0, actionCount: 3)]
+        )
+        XCTAssertEqual(
+            tallAbove,
+            BannerGeometry.size.height + BannerGeometry.actionRowHeight + BannerGeometry.gap
         )
     }
 
@@ -165,8 +204,12 @@ final class ScreenGeometryTests: XCTestCase {
         // the card the screen sized fits on the screen.
         for screen in [laptop, external] {
             for index in 0..<BannerGeometry.capacity(on: screen) where index < 3 {
-                let rows = BannerGeometry.foldRowCapacity(on: screen, index: index)
-                let sizes = Array(repeating: BannerGeometry.size, count: index)
+                let collapsed = Array(repeating: BannerGeometry.size, count: index)
+                let rows = BannerGeometry.foldRowCapacity(
+                    on: screen,
+                    above: BannerGeometry.heightAbove(index: index, sizes: collapsed)
+                )
+                let sizes = collapsed
                     + [BannerGeometry.cardSize(foldedCount: 20_000, expanded: true, maxRows: rows)]
                 let frames = BannerGeometry.stackFrames(on: screen, sizes: sizes)
                 let card = try XCTUnwrap(
@@ -187,7 +230,7 @@ final class ScreenGeometryTests: XCTestCase {
             frame: CGRect(x: 0, y: 0, width: 1512, height: 120),
             visibleFrame: CGRect(x: 0, y: 0, width: 1512, height: 120)
         )
-        XCTAssertEqual(BannerGeometry.foldRowCapacity(on: short, index: 0), 0)
+        XCTAssertEqual(BannerGeometry.foldRowCapacity(on: short, above: 0), 0)
         XCTAssertEqual(
             BannerGeometry.cardSize(foldedCount: 50, expanded: true, maxRows: 0),
             BannerGeometry.size,

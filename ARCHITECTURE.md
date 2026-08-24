@@ -118,9 +118,11 @@ you're reading it, and a burst you don't look at costs nothing it didn't cost
 before.
 
 **The screen sets the row count — there is no magic number.**
-`BannerGeometry.foldRowCapacity(on:index:)` answers how many rows a card at a
-given place in the deck can grow before its own bottom edge leaves the visible
-frame, and that is the cap. A ten-message thread lists all ten because ten fit;
+`BannerGeometry.foldRowCapacity(on:above:cardHeight:)` answers how many rows a
+card at a given place in the stack can grow before its own bottom edge leaves
+the visible frame, and that is the cap. (It takes the *height* already spent
+above the card, not an index — cards vary in height now that a pill row
+exists, so the caller sums real sizes via `heightAbove`.) A ten-message thread lists all ten because ten fit;
 a two-hundred-message one lists what fits and admits the rest in a single "and
 N earlier". This replaced a fixed four-row list, which meant a normal burst
 couldn't be seen in full at any screen size — `foldPreviewLimit` sat at 8 and
@@ -176,20 +178,27 @@ Three more consequences worth knowing:
 
 ### A stack of distinct banners
 
-Separate sources get separate cards, and the cards are *dealt*: each one laps
-`BannerGeometry.overlap` points over the card above it and rides a panel with
-a real shadow (`hasShadow`, invalidated on every frame change). The z-order is
-free — panels are created newest-last and `orderFrontRegardless` puts each new
-one in front — so the pile reads as one stack with depth rather than as a form
-with rows. The card's `size.height` includes the strip its successor covers,
-so the reading area is unchanged from the flat-list version; grow one without
-the other and text starts clipping.
+Separate sources get separate cards in a spaced column: each keeps
+`BannerGeometry.gap` points from the card above it and rides a panel with a
+real shadow (`hasShadow`, invalidated on every frame change). An earlier
+version *dealt* the cards instead — each lapping 6pt over its elder for a
+pile-with-depth look — and feel-testing voted it out: the lap read as banners
+colliding, and hiding an elder's bottom edge cost more than the depth bought.
+Z-order still runs newest-in-front (panels created newest-last with
+`orderFrontRegardless`), which only matters while a hovered fold grows over
+its neighbours.
+
+Capacity is the screen's: `BannerGeometry.capacity` counts what fits inside
+the anchor rect and `BannerWindowSystem.syncCapacity` passes it straight
+through. (A `min(capacity, 3)` clamp sat there from the first feel-test; it
+made every display behave like a laptop.) When the queue still holds more
+than fits, a mouse-transparent "⌄ N waiting" badge hangs off the bottom
+card's trailing corner (`OverflowBadgeController`) — a report, not a control.
 
 `BannerGeometry.step` — a lateral offset per card, fanning the stack
 leftward — is **deliberately 0**. The fanned version went to a feel-test and
 the drift read as misalignment rather than depth, worsening the deeper the
-stack went; the lap and the shadow carry it alone. The knob stays so the idea
-isn't rediscovered and re-shipped.
+stack went. The knob stays so the idea isn't rediscovered and re-shipped.
 
 Because a hovered fold makes one card taller, placement can't be a closed
 form per index: `BannerGeometry.stackFrames` walks the whole stack
@@ -296,6 +305,8 @@ without taking its focus.
   a queue per screen descriptor is additive.
 - Provider actions (chat reply, calendar open): richer capability sets on
   existing providers.
-- Nebelung theming: accent + surface tokens consumed by `BannerView`.
+- Nebelung theming, second half: kind hues already arrive through
+  `~/.config/trill/theme.json` (`BannerTheme`, system-color fallbacks);
+  surface/text tokens would ride the same file.
 - Command hooks: `ActionRouter.command` gains an allowlisted runner with
   redacted environment.

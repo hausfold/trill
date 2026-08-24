@@ -22,9 +22,10 @@ Notification Center with perfect compatibility."
 - rules.json: banner / inbox / digest / drop, quiet hours, critical
   punch-through; hot reload; malformed file keeps last good rules.
 - Banner compositor: panel per banner, all Spaces + over fullscreen, never
-  key; top-right stack — cards dealt downward, overlapping, newest in front;
-  hover pause; burst coalescing by thread, folded into one card that opens
-  into a list on hover; Reduce Motion respected; redacted privacy level.
+  key; top-right stack — a spaced column, as many cards as the screen fits,
+  a "⌄ N waiting" badge when the queue holds more; hover pause; burst
+  coalescing by thread, folded into one card that opens into a list on
+  hover; Reduce Motion respected; redacted privacy level.
 - Inbox window + minimal settings (login item, persistence, provider
   health, deep links to Apple's Notification/Focus settings).
 - `trill doctor [--all] [--notify] [--json]`: reads Apple's per-app
@@ -33,6 +34,21 @@ Notification Center with perfect compatibility."
   banners whose one action opens a stepped helper panel beside System
   Settings — animated, live-polled, one app at a time. trill never writes
   another app's settings.
+
+### M1.5 — semantic banners (the kind refactor)
+
+- `kind` on the event (`ask/fault/chat/pulse/done/note`): what it asks of
+  the reader. Kind owns the banner's hue (glyph chip, count pill, action
+  pills), urgency owns the weight (low dims, critical fills the chip and
+  tints the border). Unlabeled critical events read as `fault`, so old
+  senders keep their old red.
+- Hues arrive via `~/.config/trill/theme.json` (nebelung owns the hex; haus
+  writes the file); system-color fallbacks otherwise.
+- 2–3 performable actions draw as a pill row; the first is what the card
+  click runs. One action stays an inline label. `trill send` grows `--kind`
+  and repeatable `--action "Label=URL|app:bundle.id"`.
+- Screen-true capacity (the `min(3)` clamp is gone), 8pt gaps instead of
+  the 6pt lap, urgency-ordered waiting line, overflow badge.
 
 ### M2 — rules that earn the name
 
@@ -104,9 +120,10 @@ retry/logs — capability-advertised per provider, never generic promises.
 14. Switch an app's "Allow notifications" off entirely: `trill doctor` stops
     naming it, even though its Desktop and sound bits are still set.
 15. Send three events from three different `--source`s: three cards flush to
-    the same right edge, each lapping over the bottom of the one above it and
-    drawn in front of it, all three still readable — a stack, not a spaced
-    list.
+    the same right edge, 8pt apart, each with its own complete shadow, all
+    three fully readable. Keep sending: cards keep stacking until the screen
+    is out of room, and only then does the queue hold events back — with a
+    "⌄ N waiting" badge under the bottom card admitting it.
 
 ## Non-goals (v1)
 

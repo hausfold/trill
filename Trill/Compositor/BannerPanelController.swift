@@ -20,6 +20,7 @@ final class BannerPanelController {
         onHover: @escaping (Bool) -> Void,
         onDismiss: @escaping () -> Void,
         onActivate: @escaping () -> Void,
+        onAction: @escaping (NotificationEvent.Action) -> Void,
         onActivateFolded: @escaping (NotificationEvent) -> Void
     ) {
         entryID = entry.id
@@ -34,10 +35,9 @@ final class BannerPanelController {
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle]
         panel.isOpaque = false
         panel.backgroundColor = .clear
-        // Depth is what makes the overlapping cards read as a stack rather
-        // than as one smeared rectangle — AppKit shapes the shadow from the
-        // rendered alpha, so it follows the view's rounded corners. Any frame
-        // change has to invalidate it or the old outline is left behind.
+        // Each card carries its own complete shadow — AppKit shapes it from
+        // the rendered alpha, so it follows the view's rounded corners. Any
+        // frame change has to invalidate it or the old outline is left behind.
         panel.hasShadow = true
         panel.isFloatingPanel = true
         panel.hidesOnDeactivate = false
@@ -50,6 +50,7 @@ final class BannerPanelController {
             onHover: onHover,
             onDismiss: onDismiss,
             onActivate: onActivate,
+            onAction: onAction,
             onActivateFolded: onActivateFolded
         ))
         panel.contentView = host
@@ -72,6 +73,7 @@ final class BannerPanelController {
         onHover: @escaping (Bool) -> Void,
         onDismiss: @escaping () -> Void,
         onActivate: @escaping () -> Void,
+        onAction: @escaping (NotificationEvent.Action) -> Void,
         onActivateFolded: @escaping (NotificationEvent) -> Void
     ) {
         host.rootView = BannerView(
@@ -80,6 +82,7 @@ final class BannerPanelController {
             onHover: onHover,
             onDismiss: onDismiss,
             onActivate: onActivate,
+            onAction: onAction,
             onActivateFolded: onActivateFolded
         )
         panel.setFrame(frame, display: true)
