@@ -22,8 +22,16 @@
 # brings them back (`nix build -L`).
 #
 # WIRING THIS TO YOUR REBUILD is haus's job, not trill's: trill owns the card,
-# the layer owns which commands draw one. This script is the thing that layer
-# would call, and the feel-test for the bar until it does.
+# the layer owns which commands draw one. This script is the reference driver
+# and the feel-test for the bar.
+#
+# It reads nix's structured log, which means it OWNS the terminal: `--log-format
+# internal-json` replaces nix's own progress bar, and this re-renders what it
+# consumed. That is the right trade for a wrapper you typed on purpose, and the
+# wrong one for a command whose build phase is meant to keep nix's bar — which
+# is why haus and bench tick their card a different way, counting paths appear
+# in the store (`card_watch` in modules/core/haus.sh) and never touching nix's
+# stderr at all. Two drivers, one wire format; pick by who owns the terminal.
 
 set -uo pipefail
 
