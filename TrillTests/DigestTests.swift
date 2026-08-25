@@ -213,7 +213,7 @@ final class DigestTests: XCTestCase {
         database.insert(event("ci", at: at(9, 10)), decision: .digest("work"))
         database.insert(event("ci", at: at(9, 40)), decision: .digest("work"))
         database.insert(event("slack", at: at(9, 50)), decision: .digest("home"))
-        database.insert(event("deploy", at: at(9, 55)), decision: .banner)
+        database.insert(event("deploy", at: at(9, 55)), decision: .banner(.primary))
         // Before the window: same digest, previous hour's card.
         database.insert(event("ci", at: at(8, 30)), decision: .digest("work"))
 

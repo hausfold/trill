@@ -18,7 +18,7 @@ final class PolicyEngineTests: XCTestCase {
 
     func testNoRulesMeansBanner() {
         let engine = PolicyEngine(ruleSet: .empty)
-        XCTAssertEqual(engine.decide(event(), now: .now), .banner)
+        XCTAssertEqual(engine.decide(event(), now: .now), .banner(.primary))
     }
 
     func testFirstMatchingRuleWins() {
@@ -29,13 +29,13 @@ final class PolicyEngineTests: XCTestCase {
 
         XCTAssertEqual(
             engine.decide(event(source: "slack", title: "you were mentioned"), now: .now),
-            .banner
+            .banner(.primary)
         )
         XCTAssertEqual(
             engine.decide(event(source: "slack", title: "daily summary"), now: .now),
             .digest("work")
         )
-        XCTAssertEqual(engine.decide(event(source: "mail"), now: .now), .banner)
+        XCTAssertEqual(engine.decide(event(source: "mail"), now: .now), .banner(.primary))
     }
 
     func testSourceMatchIsCaseInsensitiveAgainstNormalizedEvents() {
@@ -58,7 +58,7 @@ final class PolicyEngineTests: XCTestCase {
         XCTAssertEqual(engine.decide(event(source: "ci"), now: .now), .inboxOnly)
         XCTAssertEqual(
             engine.decide(event(source: "ci", urgency: .critical), now: .now),
-            .banner,
+            .banner(.primary),
             "critical escapes an at-most-normal rule"
         )
     }
@@ -71,7 +71,7 @@ final class PolicyEngineTests: XCTestCase {
 
         XCTAssertEqual(engine.decide(event(), now: date(hour: 23)), .inboxOnly)
         XCTAssertEqual(engine.decide(event(), now: date(hour: 3)), .inboxOnly)
-        XCTAssertEqual(engine.decide(event(), now: date(hour: 12)), .banner)
+        XCTAssertEqual(engine.decide(event(), now: date(hour: 12)), .banner(.primary))
     }
 
     func testCriticalPunchesThroughQuietHours() {
@@ -81,7 +81,7 @@ final class PolicyEngineTests: XCTestCase {
         ))
         XCTAssertEqual(
             engine.decide(event(urgency: .critical), now: date(hour: 3)),
-            .banner
+            .banner(.primary)
         )
     }
 

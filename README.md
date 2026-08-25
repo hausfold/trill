@@ -128,7 +128,15 @@ trill doctor --notify   # …and put the findings on screen, click to be walked 
   "rules": [
     { "match": { "source": "slack", "titleContains": "mentioned" }, "delivery": "banner" },
     { "match": { "source": "slack" }, "delivery": "digest", "digest": "work" },
-    { "match": { "source": "ads" }, "delivery": "drop" }
+    { "match": { "source": "ads" }, "delivery": "drop" },
+
+    // …and *where* it draws: chats on the laptop panel, faults on whichever
+    // display you're facing. `primary` (the menu-bar one) is the default;
+    // `builtin` and `external` are the hardware. A rule that names only a
+    // display still banners — every target falls back to `primary`, so
+    // unplugging a monitor moves its banners rather than losing them.
+    { "match": { "kind": "chat" }, "display": "builtin" },
+    { "match": { "kind": "fault" }, "display": "active" }
   ],
   "quietHours": { "startMinute": 1320, "endMinute": 420 },
 
