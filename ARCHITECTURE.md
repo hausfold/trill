@@ -27,6 +27,9 @@
     is declared in the user's own `rules.json`, executed as argv with no
     shell, and resolution is one-way — nothing can put an answered question
     back on screen.
+11. `trill ask` blocks the **caller**, never the compositor: the daemon holds
+    a socket open, not a thread. Every ask resolves exactly once — first
+    resolution wins — and no outcome but a pressed pill is an answer.
 
 ## Boundaries
 
@@ -55,7 +58,11 @@ GitHub ──webhook──► tunnel ──► GitHubWebhookProvider
    fullscreen aux                     (the card's click is the query)
               ▼
         ActionRouter ── open app · open URL · focus lane · open inbox ·
-                        silence native · (hooks, M2)
+                        silence native · reply (answers an ask) · (hooks, M2)
+              │
+              ▼
+          AskBroker ──── the reply half of `trill ask`: who is still on the
+                         wire, and the one line written back to them
 ```
 
 ## The hard cases
@@ -388,6 +395,42 @@ the count silently; the first flush after the window says "23 quiet things"
 instead of nine. The ticker sleeps in ≤10-minute hops against a wall-clock
 deadline, so a Mac that slept through the hour flushes on the way back rather
 than an hour later.
+
+### A caller is blocked on the answer
+
+`trill ask` turns a banner into a return value: the CLI writes one request and
+then simply doesn't exit, and the daemon replies when a pill is pressed —
+minutes later, from the main actor, down a socket the socket queue is still
+holding open. Nothing else in trill answers late, and the shape that makes it
+safe is `AskBroker`: a lock and a dictionary of who is waiting, keyed by event
+id, with the rule that **an ask resolves exactly once and the first resolution
+wins**.
+
+That rule is load-bearing rather than defensive, because the ways an ask ends
+routinely race:
+
+- a pill is pressed — `ActionRouter` answers the broker, then the queue takes
+  the banner down, and a takedown is *itself* an abandonment. The answer got
+  there first, so the abandonment is a no-op;
+- the user dismisses it, a sixth ask evicts it off the ledge, or something
+  resolves it (`trill resolve`, an event carrying `resolves`, a `--until`
+  poller that came good) — all of them land on `BannerQueue.onDropped`, the
+  queue's "this left for good" callback. Parking is not leaving: a parked
+  question is still being asked, and its caller is still blocked;
+- `--timeout` expires, or the caller hangs up — the broker retracts the banner
+  through the queue, because a question nobody is behind must not stay
+  pressable;
+- no banner is ever drawn, because a rule dropped the event or quiet hours
+  demoted it. A claim watchdog reports that in seconds instead of blocking the
+  caller for a timeout it will never earn.
+
+An unanswered ask exits 75, never 0, whichever of those it was — the CLI's exit
+code is the pill's index, so silence has to live somewhere it can't be mistaken
+for consent. The rest of the pipeline is unchanged: an ask is a normal
+`NotificationEvent` whose pills are `reply` actions the *daemon* mints, so a
+sender can't write a banner whose Deny answers 0. The ledge's restore path
+strips them: a fin that outlived its daemon outlived the socket its answer
+would have gone down.
 
 ## Planned extensions that fit existing seams
 

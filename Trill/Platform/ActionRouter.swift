@@ -13,6 +13,11 @@ final class ActionRouter {
     /// the current `rules.json` names. Injected because the router must never
     /// fall back to "every app on this Mac": see `silenceNative` below.
     private let listedApps: () -> [String]
+    /// Where a blocked `trill ask` is waiting. Nil in the surfaces that have
+    /// no daemon behind them (tests, the CLI personality) — a `reply` pill
+    /// then does nothing, which is the same answer it gives when the asker
+    /// has already gone.
+    private let askBroker: AskBroker?
 
     /// Opens trill's own inbox at a scope. Set by the composition root rather
     /// than injected, because the delegate that owns windows is built after
@@ -20,8 +25,9 @@ final class ActionRouter {
     /// know nothing about windows beyond "someone will show one".
     var openInbox: ((InboxScope) -> Void)?
 
-    init(listedApps: @escaping () -> [String] = { [] }) {
+    init(listedApps: @escaping () -> [String] = { [] }, askBroker: AskBroker? = nil) {
         self.listedApps = listedApps
+        self.askBroker = askBroker
     }
 
     /// Click on the banner body, or on one row of an expanded fold: first
@@ -65,6 +71,20 @@ final class ActionRouter {
                 return
             }
             openInbox?(scope)
+        case .reply:
+            // The only action whose effect is a line written back down the
+            // socket the event arrived on: some `trill ask` has been blocked
+            // on this click since the banner went up. Refused when nobody is
+            // waiting — the ask timed out, or this is a hand-authored `reply`
+            // with no asker behind it — and a refusal is silent, because the
+            // banner is coming down either way.
+            guard let choice = NotificationEvent.Action.replyChoice(action.target) else {
+                Self.log.info("refused a malformed reply target for \(event.id, privacy: .public)")
+                return
+            }
+            if askBroker?.answer(id: event.id, choice: choice) != true {
+                Self.log.info("no ask waiting for \(event.id, privacy: .public)")
+            }
         case .command:
             // User-declared hooks arrive with the rules engine work
             // (PRD milestone 2); until then the action is inert.

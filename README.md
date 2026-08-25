@@ -33,6 +33,10 @@ notifications experimentally tomorrow.
 
 - **scriptable end to end** — `trill send --title "deploy landed"` from any
   shell, CI job, or nix rebuild. One JSON line in, one banner out. No SDK.
+- **a two-way street** — `trill ask "Push to origin?" --pill Allow --pill Deny`
+  blocks and exits with the index of the pill you press. An agent's permission
+  prompt becomes a banner, and the answer flows back down the same socket. No
+  answer is never exit 0: silence isn't consent.
 - **quiet by design** — the trill is the cat's, not the speaker's: there are
   no sound APIs anywhere in the binary. Flat surface, a few points of motion
   (none under Reduce Motion), hover to hold.
@@ -65,8 +69,9 @@ notifications experimentally tomorrow.
 
 ```text
 trill CLI      pounce/perch     usernoted db (experimental)
-    │             │                │ read-only, schema-probed
+    │  ▲          │                │ read-only, schema-probed
  SocketProvider   │          SystemMirrorProvider
+    │  └── the answer to `trill ask`, written back when a pill is pressed
     └─────────────┴────────────────┘
                   ▼
           EventRepository (actor: normalize · dedupe · persist · supervise)
@@ -95,6 +100,11 @@ trill ping   # is the daemon up?
 trill send --title "review me" --kind ask --key pr-142 \
            --until pr-merged:142,hausfold/trill   # clears itself when it merges
 trill resolve pr-142    # …or say so yourself, from anywhere, any time later
+
+# and the one that answers back: blocks until a pill is pressed, exits with
+# its index (0 = the first --pill). 75 means nobody answered — never consent.
+trill ask "Push to origin?" --pill Allow --pill Deny --timeout 300 \
+  && git push
 
 trill doctor            # which listed apps does macOS still notify for itself?
 trill doctor --all      # …check every app on the Mac, not just the listed ones

@@ -5,24 +5,47 @@ import Foundation
 /// No third-party networking — the same "plain and ownable" trade pounce
 /// makes with shell scripts.
 final class SocketServer: @unchecked Sendable {
-    typealias LineHandler = @Sendable (_ line: Data, _ reply: @escaping @Sendable (Data) -> Void) -> Void
+    /// One client, from a handler's point of view: an identity that outlives
+    /// the line that produced it, and the wire back. Both matter for a verb
+    /// that answers late — `trill ask` is replied to minutes after its
+    /// request, and its banner has to come down if the caller hangs up first.
+    struct Peer: Sendable {
+        /// Stable for the life of the connection, and never reused. File
+        /// descriptors *are* reused, which is exactly why this isn't one.
+        let id: UInt64
+        /// Write one line back. Safe to hold and safe to call late: a reply
+        /// to a peer that has gone is dropped, not written to whoever
+        /// inherited its descriptor.
+        let reply: @Sendable (Data) -> Void
+    }
+
+    typealias LineHandler = @Sendable (_ line: Data, _ peer: Peer) -> Void
+    /// A connection went away. Anything still waiting on it should stop.
+    typealias CloseHandler = @Sendable (_ peer: UInt64) -> Void
 
     private let path: String
     private let queue = DispatchQueue(label: "com.hausfold.trill.socket")
     private let onLine: LineHandler
+    private let onClose: CloseHandler
 
     private var listenFD: Int32 = -1
     private var acceptSource: DispatchSourceRead?
     private var connections: [Int32: Connection] = [:]
+    private var nextPeerID: UInt64 = 1
 
     private final class Connection {
         let source: DispatchSourceRead
+        let peerID: UInt64
         var buffer = Data()
-        init(source: DispatchSourceRead) { self.source = source }
+        init(source: DispatchSourceRead, peerID: UInt64) {
+            self.source = source
+            self.peerID = peerID
+        }
     }
 
-    init(path: String, onLine: @escaping LineHandler) {
+    init(path: String, onClose: @escaping CloseHandler = { _ in }, onLine: @escaping LineHandler) {
         self.path = path
+        self.onClose = onClose
         self.onLine = onLine
     }
 
@@ -36,8 +59,10 @@ final class SocketServer: @unchecked Sendable {
         queue.sync {
             acceptSource?.cancel()
             acceptSource = nil
+            let gone = connections.values.map(\.peerID)
             connections.values.forEach { $0.source.cancel() }
             connections.removeAll()
+            gone.forEach(onClose)
             if listenFD >= 0 { close(listenFD); listenFD = -1 }
             unlink(path)
         }
@@ -88,7 +113,8 @@ final class SocketServer: @unchecked Sendable {
         _ = fcntl(fd, F_SETFL, O_NONBLOCK)
 
         let source = DispatchSource.makeReadSource(fileDescriptor: fd, queue: queue)
-        let connection = Connection(source: source)
+        let connection = Connection(source: source, peerID: nextPeerID)
+        nextPeerID += 1
         connections[fd] = connection
         source.setEventHandler { [weak self] in self?.readAvailable(fd) }
         source.setCancelHandler { close(fd) }
@@ -118,14 +144,20 @@ final class SocketServer: @unchecked Sendable {
             let line = connection.buffer.prefix(upTo: nl)
             connection.buffer.removeSubrange(...nl)
             guard !line.isEmpty else { continue }
-            onLine(Data(line)) { [weak self] response in
-                self?.queue.async { self?.write(response + Data([0x0A]), to: fd) }
-            }
+            let peerID = connection.peerID
+            onLine(Data(line), Peer(id: peerID) { [weak self] response in
+                self?.queue.async { [weak self] in
+                    self?.write(response + Data([0x0A]), to: fd, peer: peerID)
+                }
+            })
         }
     }
 
-    private func write(_ data: Data, to fd: Int32) {
-        guard connections[fd] != nil else { return }
+    private func write(_ data: Data, to fd: Int32, peer: UInt64) {
+        // The peer check, not just the descriptor: a late reply (an ask
+        // answered after its caller hung up) would otherwise land on whoever
+        // the kernel handed that number to next.
+        guard connections[fd]?.peerID == peer else { return }
         data.withUnsafeBytes { raw in
             var offset = 0
             while offset < raw.count {
@@ -137,7 +169,9 @@ final class SocketServer: @unchecked Sendable {
     }
 
     private func drop(_ fd: Int32) {
-        connections.removeValue(forKey: fd)?.source.cancel()
+        guard let connection = connections.removeValue(forKey: fd) else { return }
+        connection.source.cancel()
+        onClose(connection.peerID)
     }
 
     private static func canConnect(to path: String) -> Bool {

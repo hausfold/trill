@@ -13,6 +13,11 @@ final class AppRuntime {
     private let repository: EventRepository
     private let queue: BannerQueue
     private let actionRouter: ActionRouter
+    /// Who is blocked on a `trill ask` right now. Lives here because it is
+    /// the one thing both ends of that round trip touch: the socket provider
+    /// registers a caller, the action router answers it, and this file is the
+    /// only place that has seen both.
+    private let askBroker: AskBroker
     private let windowSystem: BannerWindowSystem
     /// Drains `delivery: digest` into one card an hour — see DigestScheduler.
     private let digests: DigestScheduler
@@ -47,18 +52,38 @@ final class AppRuntime {
             database: database
         )
 
-        queue = BannerQueue()
+        let queue = BannerQueue()
+        self.queue = queue
         // Quiet hours are read live for the same reason every other rules
         // question is: an edit to rules.json moves the next flush, not the
         // next launch.
         digests = DigestScheduler(quietHours: { watcher.current().quietHours })
+        // Retraction goes through the queue like every other takedown, so a
+        // question whose asker hung up leaves the screen the same way one the
+        // user dismissed does — panels stay disposable, the queue stays the
+        // truth.
+        let askBroker = AskBroker { id in
+            Task { @MainActor in queue.dismiss(id: id) }
+        }
+        self.askBroker = askBroker
         // The router needs the listed apps for the same reason `trill doctor`
         // does: a "Silence Native Banners" click that can't tell which apps it
         // was about must fall back to the ones the rules name, not the Mac.
-        actionRouter = ActionRouter(listedApps: {
-            NotificationSettingsAudit.listedBundleIDs(in: watcher.current())
-        })
+        actionRouter = ActionRouter(
+            listedApps: {
+                NotificationSettingsAudit.listedBundleIDs(in: watcher.current())
+            },
+            askBroker: askBroker
+        )
         windowSystem = BannerWindowSystem(queue: queue, actionRouter: actionRouter)
+        // The other half of the round trip: a banner that goes away without
+        // being answered still owes its caller an exit code. Resolution comes
+        // through here too — `resolve` takes a fin down by dismissing it —
+        // so a question answered by another process unblocks its asker as
+        // surely as one waved away by hand.
+        queue.onDropped = { events in
+            events.forEach { askBroker.abandon(id: $0.id) }
+        }
     }
 
     func start() {
@@ -82,7 +107,7 @@ final class AppRuntime {
             Task { @MainActor in self?.applyPersistence(enabled) }
         }
 
-        deliveryTask = Task { [repository, queue, digests] in
+        deliveryTask = Task { [repository, queue, digests, askBroker] in
             for await delivered in await repository.deliveries() {
                 // Resolution first, and regardless of delivery: an event that
                 // answers a question answers it even when a rule sends the
@@ -91,19 +116,27 @@ final class AppRuntime {
                 queue.resolve(keys: delivered.event.resolves)
                 switch delivered.decision {
                 case .banner:
+                    // Claimed before it is drawn: past this point the ask
+                    // waits on the user for as long as they take, and the
+                    // broker's claim watchdog stands down.
+                    askBroker.claim(id: delivered.event.id)
                     queue.enqueue(delivered.event)
                 case .digest(let name):
                     // Counted now, drawn on the hour. The event itself was
                     // already persisted by the repository — the scheduler
                     // keeps a tally, never a copy.
+                    askBroker.unshown(id: delivered.event.id)
                     digests.accumulate(delivered.event, digest: name)
                 case .inboxOnly, .drop:
-                    break
+                    // A *question* held back this way is one nobody will ever
+                    // see, so its caller is told now rather than left blocked
+                    // on a banner quiet hours already swallowed.
+                    askBroker.unshown(id: delivered.event.id)
                 }
             }
         }
 
-        Task { [repository, rulesWatcher, weak self] in
+        Task { [repository, rulesWatcher, askBroker, weak self] in
             // `trill doctor` with no app list audits whatever the current
             // rules name — read live, so an edited rules.json changes the
             // next audit without a restart.
@@ -118,7 +151,8 @@ final class AppRuntime {
                     Task { @MainActor in
                         done(self?.queue.resolve(keys: keys) ?? 0)
                     }
-                }
+                },
+                askBroker: askBroker
             ))
             // Always probed, regardless of the toggle: Settings gates the
             // toggle itself on Full Disk Access being granted, which it can

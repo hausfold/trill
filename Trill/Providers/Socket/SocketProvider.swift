@@ -11,7 +11,7 @@ struct SocketProvider: NotificationProvider {
     /// One JSON object per line. `v` is the wire version.
     struct Request: Codable, Equatable {
         var v: Int?
-        /// "send" | "ping" | "doctor" | "inbox" | "resolve"
+        /// "send" | "ask" | "ping" | "doctor" | "inbox" | "resolve"
         var verb: String
         var event: NotificationEvent?
         /// resolve: the ids or keys whose banners and fins are answered.
@@ -25,6 +25,14 @@ struct SocketProvider: NotificationProvider {
         /// inbox: show only `ask` events — the kind the ledge parks. This is
         /// the deep link a hot corner (haus's wiring, not trill's) will call.
         var asks: Bool?
+        /// ask: the buttons to draw, in order. The *daemon* turns these into
+        /// actions, so the index a caller is told about is the index it asked
+        /// for — a sender never mints a `reply` action itself.
+        var pills: [String]?
+        /// ask: seconds to wait before answering "nobody said". Absent means
+        /// wait as long as the question stands — an ask parks on the ledge
+        /// rather than expiring, so that is a real option.
+        var timeout: Double?
     }
 
     struct Response: Codable {
@@ -43,6 +51,16 @@ struct SocketProvider: NotificationProvider {
         /// all — the reply then means "can't tell", and `findings` being empty
         /// says nothing. Optional so older CLIs keep parsing.
         var auditUnavailable: String?
+        /// ask only: which pill was pressed, `nil` for every outcome that
+        /// isn't an answer. This is the whole point of the verb — the one
+        /// reply that is written long after the request arrived.
+        var choice: Int?
+        /// ask only: that pill's label, so a caller can read instead of count.
+        var label: String?
+        /// ask only: `answered` · `timeout` · `dismissed` · `canceled` ·
+        /// `dropped` (see `AskBroker.Outcome`). Present even when `choice`
+        /// isn't, because *why* nobody answered is the useful half.
+        var outcome: String?
     }
 
     static func defaultSocketPath() -> String {
@@ -64,17 +82,23 @@ struct SocketProvider: NotificationProvider {
     /// because the answer lives on the main actor and the reply can wait —
     /// the socket writes back whenever the count arrives.
     private let resolve: @Sendable ([String], @escaping @Sendable (Int) -> Void) -> Void
+    /// Where a blocked `trill ask` waits. Injected for the same reason as
+    /// everything else here: the provider owns the wire, not the screen — it
+    /// registers the caller and never learns what became of the banner.
+    private let askBroker: AskBroker
 
     init(
         path: String = SocketProvider.defaultSocketPath(),
         listedApps: @escaping @Sendable () -> [String] = { [] },
         openInbox: @escaping @Sendable (Bool) -> Void = { _ in },
-        resolve: @escaping @Sendable ([String], @escaping @Sendable (Int) -> Void) -> Void = { _, done in done(0) }
+        resolve: @escaping @Sendable ([String], @escaping @Sendable (Int) -> Void) -> Void = { _, done in done(0) },
+        askBroker: AskBroker = AskBroker()
     ) {
         self.path = path
         self.listedApps = listedApps
         self.openInbox = openInbox
         self.resolve = resolve
+        self.askBroker = askBroker
     }
 
     func probe() async -> ProviderHealth {
@@ -95,10 +119,36 @@ struct SocketProvider: NotificationProvider {
             let listedApps = self.listedApps
             let openInbox = self.openInbox
             let resolve = self.resolve
+            let askBroker = self.askBroker
 
-            let server = SocketServer(path: path) { line, reply in
+            let server = SocketServer(path: path) { peer in
+                // The caller hung up. Anything of theirs still on screen is a
+                // question with nobody behind it — end it and take it down.
+                askBroker.cancel(peer: peer)
+            } onLine: { line, peer in
+                let reply = peer.reply
                 let response: Response
                 switch Self.handle(line: line, decoder: decoder) {
+                case .ask(let ask):
+                    // The one verb that does not answer here. The caller stays
+                    // blocked on the wire; the reply is written when a pill is
+                    // pressed, the clock runs out, or the banner goes away.
+                    askBroker.register(
+                        id: ask.event.id, peer: peer.id,
+                        labels: ask.labels, timeout: ask.timeout
+                    ) { answer in
+                        let done = Response(
+                            ok: true, id: ask.event.id, error: nil,
+                            choice: answer.choice, label: answer.label,
+                            outcome: answer.outcome.rawValue
+                        )
+                        // A fresh encoder, like `resolve` below: this runs on
+                        // whatever thread ends the ask, and JSONEncoder isn't
+                        // Sendable.
+                        reply((try? JSONEncoder.trill.encode(done)) ?? Data(#"{"ok":false}"#.utf8))
+                    }
+                    continuation.yield(ask.event)
+                    return
                 case .send(let event):
                     continuation.yield(event)
                     response = Response(ok: true, id: event.id, error: nil)
@@ -168,11 +218,26 @@ struct SocketProvider: NotificationProvider {
 
     enum Handled: Equatable {
         case send(NotificationEvent)
+        case ask(AskRequest)
         case ping
         case doctor(DoctorRequest)
         case inbox(asksOnly: Bool)
         case resolve([String])
         case failure(String)
+    }
+
+    /// A parsed `ask` request: the event to put on screen, already wearing
+    /// the pills as `reply` actions, plus what the answer indices mean and
+    /// how long the caller will wait.
+    ///
+    /// The actions are minted *here*, not by the sender, and that is the
+    /// point: the index the caller is eventually told is the index of the
+    /// label it passed, in the order it passed them. A sender that could
+    /// write its own `reply` targets could ship a banner whose Deny answers 0.
+    struct AskRequest: Equatable, Sendable {
+        var event: NotificationEvent
+        var labels: [String]
+        var timeout: TimeInterval?
     }
 
     /// A parsed `doctor` request: what to audit, and whether to say it out
@@ -204,6 +269,37 @@ struct SocketProvider: NotificationProvider {
                 return .failure("event.title must not be empty")
             }
             return .send(event.normalized())
+        case "ask":
+            guard var event = request.event else { return .failure("ask requires an event") }
+            guard !event.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                return .failure("event.title must not be empty")
+            }
+            let labels = (request.pills ?? [])
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { !$0.isEmpty }
+                .map { String($0.prefix(NotificationEvent.Limits.pillLabel)) }
+            guard !labels.isEmpty else {
+                return .failure("ask requires at least one pill")
+            }
+            guard labels.count <= NotificationEvent.Limits.drawnActions else {
+                return .failure("ask draws at most \(NotificationEvent.Limits.drawnActions) pills")
+            }
+            // The kind is not the caller's to choose: a question that can't
+            // park on the ledge is a question that vanishes with nobody
+            // blocked on it answered — and the ledge only holds asks.
+            event.kind = .ask
+            event.actions = labels.enumerated().map { index, label in
+                .init(id: "ask-\(index)", label: label, kind: .reply, target: String(index))
+            }
+            // A thread would let two questions coalesce into one card, hiding
+            // the pills of whichever lost the face while its caller kept
+            // waiting. Asks stand alone.
+            event.thread = nil
+            return .ask(AskRequest(
+                event: event.normalized(),
+                labels: labels,
+                timeout: request.timeout.flatMap { $0 > 0 ? $0 : nil }
+            ))
         case "doctor":
             // An explicit app list always wins over `--all`; asking for both
             // is a caller being specific, not a caller being ambiguous.
