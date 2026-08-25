@@ -47,3 +47,30 @@ jobs:
             -derivedDataPath DerivedData \
             CODE_SIGNING_ALLOWED=NO \
             build
+
+      # Deliberately NOT passing ENABLE_CODE_COVERAGE=NO above: the point is to
+      # prove the setting in project.pbxproj still holds on a stock `build`.
+      # An instrumented binary is invisible until it runs — the app binary IS
+      # the trill CLI, and LLVM's profile runtime then writes `default.profraw`
+      # into whatever directory it exits in. That put one untracked file in
+      # every agent worktree `holt notify` fired from and made them unreapable.
+      - name: Release build carries no profiling instrumentation
+        run: |
+          bin=DerivedData/Build/Products/Release/Trill.app/Contents/MacOS/Trill
+          # A guard that can't find its subject has failed, not passed.
+          if [ ! -f "$bin" ]; then
+            echo "::error::no executable at $bin — the instrumentation guard had nothing to check."
+            exit 1
+          fi
+          # Buffered, not piped into `grep -q`: Actions runs `run:` under
+          # `bash -eo pipefail`, grep exits on its first match, otool takes a
+          # SIGPIPE, and the pipeline status is 141 — which would read as
+          # "no match" and pass the very build this step exists to catch.
+          load_commands="$(otool -l "$bin")"
+          case "$load_commands" in
+            *__llvm_prf_cnts*)
+              echo "::error::Release binary is coverage-instrumented — it will write default.profraw into the cwd of every process that runs the trill CLI. Restore ENABLE_CODE_COVERAGE = NO in Trill.xcodeproj/project.pbxproj."
+              exit 1
+              ;;
+          esac
+          echo "clean: no __llvm_prf_cnts in $bin"

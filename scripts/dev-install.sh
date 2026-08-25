@@ -86,6 +86,20 @@ say "signing as: $IDENTITY"
 # --- 2. build ----------------------------------------------------------------
 
 say "building Release…"
+
+# ENABLE_CODE_COVERAGE=NO is not belt-and-braces, it is the fix for a bug that
+# ate agent worktrees for weeks. This project ships no *shared* scheme, so
+# `-scheme Trill` resolves the per-user autocreated one, whose coverage default
+# is YES — and that leaks into a plain `build`, not just `test`:
+# CLANG_COVERAGE_MAPPING comes out YES and the Release binary ships
+# __llvm_prf_cnts. The app binary IS the trill CLI, `holt notify` execs it from
+# every agent-pane hook, and the LLVM profile runtime writes `default.profraw`
+# into whatever cwd it exits in — i.e. one untracked file per lane checkout,
+# which `holt reap` then refuses to reap over. `ENABLE_CODE_COVERAGE = NO` in
+# project.pbxproj is the real repair; this flag makes it explicit at the one
+# call site that installs, and the guard below is what notices if either
+# regresses. Coverage stays reachable on demand: `xcodebuild test
+# -enableCodeCoverage YES` overrides both.
 xcodebuild \
   -project "$REPO_ROOT/Trill.xcodeproj" \
   -scheme Trill \
@@ -95,11 +109,39 @@ xcodebuild \
   CODE_SIGN_STYLE=Manual \
   CODE_SIGN_IDENTITY="$IDENTITY" \
   DEVELOPMENT_TEAM="$TEAM_ID" \
+  ENABLE_CODE_COVERAGE=NO \
   OTHER_CODE_SIGN_FLAGS='--timestamp' \
   build | tail -5
 
 BUILT_APP="$DERIVED/Build/Products/Release/Trill.app"
 [[ -d "$BUILT_APP" ]] || die "build produced no app at $BUILT_APP"
+
+# --- 2b. refuse to install a profiling build ---------------------------------
+#
+# The failure this catches is silent by construction: an instrumented Trill
+# behaves identically, and the only symptom is a `default.profraw` appearing in
+# directories nobody built in. Check the Mach-O, not the settings — a section is
+# the thing that actually decides.
+
+# No pipe into `grep -q`: under `set -o pipefail` grep exits on its first match,
+# otool takes a SIGPIPE, and the *pipeline* status is 141 — so a match would
+# read as "no match" and the guard would wave through exactly what it exists to
+# stop. And no `2>/dev/null` swallowing a missing binary into a clean pass: a
+# guard that can't find its subject has failed, not passed.
+BUILT_BIN="$BUILT_APP/Contents/MacOS/Trill"
+[[ -f "$BUILT_BIN" ]] || die "no executable at $BUILT_BIN — the instrumentation guard has nothing to check, which is a failure, not a pass."
+LOAD_COMMANDS="$(otool -l "$BUILT_BIN")" || die "otool could not read $BUILT_BIN"
+
+if [[ "$LOAD_COMMANDS" == *__llvm_prf_cnts* ]]; then
+  die "the build is coverage-instrumented (__llvm_prf_cnts in the binary).
+Installing it would drop a default.profraw in the cwd of every process that
+runs the CLI — including every agent worktree \`holt notify\` fires from, which
+then can't be reaped. Check ENABLE_CODE_COVERAGE is still NO in
+Trill.xcodeproj/project.pbxproj, and that nothing put it back via an xcconfig
+or a shared scheme:
+  xcodebuild -project Trill.xcodeproj -scheme Trill -configuration Release \\
+    -showBuildSettings | grep -E 'ENABLE_CODE_COVERAGE|CLANG_COVERAGE_MAPPING'"
+fi
 
 # --- 3. evict every other copy that claims this bundle id --------------------
 #
