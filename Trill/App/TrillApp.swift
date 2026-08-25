@@ -7,8 +7,13 @@ import SwiftUI
 ///   `trill send --title …`         → a short-lived CLI talking to the
 ///                                    daemon's socket, no NSApplication.
 ///
-/// The `trill` command on PATH is a shim to
-/// `Trill.app/Contents/MacOS/Trill`, installed by the rice.
+/// The `trill` command on PATH is a symlink to
+/// `Trill.app/Contents/MacOS/Trill`. Whoever installed the bundle places it:
+/// `pkgs.trill` ships a `bin/trill`, a desktop links the copy it put at a
+/// fixed path, `scripts/dev-install.sh` links `~/.local/bin/trill` — and for
+/// the sources that run no script at all (a release ZIP dragged to
+/// /Applications), the app places it itself at launch, but only when nothing
+/// else already answers the name. See `SystemIntegration.ensureCLILink`.
 @main
 enum TrillMain {
     static func main() {
@@ -51,6 +56,11 @@ final class TrillAppDelegate: NSObject, NSApplicationDelegate {
         }
         runtime.start()
         installStatusItem()
+
+        // Detached from the launch path on purpose: it shells out to a login
+        // shell to find out what `trill` currently resolves to, and a user's
+        // rc file is not something the menu bar item should wait on.
+        Task { await runtime.settings.refreshCLILink() }
 
         // Only ever set by the Full Disk Access assistant, so a launch that
         // sees it is the relaunch straight out of Apple's "Quit & Reopen" —

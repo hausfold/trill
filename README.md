@@ -104,6 +104,32 @@ pounce/perch      │             │ EventKit push   │ read-only, schema-prob
           BannerWindowSystem (NSPanel per card · stacked · all Spaces · over fullscreen)
 ```
 
+## getting `trill`
+
+The app **is** the CLI — one signed binary inside `Trill.app` serves both the
+daemon and every verb — so all it takes is a symlink under a name a shell can
+find. Whoever installs the bundle places it:
+
+| install | who puts `trill` on PATH |
+|---|---|
+| Nix (`pkgs.trill`, this flake's overlay) | the package's own `bin/trill` |
+| a desktop that copies the bundle to a fixed path | its own link at that copy (haus's trill room) |
+| `scripts/dev-install.sh` (building from this checkout) | a link in a directory of yours already on PATH |
+| the release ZIP, dragged to /Applications | **the app itself**, at first launch |
+
+The last two pick the directory from your login shell's own `PATH` rather than
+assuming one: `~/.local/bin` is the conventional answer and is on nobody's PATH
+by default on macOS, so hardcoding it writes a file that exists and a command
+that never runs. Nix-managed bins are skipped even when they *are* on PATH — a
+link written there is gone at the next rebuild.
+
+The app's own turn is deliberately timid: it places the link only when nothing
+else already answers `trill`, never replaces a real file sitting on the name,
+and never claims the name from a Debug build. Switch it off with
+`"cliLink": false` in `~/.config/trill/config.json`, or in Settings ▸ General —
+which also tells you what `trill` resolves to right now, and says so plainly
+when the link is placed but its directory is on no PATH.
+
 ## quick taste
 
 ```sh

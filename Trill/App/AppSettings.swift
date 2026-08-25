@@ -92,6 +92,26 @@ final class AppSettings: ObservableObject {
         }
     }
 
+    /// Whether trill puts a `trill` shim on PATH when nothing else has.
+    @Published var cliLink: Bool {
+        didSet {
+            guard !isApplyingFileChange, cliLink != oldValue else { return }
+            guard commit(\.cliLink, cliLink, revert: { self.cliLink = oldValue })
+            else { return }
+            // Turning it off deliberately does NOT remove a link already
+            // placed: the switch decides whether trill *installs* the shim,
+            // and silently breaking a `trill` that other scripts already call
+            // is a bigger surprise than leaving a symlink behind. Settings
+            // says so, and the path is right there to delete.
+            Task { await refreshCLILink() }
+        }
+    }
+
+    /// What `trill` resolves to right now — recomputed at launch and whenever
+    /// the switch moves, because a *link* and a working *command* are not the
+    /// same claim (see `SystemIntegration.CLILinkState`).
+    @Published private(set) var cliLinkState: SystemIntegration.CLILinkState = .off
+
     /// Why the last write didn't land, if it didn't. Settings shows it rather
     /// than leaving a switch that moved over a file that didn't.
     @Published private(set) var writeError: String?
@@ -148,6 +168,7 @@ final class AppSettings: ObservableObject {
         catchUpCard = config.catchUpCard
         calendarEnabled = config.calendarEnabled
         calendarLeadMinutes = config.calendarLeadMinutes
+        cliLink = config.cliLink
         reopenSettingsOnLaunch = defaults.bool(forKey: Keys.reopenSettingsOnLaunch)
 
         store.start { [weak self] config in
@@ -175,7 +196,12 @@ final class AppSettings: ObservableObject {
         catchUpCard = config.catchUpCard
         calendarEnabled = config.calendarEnabled
         calendarLeadMinutes = config.calendarLeadMinutes
+        let cliLinkTurnedOn = config.cliLink && !cliLink
+        cliLink = config.cliLink
         writeError = nil
+        // The file is the truth here too: typing `"cliLink": true` has to
+        // place the shim, exactly as clicking the switch does.
+        if cliLinkTurnedOn { Task { await refreshCLILink() } }
         if calendarTurnedOn, CalendarProvider.authorization == .notDetermined {
             Task { await CalendarProvider.requestAccess() }
         }
@@ -188,6 +214,12 @@ final class AppSettings: ObservableObject {
                 SystemIntegration.unregisterLoginItem()
             }
         }
+    }
+
+    /// Place the `trill` shim if it's wanted and nothing else has, then
+    /// record what a shell would actually resolve. Safe to call repeatedly.
+    func refreshCLILink() async {
+        cliLinkState = await SystemIntegration.ensureCLILink(enabled: cliLink)
     }
 
     /// Write one change through to the file. On failure the published value

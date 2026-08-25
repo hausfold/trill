@@ -40,6 +40,11 @@ struct AppConfig: Equatable, Sendable {
     /// Reading your calendar is a TCC grant and a real read of personal data.
     /// Opt-in, and nothing asks macOS for it until this is on.
     var calendarEnabled = false
+    /// On by default: the app binary is also the `trill` command, and a
+    /// compositor you can't script from a shell is half the product. trill
+    /// only ever places the link when nothing else already answers `trill` —
+    /// see `SystemIntegration.ensureCLILink`.
+    var cliLink = true
     /// How long before a meeting its banner is drawn. Ten minutes is the
     /// default because it is the one everybody's calendar app already uses;
     /// it is a number rather than a switch because "enough time to walk
@@ -58,6 +63,7 @@ struct AppConfig: Equatable, Sendable {
         static let catchUpCard = "catchUpCard"
         static let calendar = "calendar"
         static let calendarLeadMinutes = "calendarLeadMinutes"
+        static let cliLink = "cliLink"
     }
 
     /// What a lead time may be. Zero is legitimate ("tell me when it starts");
@@ -79,6 +85,7 @@ struct AppConfig: Equatable, Sendable {
         if let value = json[Key.shyWhenWatched] as? Bool { shyWhenWatched = value }
         if let value = json[Key.catchUpCard] as? Bool { catchUpCard = value }
         if let value = json[Key.calendar] as? Bool { calendarEnabled = value }
+        if let value = json[Key.cliLink] as? Bool { cliLink = value }
         // Clamped rather than refused: a file is a place people typo, and the
         // honest recovery for "600000" is the nearest legal lead, not a
         // silently ignored key.
@@ -100,6 +107,7 @@ struct AppConfig: Equatable, Sendable {
             Key.catchUpCard: catchUpCard,
             Key.calendar: calendarEnabled,
             Key.calendarLeadMinutes: calendarLeadMinutes,
+            Key.cliLink: cliLink,
         ]
     }
 }

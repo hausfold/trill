@@ -206,6 +206,75 @@ if [[ -n "$REPO_ROOT" && -d "$REPO_ROOT/build" ]]; then
   rm -rf "${REPO_ROOT:?}/build"
 fi
 
+# --- 4c. put `trill` on PATH -------------------------------------------------
+#
+# The app binary IS the CLI, and until this line nothing ever gave it a name a
+# shell could find: every install source dropped a bundle and stopped there, so
+# `trill send` failed on a Mac with trill running in the menu bar. Callers
+# papered over it by hunting for the bundle themselves (`holt notify` still
+# carries that fallback list), which is fine for one Go program and hopeless as
+# an instruction to anybody else.
+#
+# A symlink, not a copy: the executable is signed and notarized as part of the
+# bundle, and a copy outside it is nested code torn out of that seal.
+#
+# NOT /usr/local/bin: this script must never need sudo. And not a fixed
+# ~/.local/bin either — that is the conventional answer and it is on nobody's
+# PATH by default on macOS, so hardcoding it writes a file that exists and a
+# command that never runs. Pick a directory of the user's that their LOGIN
+# shell already names, and only fall back to ~/.local/bin when there is none —
+# saying so, rather than reporting a link as an install.
+#
+# Nix-managed bins are excluded even when they are on PATH: a link written into
+# /etc/profiles/per-user/… or the store is gone at the next rebuild.
+#
+# The same rule, in Swift, is SystemIntegration.cliLinkDirectory — the app
+# repeats this at launch for the install sources that run no script at all (a
+# release ZIP dragged to /Applications, a future cask). The Nix path comes
+# through neither: `pkgs.trill` ships its own bin/trill (nix/package.nix) and
+# haus's room links the copy it places.
+
+CLI_TARGET="$INSTALL_PATH/Contents/MacOS/Trill"
+
+# Ask the LOGIN shell, not this one: this script may itself have been run from
+# somewhere with a fuller PATH, and the profile is where PATH is assembled.
+LOGIN_PATH="$("${SHELL:-/bin/zsh}" -l -c 'echo $PATH' 2>/dev/null || true)"
+
+CLI_DIR=""
+for candidate in "$HOME/.local/bin" "$HOME/bin"; do
+  case ":$LOGIN_PATH:" in *":$candidate:"*) CLI_DIR="$candidate"; break ;; esac
+done
+if [[ -z "$CLI_DIR" ]]; then
+  # First home-owned, non-nix entry on the real PATH, whatever it is called.
+  while IFS= read -r entry; do
+    [[ "$entry" == "$HOME/"* ]] || continue
+    case "$entry" in /nix/store/*|/etc/profiles/*|/run/current-system/*) continue ;; esac
+    CLI_DIR="$entry"; break
+  done < <(printf '%s' "$LOGIN_PATH" | tr ':' '\n')
+fi
+ON_PATH=1
+if [[ -z "$CLI_DIR" ]]; then
+  CLI_DIR="$HOME/.local/bin"
+  ON_PATH=0
+fi
+CLI_LINK="$CLI_DIR/trill"
+
+if [[ -e "$CLI_LINK" && ! -L "$CLI_LINK" ]]; then
+  say "leaving $CLI_LINK alone — it is a real file, not our symlink"
+else
+  mkdir -p "$CLI_DIR"
+  ln -sfn "$CLI_TARGET" "$CLI_LINK"
+  say "linked $CLI_LINK → $CLI_TARGET"
+fi
+
+RESOLVED=""
+if (( ON_PATH )); then
+  RESOLVED="$("${SHELL:-/bin/zsh}" -l -c 'command -v trill' 2>/dev/null || true)"
+else
+  printf '\033[1;33mnote:\033[0m %s\n' "$CLI_DIR is not on your login shell's PATH, so \`trill\` still won't resolve.
+      Add it:  export PATH=\"$CLI_DIR:\$PATH\""
+fi
+
 # --- 5. optional: clear the un-matchable TCC rows ----------------------------
 
 if (( RESET_PERMISSIONS )); then
@@ -222,6 +291,7 @@ open "$INSTALL_PATH"
 cat <<EOF
 
 Installed: $INSTALL_PATH  (Team $ACTUAL_TEAM)
+CLI:       $CLI_LINK${RESOLVED:+  (resolves: $RESOLVED)}
 
 Full Disk Access, once:
   Trill menu bar → Settings… → Unlock System Mirror…

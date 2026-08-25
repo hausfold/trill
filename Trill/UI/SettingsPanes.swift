@@ -117,8 +117,20 @@ struct GeneralPane: View {
                         .labelsHidden()
                         .toggleStyle(.switch)
                 }
+                SettingsDivider()
+                SettingsRow(
+                    symbol: "terminal",
+                    title: "Put `trill` on PATH",
+                    subtitle: "The app is also the command line tool. trill links it into a directory of yours that is already on PATH — unless something else already answers `trill`, which it never overwrites."
+                ) {
+                    Toggle("Put trill on PATH", isOn: $settings.cliLink)
+                        .labelsHidden()
+                        .toggleStyle(.switch)
+                }
             }
             .disabled(settings.isManagedExternally)
+
+            CLILinkNote(state: settings.cliLinkState)
 
             ScreenWatchNote()
 
@@ -132,6 +144,47 @@ struct GeneralPane: View {
                 """
             )
         }
+    }
+}
+
+/// Where `trill` actually resolves — the half a toggle can't tell you.
+///
+/// A symlink in a directory nobody's PATH names is a file that exists and a
+/// command that doesn't run, and reporting the first as if it were the second
+/// is the same shape of lie as `doctor` exiting 0 while it's blind. So this
+/// says which of the two happened, and when it's the useless one it says the
+/// line to add.
+struct CLILinkNote: View {
+    let state: SystemIntegration.CLILinkState
+
+    var body: some View {
+        switch state {
+        case .off:
+            EmptyView()
+        case .managed(let path):
+            note("`trill` is already installed by something else — \(path). trill left it alone.", symbol: "checkmark.circle", tint: .secondary)
+        case .linked(let path):
+            note("`trill` resolves to \(path).", symbol: "checkmark.circle", tint: .green)
+        case .linkedNotOnPath(let path):
+            let directory = (path as NSString).deletingLastPathComponent
+            note("Linked at \(path), but \(directory) is on no PATH your login shell has, so `trill` still won't run. Add it:  export PATH=\"\(directory):$PATH\"", symbol: "exclamationmark.triangle", tint: .orange)
+        case .blocked(let reason):
+            note(reason, symbol: "exclamationmark.triangle", tint: .orange)
+        }
+    }
+
+    private func note(_ text: String, symbol: String, tint: Color) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 7) {
+            Image(systemName: symbol)
+                .font(.system(size: 12))
+                .foregroundStyle(tint)
+            Text(text)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 4)
     }
 }
 

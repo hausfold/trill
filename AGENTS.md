@@ -22,6 +22,7 @@ it's launched, themed at the source, or packaged.
 | the trill app (compositor, providers, rules, CLI, inbox) | **you are here** |
 | which calendars sync to this Mac at all | Apple's Calendar / Internet Accounts — trill only *reads* what EventKit already has |
 | how trill is *installed* on the system (flake wiring, launchd) | `haus` (the layer) |
+| whether `trill` resolves on PATH | **shared, by install source** — `nix/package.nix` ships `bin/trill`, `scripts/dev-install.sh` links `~/.local/bin/trill`, haus links the copy it places, and the app itself covers a dragged-out ZIP (`SystemIntegration.ensureCLILink`). Change the one that matches the source you're fixing, and keep the README's table honest |
 | the palette trill is themed with (source hex) | `nebelung` |
 | DND / Focus toggling ("Hush") | `haus` (the layer) — trill only deep-links there |
 | the tunnel fronting the GitHub bridge (cloudflared, DNS, the org webhook) | `haus` (the layer) — trill only listens on localhost |
