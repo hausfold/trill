@@ -79,11 +79,26 @@ final class LedgePanelController {
         // A shadow under the 8pt fin reads as grime on the screen edge; the
         // slid-out card gets the same complete shadow every banner carries.
         panel.hasShadow = entry.expanded
-        // The fin↔card swap animates as a slide out of (and back into) the
-        // edge: the right edge of the frame never moves and the view aligns
-        // trailing, so the card appears to grow leftward from its fin.
-        PanelMotion.move(panel, to: frame) { [weak panel] in
-            panel?.invalidateShadow()
+        // The fin↔card swap (a size change) lands the window instantly:
+        // animating the frame under the pointer rebuilds the tracking area
+        // every tick, which fires enter/exit pairs — the queue expands and
+        // collapses in a loop and the fin flickers instead of opening. The
+        // slide out of the edge is the *view's* job (`LedgeItemView`'s
+        // trailing transition), inside a panel already at its final frame.
+        // Only same-size slot moves — which no pointer is riding — animate
+        // at the window layer.
+        if frame.size == panel.frame.size {
+            PanelMotion.move(panel, to: frame) { [weak panel] in
+                panel?.invalidateShadow()
+            }
+        } else {
+            panel.setFrame(frame, display: true)
+            panel.invalidateShadow()
+            // Reshape the shadow again once the card's slide has landed.
+            Task { [weak panel] in
+                try? await Task.sleep(for: .milliseconds(250))
+                panel?.invalidateShadow()
+            }
         }
     }
 

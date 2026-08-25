@@ -108,10 +108,19 @@ final class BannerPanelController {
             onAction: onAction,
             onActivateFolded: onActivateFolded
         ))
-        // A restack, a fold opening, a neighbor's slot freeing up — all the
-        // same short slide. The shadow is re-shaped once the frame lands.
-        PanelMotion.move(panel, to: frame) { [weak panel] in
-            panel?.invalidateShadow()
+        // Same-size moves — a restack after a neighbor left, a slot shifting
+        // under an expanded fold — slide. Size changes land instantly: they
+        // are hover-driven (the fold opening under the pointer), and
+        // animating the frame there rebuilds the tracking area every tick,
+        // firing enter/exit pairs that collapse the very fold the hover
+        // opened. The ledge fin learned this the hard way.
+        if frame.size == panel.frame.size {
+            PanelMotion.move(panel, to: frame) { [weak panel] in
+                panel?.invalidateShadow()
+            }
+        } else {
+            panel.setFrame(frame, display: true)
+            panel.invalidateShadow()
         }
     }
 
