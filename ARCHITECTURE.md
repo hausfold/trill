@@ -38,7 +38,7 @@ usernoted db2 ──read-only──► SystemMirrorProvider   normalize · dedup
               ┌───────────────────────┼─────────────────────┐
               ▼                       ▼                     ▼
         BannerQueue             inbox (sqlite)        digests (M2)
- coalesce · pause/expand · capacity   │
+ coalesce · pause/expand · capacity · park │
               ▼                       ▼
       BannerWindowSystem          InboxView
    NSPanel per banner · all Spaces · fullscreen aux
@@ -59,9 +59,9 @@ socket server cuts any peer that streams a megabyte without a newline.
 ### Display topology changes mid-burst
 
 `BannerWindowSystem` rebuilds panels on
-`didChangeScreenParametersNotification` (perch's pattern). Because visible
-and waiting entries live in `BannerQueue`, a rebuild is pure
-re-presentation. Capacity shrink pushes overflow back into the waiting line
+`didChangeScreenParametersNotification` (perch's pattern). Because visible,
+waiting and parked entries all live in `BannerQueue`, a rebuild is pure
+re-presentation — the ledge's fins are torn down and redrawn like banners. Capacity shrink pushes overflow back into the waiting line
 — covered by unit test, no display required, thanks to the pure
 `ScreenDescriptor`/`BannerGeometry` split.
 
@@ -150,6 +150,13 @@ pressable: it stands for several events, so there is no one thing to do.
 
 Three more consequences worth knowing:
 
+- **An unattended ask parks; everything else expires.** The dismiss timer
+  lands on `BannerQueue.expire`, not `dismiss`: an `ask` whose clock runs
+  out moves to the `parked` bucket and renders as a slim fin on the right
+  screen edge (`BannerGeometry.Ledge`, `LedgePanelController`) until it's
+  answered, dismissed, or evicted by a sixth ask. Only the clock parks — a
+  user's own dismissal means they saw it. Hovering a fin is queue state too
+  (`setParkedHover`), so the slid-out card survives rebuilds like any panel.
 - **Which banner is hovered is queue state, not panel state.** Expanding one
   card re-lays every card beneath it, so the render pass has to see it —
   `BannerQueue` holds a `hoveredID` (an id, not a bool) and stamps

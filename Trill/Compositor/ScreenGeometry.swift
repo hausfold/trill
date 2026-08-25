@@ -287,6 +287,63 @@ enum BannerGeometry {
         return frames
     }
 
+    /// Where parked asks live: slim kind-hued fins hugging the right screen
+    /// edge, the group vertically centered — deliberately away from the
+    /// banner stack's corner, so a fin never reads as a banner that failed
+    /// to draw. Pure like everything else here; the window system feeds it
+    /// a descriptor and a count and gets frames back.
+    enum Ledge {
+        /// One fin. Slim enough to read as edge furniture, tall enough to
+        /// hit — and the screen edge itself makes the target effectively
+        /// infinite in x, the hot-corner trick.
+        static let finSize = CGSize(width: 8, height: 56)
+        static let finGap: CGFloat = 10
+
+        /// Frames for `count` fins, index-aligned with `BannerQueue.parked`
+        /// (oldest first, reading top to bottom), flush to the visible
+        /// frame's right edge and centered as a group on its vertical
+        /// middle. Clamped into the frame rather than trusting that
+        /// `BannerQueue.parkedCapacity` fins always fit — a constant
+        /// defined elsewhere is not a proof.
+        static func finFrames(on screen: ScreenDescriptor, count: Int) -> [CGRect] {
+            guard count > 0 else { return [] }
+            let visible = screen.visibleFrame
+            let total = CGFloat(count) * finSize.height + CGFloat(count - 1) * finGap
+            let top = min(max(visible.midY + total / 2, visible.minY + total), visible.maxY)
+            return (0..<count).map { index in
+                CGRect(
+                    x: visible.maxX - finSize.width,
+                    y: top - finSize.height - CGFloat(index) * (finSize.height + finGap),
+                    width: finSize.width,
+                    height: finSize.height
+                )
+            }
+        }
+
+        /// The full card a hovered fin slides out into. Flush to the screen
+        /// edge — not inset like the stack — because the pointer that opened
+        /// it is *at* the edge, and a gap between card and edge would put
+        /// that pointer outside the card, collapsing it in the same breath
+        /// it opened. Vertically centered on its fin, clamped inside the
+        /// visible frame.
+        static func cardFrame(
+            finFrame: CGRect,
+            cardSize: CGSize,
+            on screen: ScreenDescriptor
+        ) -> CGRect {
+            let visible = screen.visibleFrame
+            var y = finFrame.midY - cardSize.height / 2
+            y = min(y, visible.maxY - inset - cardSize.height)
+            y = max(y, visible.minY + inset)
+            return CGRect(
+                x: visible.maxX - cardSize.width,
+                y: y,
+                width: cardSize.width,
+                height: cardSize.height
+            )
+        }
+    }
+
     /// Frame for the banner at `index` (0 = topmost) in a stack of uniform
     /// cards. Returns nil when the slot would leave the visible frame.
     static func slotFrame(

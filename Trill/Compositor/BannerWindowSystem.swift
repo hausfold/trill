@@ -18,6 +18,9 @@ final class BannerWindowSystem {
         queue.onVisibleChanged = { [weak self] entries in
             self?.render(entries)
         }
+        queue.onParkedChanged = { [weak self] entries in
+            self?.renderLedge(entries)
+        }
     }
 
     func start() {
@@ -32,8 +35,11 @@ final class BannerWindowSystem {
                 // Tear down and re-render from queue state on the new topology.
                 self.panels.values.forEach { $0.close() }
                 self.panels.removeAll()
+                self.ledgePanels.values.forEach { $0.close() }
+                self.ledgePanels.removeAll()
                 self.syncCapacity()
                 self.render(self.queue.visible)
+                self.renderLedge(self.queue.parked)
             }
         }
     }
@@ -45,9 +51,12 @@ final class BannerWindowSystem {
         screenObserver = nil
         panels.values.forEach { $0.close() }
         panels.removeAll()
+        ledgePanels.values.forEach { $0.close() }
+        ledgePanels.removeAll()
         overflowBadge?.close()
         overflowBadge = nil
         queue.onVisibleChanged = nil
+        queue.onParkedChanged = nil
     }
 
     /// Banners live on the screen with the menu bar (`NSScreen.screens
@@ -207,6 +216,75 @@ final class BannerWindowSystem {
         }
 
         renderOverflowBadge(under: frames, on: screen)
+    }
+
+    /// The ledge: one fin panel per parked ask, hugging the right screen
+    /// edge. Same shape as `render` — close what left, create/update what
+    /// stayed — and the same truth: `queue.parked` decides everything,
+    /// including which single entry is slid out (`entry.expanded`).
+    private var ledgePanels: [String: LedgePanelController] = [:]
+
+    private func renderLedge(_ entries: [BannerQueue.Entry]) {
+        guard let screen = targetScreen, !entries.isEmpty else {
+            ledgePanels.values.forEach { $0.close() }
+            ledgePanels.removeAll()
+            return
+        }
+
+        let liveIDs = Set(entries.map(\.id))
+        for (id, panel) in ledgePanels where !liveIDs.contains(id) {
+            panel.close()
+            ledgePanels.removeValue(forKey: id)
+        }
+
+        let fins = BannerGeometry.Ledge.finFrames(on: screen, count: entries.count)
+        for (index, entry) in entries.enumerated() {
+            let frame: CGRect
+            if entry.expanded {
+                // The same arithmetic `BannerView` sizes itself with —
+                // maxRows 0, matching the view's fold-less parked card.
+                let cardSize = BannerGeometry.cardSize(
+                    foldedCount: entry.coalescedCount,
+                    expanded: entry.expanded,
+                    maxRows: 0,
+                    actionCount: entry.event.pillActions.count
+                )
+                frame = BannerGeometry.Ledge.cardFrame(
+                    finFrame: fins[index], cardSize: cardSize, on: screen
+                )
+            } else {
+                frame = fins[index]
+            }
+
+            let hover: (Bool) -> Void = { [weak self] hovering in
+                self?.queue.setParkedHover(hovering, id: entry.id)
+            }
+            let dismiss: () -> Void = { [weak self] in
+                self?.queue.dismiss(id: entry.id)
+            }
+            let activate: () -> Void = { [weak self] in
+                self?.actionRouter.performDefault(for: entry.event)
+                self?.queue.dismiss(id: entry.id)
+            }
+            // Any pill answers the parked question, same as on a banner.
+            let action: (NotificationEvent.Action) -> Void = { [weak self] chosen in
+                self?.actionRouter.perform(chosen, for: entry.event)
+                self?.queue.dismiss(id: entry.id)
+            }
+            if let existing = ledgePanels[entry.id] {
+                existing.update(
+                    entry: entry, frame: frame,
+                    onHover: hover, onDismiss: dismiss,
+                    onActivate: activate, onAction: action
+                )
+            } else {
+                ledgePanels[entry.id] = LedgePanelController(
+                    entry: entry, frame: frame,
+                    onHover: hover, onDismiss: dismiss,
+                    onActivate: activate, onAction: action
+                )
+            }
+        }
     }
 
     /// The queue can hold more than the display fits, and until now that was

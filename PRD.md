@@ -50,6 +50,21 @@ Notification Center with perfect compatibility."
 - Screen-true capacity (the `min(3)` clamp is gone), 8pt gaps instead of
   the 6pt lap, urgency-ordered waiting line, overflow badge.
 
+### M1.6 — the Ledge (unattended asks)
+
+- An `ask` banner whose dismiss clock runs out parks instead of vanishing:
+  a slim kind-hued fin flush to the right screen edge, the group vertically
+  centered, zero motion while parked. Hovering a fin slides the full card
+  back out — pills live — and answering or dismissing removes it. A user's
+  own dismissal never parks; only the clock does.
+- At most 5 park; a sixth evicts the oldest (it survives in the inbox like
+  every delivered event). Parked state is a third bucket in `BannerQueue`
+  beside visible/waiting — fins are disposable panels rebuilt from it on
+  every topology change.
+- `trill inbox [--asks]` opens the inbox window over the socket, optionally
+  filtered to `ask` events — the deep link a hot corner (haus's wiring, not
+  trill's) calls.
+
 ### M2 — rules that earn the name
 
 Digest flushing on schedule, per-source styling hooks, `trill history
@@ -119,7 +134,14 @@ retry/logs — capability-advertised per provider, never generic promises.
     wrote the setting.
 14. Switch an app's "Allow notifications" off entirely: `trill doctor` stops
     naming it, even though its Desktop and sound bits are still set.
-15. Send three events from three different `--source`s: three cards flush to
+15. Send `trill send --title "lane blocked" --kind ask --action
+    "Open=https://…"` and let the banner time out: a slim fin appears
+    mid-right on the screen edge, motionless. Hover it: the full card
+    slides out with its pills live; click a pill — the fin is gone. Send
+    six asks and let them all park: five fins, and the first ask is only
+    in the inbox (`trill inbox --asks` opens it filtered). A `note` timing
+    out parks nothing.
+16. Send three events from three different `--source`s: three cards flush to
     the same right edge, 8pt apart, each with its own complete shadow, all
     three fully readable. Keep sending: cards keep stacking until the screen
     is out of room, and only then does the queue hold events back — with a

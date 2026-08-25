@@ -13,7 +13,7 @@ import Foundation
 /// One JSON line out, one JSON line back, exit code says what happened:
 /// 0 ok · 1 bad usage · 2 daemon unreachable · 3 daemon refused.
 enum TrillCLI {
-    static let subcommands: Set<String> = ["send", "ping", "doctor", "help", "--help", "-h"]
+    static let subcommands: Set<String> = ["send", "ping", "doctor", "inbox", "help", "--help", "-h"]
 
     static func run(arguments: [String]) -> Int32 {
         switch arguments.first {
@@ -25,6 +25,14 @@ enum TrillCLI {
                 return roundTrip(invocation.request) { response in
                     renderDoctor(response, json: invocation.json)
                 }
+            case .failure(let message):
+                FileHandle.standardError.write(Data("trill: \(message)\n".utf8))
+                return 1
+            }
+        case "inbox":
+            switch parseInbox(Array(arguments.dropFirst())) {
+            case .success(let request):
+                return roundTrip(request)
             case .failure(let message):
                 FileHandle.standardError.write(Data("trill: \(message)\n".utf8))
                 return 1
@@ -131,6 +139,29 @@ enum TrillCLI {
             kind: kind ?? (urgency == .critical ? .fault : .note),
             urgency: urgency, privacy: privacy,
             actions: actions
+        ))
+    }
+
+    // MARK: - inbox
+
+    enum InboxParseResult: Equatable {
+        case success(SocketProvider.Request)
+        case failure(String)
+    }
+
+    /// `trill inbox [--asks]` — ask the daemon to open the inbox window,
+    /// optionally filtered to `ask` events (the kind the ledge parks). The
+    /// hook a hot corner or a keybind calls; the corner itself is haus's.
+    static func parseInbox(_ args: [String]) -> InboxParseResult {
+        var asks = false
+        for arg in args {
+            switch arg {
+            case "--asks": asks = true
+            default: return .failure("unknown flag '\(arg)' (see `trill help`)")
+            }
+        }
+        return .success(SocketProvider.Request(
+            v: 1, verb: "inbox", event: nil, asks: asks ? true : nil
         ))
     }
 
@@ -318,6 +349,7 @@ enum TrillCLI {
       trill send --json          # full NotificationEvent JSON on stdin
       trill ping                 # is the daemon up?
       trill doctor [--all] [--notify] [--json] [BUNDLE_ID …]
+      trill inbox [--asks]       # open the inbox window (--asks: asks only)
       trill help
 
     --kind says what the event asks of the reader and colors the banner:
@@ -325,6 +357,11 @@ enum TrillCLI {
     · done (finished well) · note (fyi, the default). Unlabeled critical
     events render as fault. --urgency stays the loudness: low dims, critical
     bolds — still silent.
+
+    An ask whose banner times out unattended doesn't vanish: it parks as a
+    slim fin on the right screen edge until you answer or dismiss it. Hover
+    the fin to slide the card back out. At most 5 park; older asks yield
+    (they stay in the inbox — `trill inbox --asks` lists them).
 
     --action adds a button (up to 3 drawn; the first is also what clicking
     the banner body does). --url is shorthand for --action "Open=URL".
