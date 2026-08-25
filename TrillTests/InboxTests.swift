@@ -239,7 +239,7 @@ final class InboxTests: XCTestCase {
         let (database, directory) = try temporaryDatabase()
         defer { try? FileManager.default.removeItem(at: directory) }
 
-        database.insert(event(id: "shown", at: 30), decision: .banner, now: at(30))
+        database.insert(event(id: "shown", at: 30), decision: .banner(.primary), now: at(30))
         database.insert(event(id: "quiet", at: 20), decision: .inboxOnly, now: at(20))
         database.insert(event(id: "counted", at: 10), decision: .digest("work"), now: at(10))
 

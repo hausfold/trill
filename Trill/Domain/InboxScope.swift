@@ -14,6 +14,9 @@ enum InboxScope: Equatable, Sendable {
     /// Exactly what one digest card counted: the digest's name, and the
     /// instant its window opened.
     case digest(name: String, since: Date)
+    /// Everything stored since an instant — what a catch-up card's click
+    /// opens, scoped to the absence it counted.
+    case since(Date)
 
     /// Longest name an action target may carry. A digest name comes from the
     /// user's own `rules.json`, so this is a sanity bound rather than a
@@ -27,7 +30,22 @@ enum InboxScope: Equatable, Sendable {
         case .asks: "asks"
         case .digest(let name, let since):
             "digest:\(name)@\(Int(since.timeIntervalSince1970))"
+        case .since(let instant):
+            "since:\(Int(instant.timeIntervalSince1970))"
         }
+    }
+
+    /// Does this window open filtered to what trill never showed you?
+    ///
+    /// Only the catch-up scope, and only because its card counted exactly
+    /// that: a click that landed on a longer list than the number it came
+    /// from would make the number look wrong. It is the *initial* state of a
+    /// toggle the user still owns, not a filter baked into the query —
+    /// turning it off widens to everything the window covers, which is the
+    /// natural next question.
+    var opensUnreadOnly: Bool {
+        if case .since = self { return true }
+        return false
     }
 
     /// Parse an action target back into a scope. `nil` — an `open_inbox`
@@ -44,6 +62,9 @@ enum InboxScope: Equatable, Sendable {
             self = .all
         case "asks":
             self = .asks
+        case let target where target.hasPrefix("since:"):
+            guard let seconds = TimeInterval(target.dropFirst("since:".count)) else { return nil }
+            self = .since(Date(timeIntervalSince1970: seconds))
         default:
             // `digest:<name>@<epoch seconds>`. Split at the *last* `@` so a
             // name containing one survives the round trip.

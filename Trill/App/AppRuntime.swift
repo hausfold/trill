@@ -21,6 +21,10 @@ final class AppRuntime {
     private let windowSystem: BannerWindowSystem
     /// Drains `delivery: digest` into one card an hour — see DigestScheduler.
     private let digests: DigestScheduler
+    /// Turns "you're back" into one card — see CatchUpReporter. Fed by
+    /// `PresenceSentinel`, which is also what tells the repository whether a
+    /// banner was drawn at anybody.
+    private let catchUp: CatchUpReporter
     private var deliveryTask: Task<Void, Never>?
     private var rulesWatcher: RulesWatcher
     /// Follows `persistHistory` — see `applyPersistence`.
@@ -55,10 +59,21 @@ final class AppRuntime {
         // rules.json applies to the very next notification.
         let watcher = RulesWatcher(file: AppPaths.rulesFile)
         rulesWatcher = watcher
+        // The presence flag is read once per event, off the main actor: a
+        // banner drawn at a locked screen is recorded unread, which is what
+        // makes both the inbox's count and the catch-up card's tally mean
+        // "trill never put this in front of you".
+        let presence = PresenceSentinel.shared.flag
         repository = EventRepository(
             policy: { PolicyEngine(ruleSet: watcher.current()) },
-            database: database
+            database: database,
+            presence: { presence.isPresent }
         )
+        // Read live, so a switch flipped in Settings — or typed into
+        // config.json — applies to the next absence rather than the next
+        // launch. Where it reads history from is wired in `start()`, along
+        // with where its card goes.
+        catchUp = CatchUpReporter(enabled: { ConfigFileStore.shared.current().catchUpCard })
 
         let queue = BannerQueue()
         self.queue = queue
@@ -104,6 +119,20 @@ final class AppRuntime {
         actionRouter.openInbox = { [weak self] scope in self?.onOpenInbox?(scope) }
         digests.onCard = { [queue] card in queue.enqueue(card) }
         digests.start()
+
+        // The other composed-by-trill card, and the same rule: straight to
+        // the queue, never back through the repository. `self.database` is
+        // read at call time rather than captured, because the setting behind
+        // it is live (`applyPersistence`).
+        catchUp.database = { [weak self] in self?.database }
+        catchUp.onCard = { [queue] card in queue.enqueue(card) }
+        // Presence is started *after* the reporter is wired: the launch is
+        // itself a signal, and on a Mac that was locked when trill last quit
+        // it can hand back a window on the spot.
+        PresenceSentinel.shared.onReturn = { [weak self] window in
+            self?.catchUp.report(returned: window)
+        }
+        PresenceSentinel.shared.start()
 
         // The file is the truth for this one too, and it is the setting where
         // that matters most: switching history off — in Settings or by typing
@@ -212,6 +241,9 @@ final class AppRuntime {
     }
 
     func stop() {
+        // Stamps the departure as it goes, so a Mac locked at 23:00 that
+        // reboots overnight still opens tomorrow's window at 23:00.
+        PresenceSentinel.shared.stop()
         deliveryTask?.cancel()
         resolutionMonitor?.stop()
         digests.stop()

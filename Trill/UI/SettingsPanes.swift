@@ -107,6 +107,16 @@ struct GeneralPane: View {
                         .labelsHidden()
                         .toggleStyle(.switch)
                 }
+                SettingsDivider()
+                SettingsRow(
+                    symbol: "newspaper",
+                    title: "Catch me up when I come back",
+                    subtitle: "One card on unlock, counting what landed while you were away — “2 asks, 1 fault, 14 notes”. Nothing arrived, no card."
+                ) {
+                    Toggle("Catch me up when I come back", isOn: $settings.catchUpCard)
+                        .labelsHidden()
+                        .toggleStyle(.switch)
+                }
             }
             .disabled(settings.isManagedExternally)
 

@@ -66,7 +66,7 @@ enum InboxList {
     /// `.asks` is a kind filter over the plain list.
     static func inScope(_ entries: [InboxEntry], scope: InboxScope) -> [InboxEntry] {
         switch scope {
-        case .all, .digest:
+        case .all, .digest, .since:
             entries
         case .asks:
             entries.filter { $0.event.kind == .ask }

@@ -32,6 +32,11 @@ struct AppConfig: Equatable, Sendable {
     /// watching the screen. A privacy default that has to be switched on is a
     /// privacy default nobody has on when it matters.
     var shyWhenWatched = true
+    /// On by default: one low card on the way back in, and only when
+    /// something actually landed. It is the quietest thing in the app — it
+    /// cannot fire while you are here, by construction — and a catch-up
+    /// feature nobody switches on is a night of traffic nobody hears about.
+    var catchUpCard = true
     /// Reading your calendar is a TCC grant and a real read of personal data.
     /// Opt-in, and nothing asks macOS for it until this is on.
     var calendarEnabled = false
@@ -50,6 +55,7 @@ struct AppConfig: Equatable, Sendable {
         static let systemMirror = "systemMirror"
         static let githubBridge = "githubBridge"
         static let shyWhenWatched = "shyWhenWatched"
+        static let catchUpCard = "catchUpCard"
         static let calendar = "calendar"
         static let calendarLeadMinutes = "calendarLeadMinutes"
     }
@@ -71,6 +77,7 @@ struct AppConfig: Equatable, Sendable {
         if let value = json[Key.systemMirror] as? Bool { systemMirrorEnabled = value }
         if let value = json[Key.githubBridge] as? Bool { githubBridgeEnabled = value }
         if let value = json[Key.shyWhenWatched] as? Bool { shyWhenWatched = value }
+        if let value = json[Key.catchUpCard] as? Bool { catchUpCard = value }
         if let value = json[Key.calendar] as? Bool { calendarEnabled = value }
         // Clamped rather than refused: a file is a place people typo, and the
         // honest recovery for "600000" is the nearest legal lead, not a
@@ -90,6 +97,7 @@ struct AppConfig: Equatable, Sendable {
             Key.systemMirror: systemMirrorEnabled,
             Key.githubBridge: githubBridgeEnabled,
             Key.shyWhenWatched: shyWhenWatched,
+            Key.catchUpCard: catchUpCard,
             Key.calendar: calendarEnabled,
             Key.calendarLeadMinutes: calendarLeadMinutes,
         ]

@@ -34,6 +34,11 @@
     says the screen is being watched, cards draw their redacted form, and the
     events behind them are untouched — nothing is dropped, held back, or
     written differently.
+13. "Seen" is decided at ingest and never re-derived: a banner drawn at a
+    locked screen is stored **unread**, because nothing afterwards can work
+    out who was in front of the screen. Everything that counts what you
+    missed — the inbox's unread count, the catch-up card — reads that one
+    stamp.
 
 ## Boundaries
 
@@ -500,6 +505,62 @@ the count silently; the first flush after the window says "23 quiet things"
 instead of nine. The ticker sleeps in ≤10-minute hops against a wall-clock
 deadline, so a Mac that slept through the hour flushes on the way back rather
 than an hour later.
+
+### You come back to a Mac that was busy
+
+The night case, which on a machine with agents on it is most nights: the
+screen locks at 23:00, four lanes finish, two of them ask something, one
+build breaks, and every card of it is drawn to a lock screen nobody is
+looking at. At 08:00 the honest thing to say is not those seventeen cards
+again — it is *while you were away — 2 asks, 1 fault, 14 notes*.
+
+Three pieces, and the first one is the reason the other two can be simple.
+
+**Presence is pushed.** `PresenceSentinel` listens to
+`com.apple.screenIsLocked` / `screenIsUnlocked` (distributed notifications,
+no entitlement) and to `NSWorkspace`'s sleep, wake and session-switch pair.
+It never reads the system — the exact opposite of `ScreenWatch`, which has to
+poll because nothing reports screen capture. The decision on top of those
+signals is `PresenceLog`, a pure struct, and two of its rules are load
+bearing: **the first departure wins the timestamp** (lock at 23:00 then sleep
+at 23:30 is one absence beginning at 23:00, and restamping it would silently
+drop half an hour of traffic), and **waking onto a lock screen is not coming
+back** (the card would be drawn, time out and be gone before the password was
+typed — the unlock is the return). A Mac that never locks posts no unlock, so
+for that Mac the wake *is* the return. The log persists to `UserDefaults`,
+because the case that most needs a card — locked at 23:00, rebooted at 03:00,
+logged into at 08:00 — spans a process that wasn't running.
+
+**Unread is where the count comes from,** which is only true because ingest
+records it truthfully. `AppDatabase.insert` takes presence alongside the
+decision: a banner drawn at somebody is read, a banner drawn at a locked
+screen is not. That is a one-line change with the whole feature behind it —
+without it every card that played to an empty room is stored as "seen", and
+the night vanishes from the inbox's unread count as well as from this card.
+It can only be decided at ingest; nothing afterwards can work out who was
+sitting there.
+
+**The card is a tally, and the click is a query.** `missedCounts(since:)` is
+one `GROUP BY` over a `kind` column lifted out of the payload — six numbers
+however loud the night was, with no `LIMIT` that could quietly make the
+number wrong. `CatchUpCard` reads them out in `Kind` order rather than by
+size: the digest ranks its sources loudest-first because it answers "what was
+all that noise", and this answers "what do I have to deal with", where one
+ask outranks fourteen notes. The window is capped at a day (a week away is
+not a bigger paper, it is an archive, and the archive is the inbox), the card
+carries an `InboxScope.since` target so its click opens on exactly the rows it
+counted, and **a quiet night draws nothing** — an unlock that always produces
+a card is an unlock you learn to dismiss unread.
+
+Like `DigestCard`, it is composed by trill and enqueued **directly**: never
+back through the repository, so it is never policied, persisted or deduped,
+and it leaves no row in the history it is a summary of.
+
+It **does not hold for quiet hours**, and that is the one place it departs
+from the digest. A 3am digest card is trill talking to an empty chair; a 3am
+catch-up card is trill answering the person who just unlocked the Mac. It
+cannot interrupt anybody by construction — it only ever fires as somebody
+sits down.
 
 ### The inbox is where the overflow goes
 

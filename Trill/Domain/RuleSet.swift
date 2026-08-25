@@ -12,6 +12,15 @@ enum DeliveryDecision: Equatable, Sendable {
     case digest(String)
     /// Discard entirely (never persisted).
     case drop
+
+    /// Did this decision put the event on a screen? Asked by everything that
+    /// cares *whether* a banner was drawn and not *where* — a question that
+    /// stopped being expressible as `== .banner` the moment the case grew a
+    /// display target.
+    var isBanner: Bool {
+        if case .banner = self { return true }
+        return false
+    }
 }
 
 /// Declarative filtering, loaded from `~/.config/trill/rules.json`.
