@@ -17,14 +17,23 @@
   };
 
   outputs =
-    { self, nixpkgs, prebuilt }:
+    {
+      self,
+      nixpkgs,
+      prebuilt,
+    }:
     let
       systems = [
         "aarch64-darwin"
         "x86_64-darwin"
       ];
       forAll = nixpkgs.lib.genAttrs systems;
-      pkgsFor = system: import nixpkgs { inherit system; overlays = [ self.overlays.default ]; };
+      pkgsFor =
+        system:
+        import nixpkgs {
+          inherit system;
+          overlays = [ self.overlays.default ];
+        };
 
       # The CI-owned release pin (version + sha256 of the notarized .zip).
       release = import ./nix/release.nix;
@@ -39,11 +48,12 @@
         };
 
         # The agent skill (ai/SKILL.md), so a consumer can install it without
-        # installing trill itself. ⚠️ Nothing consumes it yet — trill is
-        # deliberately not a haus flake input (no lock edge, not in bench's
-        # FAMILY), so this waits on the planned leaf overlay. Its own package
-        # rather than a file inside `trill`: it is pure and tiny, while `trill`
-        # wraps a macOS-only notarized ZIP. See nix/skill.nix.
+        # installing trill itself. ⚠️ Reachable from haus since it took trill as
+        # a flake input (2026-08-25), but not yet INSTALLED by it — haus's
+        # modules/ai/tool-skills.nix still lists only holt, and nix/skill.nix
+        # says what stands in the way. Its own package rather than a file inside
+        # `trill`: it is pure and tiny, while `trill` wraps a macOS-only
+        # notarized ZIP. See nix/skill.nix.
         trill-skill = final.callPackage ./nix/skill.nix { };
       };
 

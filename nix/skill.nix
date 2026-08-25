@@ -2,13 +2,17 @@
 #
 # The source is `ai/SKILL.md` at the repo root — one file, committed, the same
 # one that gets embedded in the binary when `trill skill` lands. This derivation
-# is how a *consumer* WILL get it. ⚠️ Nothing consumes it today: unlike the rest
-# of the family, trill is deliberately not a haus flake input and carries no
-# lock edge (the workshop's AGENTS.md has the rule), so
-# haus cannot reach `pkgs.trill-skill` at all until the planned leaf overlay
-# lands. Don't "fix" that by adding trill to bench's FAMILY. A standalone user will get the identical
-# bytes from `trill skill install` — step 4 of the standard's rollout, not a
-# verb that exists today.
+# is how a *consumer* WILL get it. ⚠️ Nothing consumes it today, but the reason
+# changed on 2026-08-25: haus DOES take trill as a flake input now, so
+# `pkgs.trill-skill` is reachable — it is haus's `modules/ai/tool-skills.nix`
+# that still lists only holt. Adding it there is its own change, for two reasons
+# worth doing on purpose: that list is unconditional, while a skill for an app
+# the machine doesn't have is worse than none; and this flake outputs darwin
+# systems only, so the derivation that proves a listed skill name is real can't
+# be evaluated by haus's Linux CI unguarded. Don't "fix" any of it by adding
+# trill to bench's FAMILY — that advice survived route B unchanged. A standalone
+# user will get the identical bytes from `trill skill install` — step 4 of the
+# standard's rollout, not a verb that exists today.
 #
 # `$out/<tool>/SKILL.md` is the family standard's §6 layout (the workshop's
 # notes/agent-surface.md): one nesting level, named for the skill, so a

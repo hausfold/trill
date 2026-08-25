@@ -22,7 +22,7 @@ it's launched, themed at the source, or packaged.
 | the trill app (compositor, providers, rules, CLI, inbox) | **you are here** |
 | which calendars sync to this Mac at all | Apple's Calendar / Internet Accounts — trill only *reads* what EventKit already has |
 | how trill is *installed* on the system (flake wiring, launchd) | `haus` (the layer) |
-| whether `trill` resolves on PATH | **shared, by install source** — `nix/package.nix` ships `bin/trill`; `scripts/dev-install.sh` links into a directory on the real login PATH; the app itself covers an install that runs no script (`SystemIntegration.ensureCLILink`), and defers to anything already answering the name. Change the one that matches the source you're fixing, and keep the README's table honest. ⚠️ A desktop that copies the bundle to a fixed path should link THERE (grants are per app path) — **haus has no trill room yet**, so today that row is a plan, not a shipped path |
+| whether `trill` resolves on PATH | **shared, by install source** — `nix/package.nix` ships `bin/trill`; `scripts/dev-install.sh` links into a directory on the real login PATH; the app itself covers an install that runs no script (`SystemIntegration.ensureCLILink`), and defers to anything already answering the name. Change the one that matches the source you're fixing, and keep the README's table honest. ⚠️ A desktop that copies the bundle to a fixed path adds **no fourth link** — haus's `haus.trill.enable` room places the bundle at `/Applications/Trill.app` and lets its own `trill` wrapper find it there, because whether the bundle exists is a runtime fact and a second `bin/trill` would collide with the wrapper. This row used to predict the opposite; the room exists now and chose the other way |
 | the palette trill is themed with (source hex) | `nebelung` |
 | DND / Focus toggling ("Hush") | `haus` (the layer) — trill only deep-links there |
 | the tunnel fronting the GitHub bridge (cloudflared, DNS, the org webhook) | `haus` (the layer) — trill only listens on localhost |
@@ -259,10 +259,16 @@ bug that already shipped once.
 `nix/skill.nix` ships it as `pkgs.trill-skill` (`$out/trill/SKILL.md`); the
 build fails if the frontmatter is missing, because a skill without it is
 installed, listed, and never loaded. ⚠️ **Nothing consumes that package yet** —
-trill is not a haus flake input and carries no lock edge on purpose, so until
-the planned leaf overlay lands, a user gets this skill from `trill skill
-install` once that verb exists. **Don't add trill to `bench`'s `FAMILY` to fix
-that.**
+haus takes trill as a flake input as of 2026-08-25, so `pkgs.trill-skill` is
+*reachable* — but `haus`'s `modules/ai/tool-skills.nix` still lists only holt,
+and adding it there is its own change (that list is unconditional, while a skill
+for an app the machine doesn't have is worse than none; and trill's flake
+outputs darwin systems only, so haus's Linux CI can't evaluate the name-check
+unguarded). Until then a user gets this skill from `trill skill install` once
+that verb exists. **Don't add trill to `bench`'s `FAMILY` to fix that** — that
+advice survived route B unchanged, because a lock edge and family membership are
+different questions and trill is what separated them (see bench's 🚨 by
+`FAMILY`).
 
 **Every claim in it must be runnable.** When you change a verb, a flag or an
 exit code, change `ai/SKILL.md` in the same PR — a stale line there is a

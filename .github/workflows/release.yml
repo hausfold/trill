@@ -1,0 +1,208 @@
+name: release
+
+# Tag v<date> (CalVer, e.g. v2026.08.25) -> build Trill.app -> GitHub release
+# with a zipped bundle -> flake release-pin bump. Cut tags with
+# `bench release trill` from the workshop; it enforces that the tag matches
+# VERSION and that everything is pushed.
+#
+# The app is signed with our Developer ID (hardened runtime) and notarized by
+# Apple, so it opens straight from the flake with no Gatekeeper prompt. That
+# stable, team-anchored identity is not a nicety here: trill's whole System
+# Mirror / doctor surface depends on a Full Disk Access grant, and TCC keys
+# that grant to the signing identity plus the app's path. An ad-hoc or
+# re-signed bundle revokes itself (AGENTS.md, "Verifying").
+#
+# VERSION is the single source of truth: it names the tag and is injected as
+# MARKETING_VERSION at build time.
+#
+# There is no bump-tap job yet — trill has no cask in hausfold/homebrew-tap.
+# The `trill` token is free and the cask is CI-owned when it lands (AGENTS.md's
+# routing table); add the job here, modelled on perch's, at that point.
+#
+# Signing/notarization secrets (set once, per repo):
+#   MACOS_CERT_P12       base64 of the exported "Developer ID Application" .p12
+#   MACOS_CERT_PASSWORD  the password protecting that .p12
+#   NOTARY_KEY_P8        base64 of the App Store Connect API key (.p8)
+#   NOTARY_KEY_ID        that key's Key ID
+#   NOTARY_ISSUER_ID     the App Store Connect issuer ID
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: build + publish release
+    runs-on: macos-26
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.2.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check the tag matches VERSION
+        run: |
+          VERSION="$(tr -d '[:space:]' < VERSION)"
+          if [ "v$VERSION" != "$GITHUB_REF_NAME" ]; then
+            echo "tag $GITHUB_REF_NAME != VERSION $VERSION — bump VERSION or retag" >&2
+            exit 1
+          fi
+
+      - name: Import Developer ID signing certificate
+        env:
+          MACOS_CERT_P12: ${{ secrets.MACOS_CERT_P12 }}
+          MACOS_CERT_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
+        run: |
+          KEYCHAIN="$RUNNER_TEMP/signing.keychain-db"
+          KEYCHAIN_PW="$(uuidgen)"
+          echo "$MACOS_CERT_P12" | base64 -d > "$RUNNER_TEMP/cert.p12"
+          security create-keychain -p "$KEYCHAIN_PW" "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p "$KEYCHAIN_PW" "$KEYCHAIN"
+          security import "$RUNNER_TEMP/cert.p12" -P "$MACOS_CERT_PASSWORD" \
+            -A -t cert -f pkcs12 -k "$KEYCHAIN"
+          # Let codesign/xcodebuild use the key non-interactively.
+          security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PW" "$KEYCHAIN" >/dev/null
+          # Put our keychain first on the search list so the identity resolves.
+          security list-keychains -d user -s "$KEYCHAIN" login.keychain-db
+          IDENTITY="$(security find-identity -v -p codesigning "$KEYCHAIN" \
+            | awk -F'"' '/Developer ID Application/{print $2; exit}')"
+          [ -n "$IDENTITY" ]
+          echo "::add-mask::$IDENTITY"
+          rm -f "$RUNNER_TEMP/cert.p12"
+
+      - name: Build Release Trill.app (Developer ID, hardened runtime)
+        run: |
+          VERSION="$(tr -d '[:space:]' < VERSION)"
+          xcodebuild \
+            -project Trill.xcodeproj \
+            -scheme Trill \
+            -configuration Release \
+            -quiet \
+            -destination 'platform=macOS' \
+            -derivedDataPath dd \
+            MARKETING_VERSION="$VERSION" \
+            CODE_SIGN_STYLE=Manual \
+            CODE_SIGN_IDENTITY="Developer ID Application" \
+            DEVELOPMENT_TEAM="88M28542LQ" \
+            CODE_SIGNING_ALLOWED=YES \
+            ENABLE_HARDENED_RUNTIME=YES \
+            OTHER_CODE_SIGN_FLAGS="--timestamp" \
+            build
+
+      # Before signing, notarizing, stapling and publishing: a coverage-
+      # instrumented build passes every one of those steps and still drops a
+      # `default.profraw` into the working directory of every user who runs
+      # `trill` — which `holt notify` does from every agent pane. Fail here,
+      # where the only cost is a red release run.
+      - name: Released binaries carry no profiling instrumentation
+        run: scripts/assert-no-instrumentation.sh dd/Build/Products/Release/Trill.app
+
+      - name: Re-sign with Developer ID (hardened runtime, clean entitlements)
+        run: |
+          # Explicit re-sign so notarization can't trip on an xcodebuild quirk:
+          # guarantees the hardened runtime, a secure timestamp, and exactly the
+          # declared entitlements (no get-task-allow, which notarization rejects).
+          #
+          # ONE codesign call, unlike perch's inside-out pair: trill ships no
+          # nested tool. The app binary IS the CLI — `Contents/MacOS/Trill`
+          # serves the daemon and every verb — so it is sealed by the app's own
+          # signature and a second one would tear it out of that seal.
+          #
+          # Trill.entitlements is an empty dict on purpose and passing it is the
+          # point: trill is NOT sandboxed (it reads the usernoted store under a
+          # Full Disk Access grant) and holds no entitlement it did not ask for.
+          # Declaring nothing explicitly beats inheriting whatever the toolchain
+          # felt like adding.
+          APP="dd/Build/Products/Release/Trill.app"
+          IDENTITY="$(security find-identity -v -p codesigning "$RUNNER_TEMP/signing.keychain-db" \
+            | awk -F'"' '/Developer ID Application/{print $2; exit}')"
+          codesign --force --options runtime --timestamp \
+            --entitlements Trill/Config/Trill.entitlements \
+            --sign "$IDENTITY" \
+            "$APP"
+          codesign --verify --strict --verbose=2 "$APP"
+
+      - name: Notarize + staple
+        env:
+          NOTARY_KEY_P8: ${{ secrets.NOTARY_KEY_P8 }}
+          NOTARY_KEY_ID: ${{ secrets.NOTARY_KEY_ID }}
+          NOTARY_ISSUER_ID: ${{ secrets.NOTARY_ISSUER_ID }}
+        run: |
+          set -euo pipefail
+          APP="dd/Build/Products/Release/Trill.app"
+          echo "$NOTARY_KEY_P8" | base64 -d > "$RUNNER_TEMP/notary.p8"
+          CREDS=(--key "$RUNNER_TEMP/notary.p8" --key-id "$NOTARY_KEY_ID" --issuer "$NOTARY_ISSUER_ID")
+          # notarytool needs an archive; this zip is only for submission.
+          ditto -c -k --sequesterRsrc --keepParent "$APP" "$RUNNER_TEMP/notarize.zip"
+          # `submit --wait` exits 0 even when the verdict is Invalid, so check the
+          # status ourselves and dump Apple's per-file reasons before failing.
+          JSON="$(xcrun notarytool submit "$RUNNER_TEMP/notarize.zip" "${CREDS[@]}" --wait --output-format json)"
+          echo "$JSON"
+          read -r ID STATUS < <(echo "$JSON" | python3 -c 'import sys,json;d=json.load(sys.stdin);print(d.get("id",""),d.get("status",""))')
+          if [ "$STATUS" != "Accepted" ]; then
+            echo "::error::notarization $STATUS — Apple's log:"
+            xcrun notarytool log "$ID" "${CREDS[@]}" || true
+            exit 1
+          fi
+          # Staple the ticket onto the .app so it verifies offline.
+          xcrun stapler staple "$APP"
+          rm -f "$RUNNER_TEMP/notary.p8"
+
+      - name: Zip the stapled bundle
+        run: |
+          mkdir -p dist
+          # Zip AFTER stapling — the submitted zip above has no ticket.
+          # The name and the top-level Trill.app (--keepParent) are what
+          # nix/package.nix's fetchurl + `ditto -x -k` expect; changing either
+          # breaks the flake, not just this run.
+          ditto -c -k --sequesterRsrc --keepParent \
+            "dd/Build/Products/Release/Trill.app" \
+            "dist/trill-$GITHUB_REF_NAME-macos.zip"
+
+      - name: Verify signature + notarization
+        run: |
+          APP="dd/Build/Products/Release/Trill.app"
+          codesign --verify --deep --strict --verbose=2 "$APP"
+          spctl --assess --type execute "$APP"
+
+      - name: Create GitHub release
+        run: gh release create "$GITHUB_REF_NAME" dist/* --generate-notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+  bump-flake:
+    name: bump nix/release.nix
+    needs: release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      # trill's flake wraps this release ZIP, pinned by version + sha256 in
+      # nix/release.nix. Rewrite the pin on main so a downstream `bench ship`
+      # can ripple the new release into haus's lock. The version/sha lines are
+      # CI-owned; humans never bump them (AGENTS.md's routing table).
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - name: Point nix/release.nix at the new release
+        run: |
+          TAG="$GITHUB_REF_NAME"
+          VER="${TAG#v}"
+          curl -fsSL --retry 5 --retry-delay 5 -o /tmp/trill.zip \
+            "https://github.com/hausfold/trill/releases/download/$TAG/trill-$TAG-macos.zip"
+          SHA="$(sha256sum /tmp/trill.zip | cut -d' ' -f1)"
+          sed -i -E \
+            -e "s#^  version = \".*\";#  version = \"$VER\";#" \
+            -e "s#^  sha256 = \".*\";#  sha256 = \"$SHA\";#" \
+            nix/release.nix
+          if git diff --quiet; then
+            echo "nix/release.nix already current"
+            exit 0
+          fi
+          git config user.name "haus-release[bot]"
+          git config user.email "haus-release@users.noreply.github.com"
+          git commit -am "trill ${VER} (nix release pin)"
+          git push
