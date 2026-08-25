@@ -126,7 +126,19 @@ Notification Center with perfect compatibility."
 Digest flushing on schedule — **shipped**: a `digest` rule tallies quietly and
 drains on the hour as one card per digest name ("9 quiet things · ci ×4,
 garden ×3") whose click opens the inbox scoped to exactly those events; quiet
-hours hold the flush rather than skipping it. Still open: per-digest cadences,
+hours hold the flush rather than skipping it.
+
+The inbox that card lands in — **shipped**: live off the delivery stream (no
+Refresh button), searchable, threads folded into their newest message the way
+the compositor folds a burst, every performable action drawn as a pill (all of
+them, not the card's three — but never `reply`, which has no socket left to
+answer down), and unread state per event where **unread means trill never put
+this in front of you**: a drawn banner arrives read, anything quiet hours, an
+`inbox` rule or a digest tally held back arrives unread. `--asks` is the
+ledge's overflow with the still-parked ones marked, so the sixth ask that
+evicted the first is findable beside it.
+
+Still open: per-digest cadences,
 per-source styling hooks, `trill history --source X --since 2h`, `trill watch
 --json`, pounce integration, Hush handshake (enable Focus profile ↔ trill
 takeover), opt-in command hooks for banner *actions* (a click running a

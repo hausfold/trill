@@ -16,12 +16,6 @@ final class AppDatabase: @unchecked Sendable {
     private var db: OpaquePointer?
     private static let log = Logger(subsystem: "com.hausfold.trill", category: "database")
 
-    struct StoredEvent: Sendable, Identifiable {
-        let event: NotificationEvent
-        let decision: String
-        var id: String { event.id }
-    }
-
     init?(url: URL) {
         do {
             try FileManager.default.createDirectory(
@@ -51,9 +45,15 @@ final class AppDatabase: @unchecked Sendable {
                 source    TEXT NOT NULL,
                 timestamp REAL NOT NULL,
                 decision  TEXT NOT NULL,
-                payload   TEXT NOT NULL
+                payload   TEXT NOT NULL,
+                read_at   REAL
             )
             """)
+        // Databases written before the inbox grew unread state have every
+        // column but this one. Added rather than migrated-by-recreate: the
+        // rows are the user's history, and NULL is exactly the right answer
+        // for a row nobody could have marked read yet.
+        addColumn("read_at REAL", to: "events", ifMissing: "read_at")
         exec("CREATE INDEX IF NOT EXISTS events_by_time ON events (timestamp DESC)")
         exec("CREATE INDEX IF NOT EXISTS events_by_source ON events (source, timestamp DESC)")
         // The ledge, mirrored. Its own table and not a column on `events`
@@ -85,10 +85,20 @@ final class AppDatabase: @unchecked Sendable {
         if let db { sqlite3_close(db) }
     }
 
-    func insert(_ event: NotificationEvent, decision: DeliveryDecision) {
+    /// Write one delivered event, already read or not.
+    ///
+    /// **Unread means trill never put this in front of you.** A `banner`
+    /// decision is stamped read on the way in — it was drawn on a screen,
+    /// which is the closest thing this app has to "seen" — while everything
+    /// held back (quiet hours, an `inbox` rule, a digest tally) arrives
+    /// unread. That is what makes the inbox's unread count worth reading: it
+    /// counts exactly the things you would otherwise never learn about,
+    /// rather than re-reporting every banner that already interrupted you.
+    func insert(_ event: NotificationEvent, decision: DeliveryDecision, now: Date = .now) {
         guard let payload = try? String(data: JSONEncoder.trill.encode(event), encoding: .utf8) ?? ""
         else { return }
         let decisionLabel = Self.label(for: decision)
+        let readAt: Double? = decision == .banner ? now.timeIntervalSince1970 : nil
 
         queue.async { [self] in
             guard let db else { return }
@@ -96,7 +106,10 @@ final class AppDatabase: @unchecked Sendable {
             defer { sqlite3_finalize(statement) }
             guard sqlite3_prepare_v2(
                 db,
-                "INSERT OR IGNORE INTO events (id, source, timestamp, decision, payload) VALUES (?,?,?,?,?)",
+                """
+                INSERT OR IGNORE INTO events (id, source, timestamp, decision, payload, read_at)
+                VALUES (?,?,?,?,?,?)
+                """,
                 -1, &statement, nil
             ) == SQLITE_OK else { return }
             sqlite3_bind_text(statement, 1, event.id, -1, SQLITE_TRANSIENT)
@@ -104,21 +117,53 @@ final class AppDatabase: @unchecked Sendable {
             sqlite3_bind_double(statement, 3, event.timestamp.timeIntervalSince1970)
             sqlite3_bind_text(statement, 4, decisionLabel, -1, SQLITE_TRANSIENT)
             sqlite3_bind_text(statement, 5, payload, -1, SQLITE_TRANSIENT)
+            if let readAt {
+                sqlite3_bind_double(statement, 6, readAt)
+            } else {
+                sqlite3_bind_null(statement, 6)
+            }
             if sqlite3_step(statement) != SQLITE_DONE {
                 Self.log.error("insert failed for \(event.id, privacy: .public)")
             }
         }
     }
 
-    func recent(limit: Int = 100, source: String? = nil) -> [StoredEvent] {
+    /// Mark events read (or back to unread). Fire-and-forget like every other
+    /// write here — the inbox moves its own dot the instant you click, and
+    /// this is the copy that has to survive the window closing.
+    func setRead(_ read: Bool, ids: [String], now: Date = .now) {
+        guard !ids.isEmpty else { return }
+        let stamp = now.timeIntervalSince1970
+        queue.async { [self] in
+            guard let db else { return }
+            sqlite3_exec(db, "BEGIN IMMEDIATE", nil, nil, nil)
+            for id in ids {
+                var statement: OpaquePointer?
+                defer { sqlite3_finalize(statement) }
+                guard sqlite3_prepare_v2(
+                    db, "UPDATE events SET read_at = ? WHERE id = ?", -1, &statement, nil
+                ) == SQLITE_OK else { continue }
+                if read {
+                    sqlite3_bind_double(statement, 1, stamp)
+                } else {
+                    sqlite3_bind_null(statement, 1)
+                }
+                sqlite3_bind_text(statement, 2, id, -1, SQLITE_TRANSIENT)
+                sqlite3_step(statement)
+            }
+            sqlite3_exec(db, "COMMIT", nil, nil, nil)
+        }
+    }
+
+    func recent(limit: Int = 100, source: String? = nil) -> [InboxEntry] {
         queue.sync { [self] in
             guard let db else { return [] }
             var statement: OpaquePointer?
             defer { sqlite3_finalize(statement) }
 
             let sql = source == nil
-                ? "SELECT payload, decision FROM events ORDER BY timestamp DESC LIMIT ?"
-                : "SELECT payload, decision FROM events WHERE source = ? ORDER BY timestamp DESC LIMIT ?"
+                ? "SELECT payload, decision, read_at FROM events ORDER BY timestamp DESC LIMIT ?"
+                : "SELECT payload, decision, read_at FROM events WHERE source = ? ORDER BY timestamp DESC LIMIT ?"
             guard sqlite3_prepare_v2(db, sql, -1, &statement, nil) == SQLITE_OK else { return [] }
 
             var index: Int32 = 1
@@ -213,7 +258,7 @@ final class AppDatabase: @unchecked Sendable {
     /// The card is a summary of rows that are already here, so its click is a
     /// query and not a second store — nothing about a digest is persisted
     /// beyond the decision label the repository already wrote.
-    func digest(named name: String, since: Date, limit: Int = 500) -> [StoredEvent] {
+    func digest(named name: String, since: Date, limit: Int = 500) -> [InboxEntry] {
         queue.sync { [self] in
             guard let db else { return [] }
             var statement: OpaquePointer?
@@ -221,7 +266,7 @@ final class AppDatabase: @unchecked Sendable {
             guard sqlite3_prepare_v2(
                 db,
                 """
-                SELECT payload, decision FROM events
+                SELECT payload, decision, read_at FROM events
                 WHERE decision = ? AND timestamp >= ?
                 ORDER BY timestamp DESC LIMIT ?
                 """,
@@ -234,11 +279,11 @@ final class AppDatabase: @unchecked Sendable {
         }
     }
 
-    /// Drains a `(payload, decision)` statement. A row whose payload no
-    /// longer decodes — written by a build that spelled the event
+    /// Drains a `(payload, decision, read_at)` statement. A row whose payload
+    /// no longer decodes — written by a build that spelled the event
     /// differently — is skipped rather than failing the whole read.
-    private static func rows(from statement: OpaquePointer?) -> [StoredEvent] {
-        var results: [StoredEvent] = []
+    private static func rows(from statement: OpaquePointer?) -> [InboxEntry] {
+        var results: [InboxEntry] = []
         let decoder = JSONDecoder.trill
         while sqlite3_step(statement) == SQLITE_ROW {
             guard
@@ -248,9 +293,35 @@ final class AppDatabase: @unchecked Sendable {
                     NotificationEvent.self, from: Data(String(cString: payloadText).utf8)
                 )
             else { continue }
-            results.append(StoredEvent(event: event, decision: String(cString: decisionText)))
+            let readAt = sqlite3_column_type(statement, 2) == SQLITE_NULL
+                ? nil
+                : Date(timeIntervalSince1970: sqlite3_column_double(statement, 2))
+            results.append(InboxEntry(
+                event: event, decision: String(cString: decisionText), readAt: readAt
+            ))
         }
         return results
+    }
+
+    /// `ALTER TABLE … ADD COLUMN` guarded by a schema read, because SQLite
+    /// has no `IF NOT EXISTS` for columns and running it blind would log a
+    /// failure on every launch after the first.
+    private func addColumn(_ declaration: String, to table: String, ifMissing column: String) {
+        let existing: Bool = queue.sync {
+            guard let db else { return true }
+            var statement: OpaquePointer?
+            defer { sqlite3_finalize(statement) }
+            guard sqlite3_prepare_v2(
+                db, "PRAGMA table_info(\(table))", -1, &statement, nil
+            ) == SQLITE_OK else { return true }
+            while sqlite3_step(statement) == SQLITE_ROW {
+                guard let name = sqlite3_column_text(statement, 1) else { continue }
+                if String(cString: name) == column { return true }
+            }
+            return false
+        }
+        guard !existing else { return }
+        exec("ALTER TABLE \(table) ADD COLUMN \(declaration)")
     }
 
     /// Age-based retention; call at launch and daily.

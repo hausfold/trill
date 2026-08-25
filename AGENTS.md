@@ -125,6 +125,17 @@ never into a broken pipeline. Corollaries:
   `kCGWindowName` needs Screen Recording permission, and trill will not ask
   for the screen in order to be shy about the screen. The queue never learns
   any of this — no event is dropped, delayed, or stored differently.
+- **The inbox is where the overflow goes, so it holds no state of its own.**
+  The ledge evicts a sixth ask, a digest card is a count and quiet hours route
+  events past the screen — all three land in `AppDatabase`, and the window is a
+  view onto it through `InboxList` (scope, search, thread folding: pure, and
+  tested without a display). It updates live off `InboxFeed`, never a poll or a
+  Refresh button. Two things it must keep saying: **unread means trill never
+  put this in front of you** — a `banner` decision is stamped read on the way
+  in, everything held back is not — and **it never redacts**, because
+  `--redact` and shyness are rules for cards drawn *at* someone and this window
+  only exists because the user asked for it. It draws every performable action
+  as a pill except `reply`: history has no socket to answer down.
 - **The queue is the truth; panels are disposable.** Display topology
   rebuilds re-render from `BannerQueue` state. Never park event state in a
   panel or view.
@@ -167,15 +178,16 @@ moving a switch that won't stick.
 Trill/
   App/           entry, composition root, settings (config.json-backed)
   CLI/           `trill send/ping` — same binary, CLI personality
-  Domain/        NotificationEvent, RuleSet, PolicyEngine (pure)
+  Domain/        NotificationEvent, RuleSet, PolicyEngine, InboxList (pure)
   Providers/     protocol + Socket · GitHub webhook · Calendar (EventKit)
                  + SystemMirror (quarantined)
   Repositories/  EventRepository actor: supervise, normalize, dedupe, fan out
   Persistence/   AppDatabase — trill's OWN sqlite; the only writer in the app
   Compositor/    ScreenGeometry (pure), BannerQueue, panels, window system
   Platform/      ActionRouter, SystemIntegration (all Apple hooks, one file)
-  UI/            BannerView, InboxView, Settings (View · Panes · Chrome)
-TrillTests/      geometry, policy, pipeline — pure logic tests, no display
+  UI/            BannerView, InboxView + InboxRowView, LedgeView,
+                 Settings (View · Panes · Chrome)
+TrillTests/      geometry, policy, pipeline, inbox — pure logic, no display
 ```
 
 ## The agent surface (`ai/SKILL.md`)

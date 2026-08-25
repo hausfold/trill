@@ -97,22 +97,44 @@ final class TrillAppDelegate: NSObject, NSApplicationDelegate {
         presentInbox(scope: .all)
     }
 
+    private static let inboxFrameAutosaveName = "TrillInboxWindow"
+
     /// One window, three scopes: the plain list, `trill inbox --asks`
     /// (filtered to the kind the ledge parks, so a hot corner can land on the
     /// unanswered), and the events behind a digest card someone clicked.
+    ///
+    /// The window reads `AppRuntime.inboxFeed` rather than being handed a
+    /// database, so it keeps up with what arrives while it is open — and with
+    /// history being switched off underneath it.
     private func presentInbox(scope: InboxScope) {
+        guard let runtime else { return }
         inboxWindow?.close()
 
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 480, height: 420),
-            styleMask: [.titled, .closable, .resizable, .fullSizeContentView],
+            contentRect: NSRect(x: 0, y: 0, width: 560, height: 520),
+            styleMask: [.titled, .closable, .resizable],
             backing: .buffered,
             defer: false
         )
-        window.titlebarAppearsTransparent = true
+        // A plain titlebar, unlike the banner-adjacent surfaces: the window
+        // draws its own search-and-filter bar directly beneath it, and a
+        // transparent one would put that bar under the traffic lights.
+        window.title = InboxView.windowTitle(for: scope)
         window.contentView = NSHostingView(
-            rootView: InboxView(database: runtime?.inboxDatabase, scope: scope)
+            rootView: InboxView(
+                feed: runtime.inboxFeed,
+                scope: scope,
+                router: runtime.inboxActionRouter
+            )
         )
+        // Remembers the size you left it at, like Settings does — this is a
+        // window people widen to read a thread in. Position is still the
+        // window manager's: it centers every summoned window so an accessory
+        // app's window lands somewhere predictable under a tiler.
+        if !window.setFrameUsingName(Self.inboxFrameAutosaveName) {
+            window.center()
+        }
+        _ = window.setFrameAutosaveName(Self.inboxFrameAutosaveName)
         inboxWindow = window
         windowManager.show(window)
     }
