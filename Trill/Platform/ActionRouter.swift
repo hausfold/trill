@@ -14,6 +14,12 @@ final class ActionRouter {
     /// fall back to "every app on this Mac": see `silenceNative` below.
     private let listedApps: () -> [String]
 
+    /// Opens trill's own inbox at a scope. Set by the composition root rather
+    /// than injected, because the delegate that owns windows is built after
+    /// the router is — and the router, like the socket provider, is meant to
+    /// know nothing about windows beyond "someone will show one".
+    var openInbox: ((InboxScope) -> Void)?
+
     init(listedApps: @escaping () -> [String] = { [] }) {
         self.listedApps = listedApps
     }
@@ -51,6 +57,14 @@ final class ActionRouter {
             NSWorkspace.shared.open(url)
         case .focusLane:
             focusLane(action.target, for: event)
+        case .openInbox:
+            // The click *is* the summons, same as `trill inbox` — so opening
+            // a window here doesn't break the never-steal-focus rule.
+            guard let scope = InboxScope(actionTarget: action.target) else {
+                Self.log.info("refused a malformed inbox scope for \(event.id, privacy: .public)")
+                return
+            }
+            openInbox?(scope)
         case .command:
             // User-declared hooks arrive with the rules engine work
             // (PRD milestone 2); until then the action is inert.

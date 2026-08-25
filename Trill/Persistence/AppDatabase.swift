@@ -127,20 +127,7 @@ final class AppDatabase: @unchecked Sendable {
                 index += 1
             }
             sqlite3_bind_int(statement, index, Int32(max(1, limit)))
-
-            var results: [StoredEvent] = []
-            let decoder = JSONDecoder.trill
-            while sqlite3_step(statement) == SQLITE_ROW {
-                guard
-                    let payloadText = sqlite3_column_text(statement, 0),
-                    let decisionText = sqlite3_column_text(statement, 1),
-                    let event = try? decoder.decode(
-                        NotificationEvent.self, from: Data(String(cString: payloadText).utf8)
-                    )
-                else { continue }
-                results.append(StoredEvent(event: event, decision: String(cString: decisionText)))
-            }
-            return results
+            return Self.rows(from: statement)
         }
     }
 
@@ -218,6 +205,52 @@ final class AppDatabase: @unchecked Sendable {
             }
             return results
         }
+    }
+
+    /// The events one digest card counted: everything stamped `digest:<name>`
+    /// since that card's window opened.
+    ///
+    /// The card is a summary of rows that are already here, so its click is a
+    /// query and not a second store — nothing about a digest is persisted
+    /// beyond the decision label the repository already wrote.
+    func digest(named name: String, since: Date, limit: Int = 500) -> [StoredEvent] {
+        queue.sync { [self] in
+            guard let db else { return [] }
+            var statement: OpaquePointer?
+            defer { sqlite3_finalize(statement) }
+            guard sqlite3_prepare_v2(
+                db,
+                """
+                SELECT payload, decision FROM events
+                WHERE decision = ? AND timestamp >= ?
+                ORDER BY timestamp DESC LIMIT ?
+                """,
+                -1, &statement, nil
+            ) == SQLITE_OK else { return [] }
+            sqlite3_bind_text(statement, 1, "digest:\(name)", -1, SQLITE_TRANSIENT)
+            sqlite3_bind_double(statement, 2, since.timeIntervalSince1970)
+            sqlite3_bind_int(statement, 3, Int32(max(1, limit)))
+            return Self.rows(from: statement)
+        }
+    }
+
+    /// Drains a `(payload, decision)` statement. A row whose payload no
+    /// longer decodes — written by a build that spelled the event
+    /// differently — is skipped rather than failing the whole read.
+    private static func rows(from statement: OpaquePointer?) -> [StoredEvent] {
+        var results: [StoredEvent] = []
+        let decoder = JSONDecoder.trill
+        while sqlite3_step(statement) == SQLITE_ROW {
+            guard
+                let payloadText = sqlite3_column_text(statement, 0),
+                let decisionText = sqlite3_column_text(statement, 1),
+                let event = try? decoder.decode(
+                    NotificationEvent.self, from: Data(String(cString: payloadText).utf8)
+                )
+            else { continue }
+            results.append(StoredEvent(event: event, decision: String(cString: decisionText)))
+        }
+        return results
     }
 
     /// Age-based retention; call at launch and daily.

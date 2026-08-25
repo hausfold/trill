@@ -49,7 +49,9 @@ notifications experimentally tomorrow.
   file* finally says yes.
 - **rules, not settings mazes** — `~/.config/trill/rules.json`: route a
   source to banner / inbox / digest / drop; quiet hours; critical punches
-  through. Hot-reloaded on save. The app's own switches are a file too
+  through. A `digest` rule batches quietly and flushes on the hour as one
+  card — "9 quiet things · ci ×4, garden ×3" — that opens the inbox on
+  exactly those events. Hot-reloaded on save. The app's own switches are a file too
   (`config.json`, same directory) — the Settings window reads and writes that
   file and keeps nothing of its own, so anything you can click you can also
   type, and vice versa, without a restart.
@@ -72,6 +74,8 @@ trill CLI      pounce/perch     usernoted db (experimental)
           PolicyEngine (rules.json: banner / inbox / digest / drop · quiet hours)
                   ▼
           BannerQueue (coalescing · hover-pause/expand · capacity)
+                  ▲
+          DigestScheduler (tally per digest · one card on the hour)
                   ▼
           BannerWindowSystem (NSPanel per card · stacked · all Spaces · over fullscreen)
 ```

@@ -46,8 +46,8 @@ final class TrillAppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         let runtime = AppRuntime()
         self.runtime = runtime
-        runtime.onOpenInbox = { [weak self] asksOnly in
-            self?.presentInbox(asksOnly: asksOnly)
+        runtime.onOpenInbox = { [weak self] scope in
+            self?.presentInbox(scope: scope)
         }
         runtime.start()
         installStatusItem()
@@ -94,12 +94,13 @@ final class TrillAppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func showInbox() {
-        presentInbox(asksOnly: false)
+        presentInbox(scope: .all)
     }
 
-    /// `asksOnly` is `trill inbox --asks` — the same window filtered to the
-    /// kind the ledge parks, so a hot corner can land on the unanswered.
-    private func presentInbox(asksOnly: Bool) {
+    /// One window, three scopes: the plain list, `trill inbox --asks`
+    /// (filtered to the kind the ledge parks, so a hot corner can land on the
+    /// unanswered), and the events behind a digest card someone clicked.
+    private func presentInbox(scope: InboxScope) {
         inboxWindow?.close()
 
         let window = NSWindow(
@@ -110,7 +111,7 @@ final class TrillAppDelegate: NSObject, NSApplicationDelegate {
         )
         window.titlebarAppearsTransparent = true
         window.contentView = NSHostingView(
-            rootView: InboxView(database: runtime?.inboxDatabase, asksOnly: asksOnly)
+            rootView: InboxView(database: runtime?.inboxDatabase, scope: scope)
         )
         inboxWindow = window
         windowManager.show(window)

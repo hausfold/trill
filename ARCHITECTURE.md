@@ -47,13 +47,15 @@ GitHub ──webhook──► tunnel ──► GitHubWebhookProvider
                                       │
               ┌───────────────────────┼─────────────────────┐
               ▼                       ▼                     ▼
-        BannerQueue             inbox (sqlite)        digests (M2)
- coalesce · pause/expand · capacity · park │
-              ▼                       ▼
-      BannerWindowSystem          InboxView
-   NSPanel per banner · all Spaces · fullscreen aux
+        BannerQueue             inbox (sqlite)      DigestScheduler
+ coalesce · pause/expand · capacity · park │          tally, flush on the hour
+              ▼                       ▼                     │
+      BannerWindowSystem          InboxView ◄───────────────┘
+   NSPanel per banner · all Spaces ·  scoped: all · asks · one digest
+   fullscreen aux                     (the card's click is the query)
               ▼
-        ActionRouter ── open app · open URL · focus lane · (hooks, M2)
+        ActionRouter ── open app · open URL · focus lane · open inbox ·
+                        silence native · (hooks, M2)
 ```
 
 ## The hard cases
@@ -359,10 +361,38 @@ shape reused wholesale — non-activating, all-Spaces, deterministic height —
 because the constraint is identical: be readable *beside* System Settings
 without taking its focus.
 
+### A digest rule batches nine things
+
+`delivery: digest` stamps an event `digest:<name>` and stops there — no
+banner, an inbox row like any other. `DigestScheduler` rides the same
+delivery stream the compositor does and keeps a **tally** per name: a total,
+a count per source, and the earliest event timestamp it has seen. Not the
+events — a digest rule pointed at a firehose would otherwise be an unbounded
+in-memory buffer of exactly the events the user asked not to see, and the
+events are already in sqlite.
+
+On the hour it hands the queue one card per name (`9 quiet things · ci ×4,
+garden ×3`), composed by `DigestCard` and enqueued **directly**. It never
+re-enters the repository: a rule matching `source: trill` could otherwise
+digest the digest, and the card would be persisted and deduped for no gain.
+
+The card carries one `open_inbox` action whose target is an `InboxScope`
+(`digest:<name>@<epoch>`), so the click is a query — `AppDatabase.digest
+(named:since:)` — rather than a second store of what the card counted. The
+same scope type backs `trill inbox --asks`, so there is one answer to "which
+slice of history is this window".
+
+Quiet hours **hold** a flush rather than skipping it. A 3am card is the one
+interruption the feature exists to prevent, and dropping the tally would lose
+the count silently; the first flush after the window says "23 quiet things"
+instead of nine. The ticker sleeps in ≤10-minute hops against a wall-clock
+deadline, so a Mac that slept through the hour flushes on the way back rather
+than an hour later.
+
 ## Planned extensions that fit existing seams
 
-- Digest flushing: a scheduler draining `digest(name)` rows from the store
-  into summary events — new consumer, no pipeline change.
+- Per-digest schedules: `DigestSchedule` is one pure function over `now`;
+  a rule-declared cadence replaces it without touching the scheduler.
 - Pounce inbox: `trill history --json` over the socket, rendered by a
   pounce command.
 - Per-display routing: `BannerWindowSystem` already keys panels by entry;

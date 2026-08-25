@@ -121,11 +121,14 @@ Notification Center with perfect compatibility."
 
 ### M2 — rules that earn the name
 
-Digest flushing on schedule, per-source styling hooks, `trill history
---source X --since 2h`, `trill watch --json`, pounce integration, Hush
-handshake (enable Focus profile ↔ trill takeover), opt-in command hooks for
-banner *actions* (a click running a declared command, the way `--until`
-already runs a declared check).
+Digest flushing on schedule — **shipped**: a `digest` rule tallies quietly and
+drains on the hour as one card per digest name ("9 quiet things · ci ×4,
+garden ×3") whose click opens the inbox scoped to exactly those events; quiet
+hours hold the flush rather than skipping it. Still open: per-digest cadences,
+per-source styling hooks, `trill history --source X --since 2h`, `trill watch
+--json`, pounce integration, Hush handshake (enable Focus profile ↔ trill
+takeover), opt-in command hooks for banner *actions* (a click running a
+declared command, the way `--until` already runs a declared check).
 
 ### M3 — System Mirror feasibility spike (measure, then decide)
 
