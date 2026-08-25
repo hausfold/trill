@@ -150,6 +150,27 @@ struct NotificationEvent: Codable, Sendable, Identifiable, Equatable {
     /// Short slug (`deploy`, `pounce`) or reverse-dns bundle id for mirrored
     /// system events (`com.tinyspeck.slackmacgap`).
     var source: String
+    /// A name the sender chose so something *else* can name this event
+    /// later — `trill resolve pr-142`. Optional, and usually absent:
+    /// `resolutionKey` falls back to `id`, which `trill send` already prints,
+    /// so a script that sends and later resolves needs no key at all. A key
+    /// earns its keep only when the *resolver is a different process than the
+    /// sender* — a webhook arriving as its own delivery with its own id, a
+    /// rebuild hook clearing yesterday's ask, a lane that respawned. It is
+    /// never drawn: the ledge shows a fin, not a name.
+    var key: String?
+    /// Keys (or ids) this event answers. Delivering it clears any banner,
+    /// queued entry or parked fin naming one of them — the push half of
+    /// resolution, and the reason the GitHub bridge can take a review-request
+    /// fin down the moment the PR merges.
+    var resolves: [String]
+    /// A resolver *declared in `rules.json`*, invoked as `name` or
+    /// `name:arg1,arg2`. The daemon polls it and resolves this event when it
+    /// says yes — the pull half. The wire may only ever *name* a resolver:
+    /// the command (or URL) itself lives in the user's own rules file, so a
+    /// local process that can write to the socket still cannot make trill run
+    /// something the user never wrote down.
+    var until: String?
     var timestamp: Date
 
     var title: String
@@ -170,6 +191,9 @@ struct NotificationEvent: Codable, Sendable, Identifiable, Equatable {
     init(
         id: String = UUID().uuidString,
         source: String,
+        key: String? = nil,
+        resolves: [String] = [],
+        until: String? = nil,
         timestamp: Date = .now,
         title: String,
         subtitle: String? = nil,
@@ -184,6 +208,9 @@ struct NotificationEvent: Codable, Sendable, Identifiable, Equatable {
     ) {
         self.id = id
         self.source = source
+        self.key = key
+        self.resolves = resolves
+        self.until = until
         self.timestamp = timestamp
         self.title = title
         self.subtitle = subtitle
@@ -198,13 +225,17 @@ struct NotificationEvent: Codable, Sendable, Identifiable, Equatable {
     }
 
     enum CodingKeys: String, CodingKey {
-        case id, source, timestamp, title, subtitle, body, symbol, thread, kind, urgency, privacy, actions, metadata
+        case id, source, key, resolves, until, timestamp, title, subtitle, body, symbol, thread,
+             kind, urgency, privacy, actions, metadata
     }
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         self.id = try container.decodeIfPresent(String.self, forKey: .id) ?? UUID().uuidString
         self.source = try container.decodeIfPresent(String.self, forKey: .source) ?? "cli"
+        self.key = try container.decodeIfPresent(String.self, forKey: .key)
+        self.resolves = try container.decodeIfPresent([String].self, forKey: .resolves) ?? []
+        self.until = try container.decodeIfPresent(String.self, forKey: .until)
         self.timestamp = try container.decodeIfPresent(Date.self, forKey: .timestamp) ?? .now
         self.title = try container.decode(String.self, forKey: .title)
         self.subtitle = try container.decodeIfPresent(String.self, forKey: .subtitle)
@@ -256,6 +287,16 @@ extension NotificationEvent {
         return Array(performable.prefix(Limits.drawnActions))
     }
 
+    /// What `trill resolve` and an incoming `resolves` list match against.
+    /// The id is the fallback *and* the common case: an event needs no key
+    /// to be resolvable, because `trill send` already printed one name for
+    /// it. A key only adds a *second*, sender-chosen name — and matching
+    /// accepts either, so both roads work.
+    var resolutionKey: String { key ?? id }
+
+    /// Names this event answers to. Order is irrelevant; both are matched.
+    var resolutionNames: Set<String> { key.map { [id, $0] } ?? [id] }
+
     /// Field caps: a banner is a glance, not a document. Oversized input is
     /// truncated here, once, so no downstream surface needs its own limits.
     enum Limits {
@@ -265,6 +306,11 @@ extension NotificationEvent {
         static let metadataPairs = 32
         /// Pills a banner will draw. More survive in the payload and inbox.
         static let drawnActions = 3
+        /// Names one event may answer. A sender clearing a whole worklist at
+        /// once is the reason this isn't 1; it being small is the reason a
+        /// bug in a sender can't turn one delivery into a screen sweep.
+        static let resolvedKeys = 16
+        static let key = 200
     }
 
     /// Canonical form used for dedupe, persistence, and rendering.
@@ -272,6 +318,14 @@ extension NotificationEvent {
     func normalized() -> NotificationEvent {
         var event = self
         event.source = source.trimmed(cap: 100).lowercased()
+        // Keys are matched literally and never displayed, so they're only
+        // trimmed and capped — no case folding: `gh:hausfold/Trill#13` and
+        // the sender's own slug both have to survive a round trip intact.
+        event.key = key?.trimmed(cap: Limits.key).nonEmpty
+        event.resolves = Array(
+            resolves.compactMap { $0.trimmed(cap: Limits.key).nonEmpty }.prefix(Limits.resolvedKeys)
+        )
+        event.until = until?.trimmed(cap: Limits.key).nonEmpty
         event.title = title.trimmed(cap: Limits.title)
         event.subtitle = subtitle?.trimmed(cap: Limits.subtitle).nonEmpty
         event.body = body?.trimmed(cap: Limits.body).nonEmpty

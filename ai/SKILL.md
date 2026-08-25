@@ -5,17 +5,15 @@ description: Put a notification banner on this Mac's screen from the command lin
 
 # Trill — the quiet notification compositor
 
-Trill draws its own notification banners on macOS. It is not Apple's
-Notification Center: it has its own daemon, its own rules file, and it never
-makes a sound. Anything that can run a command can put a banner on screen —
-which is what makes it the right answer to *"tell me when this is done"*.
+Trill draws its own notification banners on macOS. Not Apple's Notification
+Center: its own daemon, its own rules file, and never a sound. Anything that
+can run a command can put a banner on screen — which is what makes it the
+right answer to *"tell me when this is done"*.
 
-You reach it with the `trill` command. The daemon must be running; `trill ping`
-exits 0 when it is (printing nothing), and `send`/`doctor` exit **2** when it
-isn't.
-
-Banners never steal focus, so sending one is safe in the middle of the user's
-work. There is no sound, ever — don't promise one.
+You reach it with the `trill` command; the daemon must be running (`trill
+ping` exits 0 when it is, printing nothing; everything else exits **2** when
+it isn't). Banners never steal focus, so sending one is safe mid-work. There
+is no sound, ever — don't promise one.
 
 ## Verbs
 
@@ -26,13 +24,11 @@ work. There is no sound, ever — don't promise one.
 | …clickable | `trill send --title "PR open" --url https://github.com/…` |
 | …with up to 3 buttons | `trill send --title "PR open" --action "Open PR=https://…" --action "Diff=https://…"` |
 | …saying what it asks of the user | `trill send --title "Lane blocked" --kind ask` |
-| …attributed to something | `trill send --title "…" --source deploy --symbol checkmark.circle` |
-| …hiding the detail on a shared screen | `trill send --title "…" --body "…" --redact` |
-| announce a long command when it ends | `make build; trill send --title "build done"` |
+| …that clears itself when a check passes | `trill send --title "…" --kind ask --until pr-merged:142,org/repo` |
+| that question got answered | `trill resolve <id-or-key>` |
 | send a fully-formed event | `echo '{"title":"Backup complete"}' \| trill send --json` |
 | is the daemon up? | `trill ping` |
-| which apps still banner themselves? | `trill doctor` |
-| …every app, as JSON | `trill doctor --all --json` |
+| which apps still banner themselves? | `trill doctor` (`--all --json` for every app) |
 | open the inbox window | `trill inbox` |
 | …just the asks | `trill inbox --asks` |
 | everything, exhaustively | `trill help` |
@@ -40,17 +36,22 @@ work. There is no sound, ever — don't promise one.
 `--kind` colors the banner by what it asks of the user: `ask` (blocked on
 them), `fault` (broke), `chat` (a human), `pulse` (in flight), `done`
 (finished well), `note` (fyi, the default). An `ask` whose banner times out
-unattended doesn't vanish — it parks as a slim fin on the right screen edge
-until the user hovers it back out and answers or dismisses it. So `--kind
-ask` is the right shape for "I'm blocked, come back to me": it waits;
-nothing else does. `--urgency` is the loudness —
-`low`, `normal` (default) or `critical` — and is a different axis: a fault can
-be low, a note can be critical. `--thread <name>` groups related banners.
-`--source <slug>` is what the user's rules file matches on — give a
-long-running job its own source so they can route it later. `--action
-"Label=https://…"` (or `Label=app:bundle.id`, or `Label=lane:repo/name` to go
-to that holt lane's terminal window, repeatable) adds buttons; the first one
-is also what clicking the banner body does.
+unattended doesn't vanish — it parks as a slim fin on the right screen edge,
+across restarts, until answered or dismissed. So `--kind ask` is the shape for
+"I'm blocked, come back to me": it waits; nothing else does.
+
+An ask can also stop waiting on its own. `trill resolve <id>` (the id `send`
+printed) clears it from any process, any time later. `--until NAME[:args]` has
+the daemon poll a check *the user declared* in their rules file (an undeclared
+name does nothing). `--key K` names the ask yourself, and re-sending with that
+key replaces its fin.
+
+`--urgency` (`low`/`normal`/`critical`) is the loudness, a different axis: a
+fault can be low, a note critical. `--thread` groups related banners.
+`--source <slug>` is what the rules file matches on; `--redact` keeps body and
+subtitle off the banner. `--action "Label=https://…"` — also `Label=app:ID` or
+`Label=lane:repo/name` for that holt lane's window, repeatable — adds buttons;
+the first is also what clicking the banner body does.
 
 ## Exit codes — check these, they mean different recoveries
 
@@ -63,40 +64,31 @@ is also what clicking the banner body does.
 | 4 | `doctor`: apps found still notifying natively | report the list |
 | 5 | `doctor`: can't read macOS's settings | needs Full Disk Access — **not** "all quiet" |
 
-Two of these lie in the same direction, and both matter:
-
 **Exit 0 means the daemon took the event, not that a banner appeared.** The
-rules run afterwards, asynchronously. A `drop` rule, a `digest` rule, thread
-coalescing, or quiet hours can all route it to the inbox instead — and none of
-them change the exit code. Say "sent" and not "you'll see it on screen".
+rules run afterwards: a `drop` or `digest` rule, coalescing, or quiet hours can
+route it to the inbox instead, and none of them change the exit code. Say
+"sent", not "you'll see it on screen".
 
-**Exit 5 means *can't tell*, not "nothing to fix".** There are three verdicts
-here, not two, and reporting the third as clean is the bug this app already
-shipped once.
-
-`trill ping` on a healthy daemon prints **nothing** and exits 0. The silence is
-the answer; the one-line message only exists on failure.
+**Exit 5 means *can't tell*, not "nothing to fix".** Three verdicts, not two;
+reporting the third as clean is a bug this app already shipped once.
 
 ## When to reach for this
 
-- "tell me when this finishes" → run the thing, then `trill send`
-- "notify me if the deploy fails" → `trill send --urgency critical` in the
-  failure branch
-- "why am I getting two banners for Slack?" → `trill doctor`, then read out the
-  list. Trill only *reports*; the user turns Apple's off themselves.
-- "let me know without stealing my screen" → that's the default; say so.
+- "tell me when this finishes" → run it, then `trill send`
+- "notify me if the deploy fails" → `--urgency critical` in that branch
+- "come back to me when you're blocked" → `--kind ask`; it parks and waits
+- "why two banners for Slack?" → `trill doctor`; trill only *reports*, the
+  clicking is theirs
 
 ## When NOT to
 
-- **The user wants a sound or an alarm.** Trill has no audio, deliberately.
-  Reach for `afplay` or `osascript` instead, and say why.
-- **The user wants a reminder at a time.** Trill fires when told to; it has no
-  scheduler. Use `at`, a cron job or a Calendar event, then have it call
-  `trill send`.
-- **The user wants to silence another app's notifications.** Trill reads Apple's
-  settings and never writes them. `trill doctor` names the apps; the clicking is
-  the user's.
-- **The user wants to change which notifications get through.** That's their
+- **A sound or an alarm.** Trill has no audio, deliberately. Reach for
+  `afplay` or `osascript`, and say why.
+- **A reminder at a time.** Trill fires when told to; it has no scheduler. Use
+  `at`, cron or a Calendar event, and have that call `trill send`.
+- **Silencing another app.** Trill reads Apple's settings and never writes
+  them. `trill doctor` names the apps; the clicking is the user's.
+- **Changing which notifications get through.** That's their
   `~/.config/trill/rules.json`, edited as a file — not a CLI flag.
 - **A file needs to go somewhere the user can grab it.** That's `perch add`.
 
@@ -111,16 +103,24 @@ Read and edit it as a file. First matching rule wins; no match means banner.
     { "match": { "source": "slack" }, "delivery": "digest", "digest": "work" },
     { "match": { "titleContains": "backup" }, "delivery": "inbox" }
   ],
-  "quietHours": { "startMinute": 1320, "endMinute": 420 }
+  "quietHours": { "startMinute": 1320, "endMinute": 420 },
+  "resolvers": {
+    "pr-merged": { "run": ["gh", "pr", "view", "$1", "--repo", "$2", "--json", "state", "-q", ".state"],
+                   "resolveWhen": { "stdout": "MERGED" }, "every": "2m", "giveUpAfter": "12h" }
+  }
 }
 ```
 
-`match` takes `source` (exact, case-insensitive), `titleContains` (substring,
-case-insensitive) and `urgencyAtMost`. `delivery` is `banner`, `inbox`,
-`digest` (with a sibling `digest` name) or `drop`, written **flat beside**
-`match`, not nested inside it. `quietHours` is minutes since local midnight and
-may cross midnight — `1320`/`420` is 22:00–07:00 — and inside that window every
-non-critical event is demoted to inbox-only whatever the rules said.
+`resolvers` is what `--until` may name — argv (or `"get": "https://…"`) with
+`$1`…`$9` filled from the invocation's comma-separated args. It is the only
+place a command may live (**you cannot pass one on the command line**), so
+adding one means editing this file, which is the user's call.
+
+`match` takes `source` (exact, case-insensitive), `titleContains` and
+`urgencyAtMost`. `delivery` is `banner`, `inbox`, `digest` (with a sibling
+`digest` name) or `drop`, written **flat beside** `match`, not nested in it.
+`quietHours` is minutes since local midnight and may cross it (`1320`/`420` is
+22:00–07:00); inside it every non-critical event is demoted to inbox-only.
 
 ## Settings file — `~/.config/trill/config.json`
 
@@ -133,19 +133,18 @@ disk writes from that moment on. Don't write the file if it's a symlink into
 
 ## Traps
 
-- **`trill send` and `trill doctor` need the daemon; `trill help` doesn't.**
-  Exit 2 is not a failure of your command, it means nothing is listening. Don't
-  retry it in a loop.
-- **A dropped event is genuinely indistinguishable from a delivered one.** Both
-  exit 0. There is no code that says "a rule ate it". So when the user says "I
-  never got it", read `~/.config/trill/rules.json` before you suspect anything
-  else — that is the only place the answer lives.
-- **Quiet hours silently demote.** Inside the window every non-critical event
-  becomes inbox-only. `--urgency critical` is the documented way through; a rule
-  can still `drop` it, but silence alone can't.
-- **`--redact` hides the body *and subtitle* from the banner, not from the
-  inbox.** It is for a shared screen, not for secrets.
-- **Never put a secret in `--title` or `--body`.** Banners are drawn on screen
-  and recorded to the inbox database.
+- **Everything but `trill help` needs the daemon.** Exit 2 isn't your command
+  failing, it means nothing is listening. Don't retry it in a loop.
+- **A dropped event is indistinguishable from a delivered one.** Both exit 0;
+  no code says "a rule ate it". When the user says "I never got it", read
+  `~/.config/trill/rules.json` — that is the only place the answer lives.
+- **Quiet hours silently demote** every non-critical event to inbox-only.
+  `--urgency critical` is the way through; a rule can still `drop` it.
+- **`--redact` is for a shared screen, not for secrets** — it keeps body and
+  subtitle off the banner, not out of the inbox. Never put a secret in any
+  field: banners are drawn on screen and recorded to the inbox database.
+- **`--until` is a promise about the user's config, not yours.** It names a
+  resolver in *their* `rules.json`; an undeclared name is logged and the fin
+  simply stays. Read the file before you promise a banner will clear itself.
 - **`trill doctor` needs Full Disk Access** and says so by exiting 5. Treat that
   as "unknown", never as "clean".

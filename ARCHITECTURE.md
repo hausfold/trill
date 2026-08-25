@@ -23,6 +23,10 @@
 8. Surfaces render only actions the source can honor (capability
    advertisement, no dead buttons).
 9. Policy decisions are pure functions of (event, rules, clock).
+10. The wire may *name* a resolver, never describe one: what `--until` runs
+    is declared in the user's own `rules.json`, executed as argv with no
+    shell, and resolution is one-way — nothing can put an answered question
+    back on screen.
 
 ## Boundaries
 
@@ -160,9 +164,14 @@ Three more consequences worth knowing:
   lands on `BannerQueue.expire`, not `dismiss`: an `ask` whose clock runs
   out moves to the `parked` bucket and renders as a slim fin on the right
   screen edge (`BannerGeometry.Ledge`, `LedgePanelController`) until it's
-  answered, dismissed, or evicted by a sixth ask. Only the clock parks — a
-  user's own dismissal means they saw it. Hovering a fin is queue state too
-  (`setParkedHover`), so the slid-out card survives rebuilds like any panel.
+  answered, dismissed, resolved, or evicted by a sixth ask. Only the clock
+  parks — a user's own dismissal means they saw it. Hovering a fin is queue
+  state too (`setParkedHover`), so the slid-out card survives rebuilds like
+  any panel. The bucket is mirrored to its own sqlite table on every change
+  and restored at launch (`AppDatabase.saveLedge`/`parkedLedge`,
+  `BannerQueue.restoreParked`), because a question that evaporates on a
+  crash is exactly what the ledge exists to prevent; anything older than
+  `parkedLifetime` is dropped on the way back in.
 - **Which banner is hovered is queue state, not panel state.** Expanding one
   card re-lays every card beneath it, so the render pass has to see it —
   `BannerQueue` holds a `hoveredID` (an id, not a bool) and stamps
@@ -234,6 +243,48 @@ expansion to fit in the first place, the fallback should never actually fire;
 it stays as the honest failure if it ever does. Same reasoning covers the
 other path that can take a hovered card away without an exit: `setCapacity`
 clearing the hover it just pushed into the waiting line.
+
+### A question that answers itself
+
+Three roads take a fin off the ledge without a human: `trill resolve KEY`
+over the socket, an event that arrives carrying `resolves` (the GitHub
+bridge's own merge/close deliveries answer the review-request ask they
+share a name with), and a poller the daemon runs for a parked ask that named
+one with `--until`. All three end at `BannerQueue.resolve(keys:)`, which
+clears matching entries from visible, waiting and parked alike — three
+feeders, one terminal, no second path to keep in step.
+
+An event answers to its id and, if it has one, its `key`. The id is the
+common case: `trill send` already printed a name for the event, so a script
+that sends and later resolves needs no key at all. A key is a *second*
+name, for when the resolver is a different process — a webhook arriving with
+its own delivery id, tomorrow's rebuild hook, a lane that respawned — and
+re-sending an ask under the same key replaces its fin instead of growing a
+second one.
+
+The poller is the part that had to be designed rather than written. Anything
+local can write to trill's socket, so a command string on the wire would make
+the daemon a run-this-for-me-on-a-timer service for every process on the Mac,
+in a GUI session that may hold Full Disk Access. Instead `--until NAME[:args]`
+selects from a `resolvers` map in `~/.config/trill/rules.json` — the file only
+the user writes — and the wire contributes arguments, which fill numbered
+holes (`$1`…`$9`), may not start with `-` (so `gh pr view $1` cannot become
+`gh pr view --repo elsewhere`), and are percent-encoded to the unreserved set
+when the resolver is a URL. `Resolver` decides all of this purely and hands
+`ResolverRunner` a `ResolverPlan` with nothing left to interpret; the runner
+is the only place in trill that starts a process, and it starts it through
+`/usr/bin/env` with an argv and an environment the plan carries whole — there
+is no shell in the path, so there is no string a quote could break out of.
+
+Bounded in every direction that could bite: `every`/`timeout`/`giveUpAfter`
+are clamped on decode, `giveUpAfter` counts from the *event's* timestamp so a
+relaunch can't hand a stale ask another twelve hours, a check that can't run
+(env's 126/127 included, which would otherwise read as a patient "not yet")
+counts as a failure and five in a row stop the poller, and a poller that runs
+out of time leaves the fin up. Resolution never invents an answer it didn't
+get, and `ResolutionMonitor` arms and disarms purely by reconciling against
+the parked list — so every way a fin can leave, including a relaunch, stops
+its poller through the same one path.
 
 ### The undocumented mirror
 
@@ -321,5 +372,5 @@ without taking its focus.
 - Nebelung theming, second half: kind hues already arrive through
   `~/.config/trill/theme.json` (`BannerTheme`, system-color fallbacks);
   surface/text tokens would ride the same file.
-- Command hooks: `ActionRouter.command` gains an allowlisted runner with
-  redacted environment.
+- Command hooks for *actions*: `ActionRouter.command` gains an allowlisted
+  runner, declared in `rules.json` the way `resolvers` already are.

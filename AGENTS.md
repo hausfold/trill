@@ -80,6 +80,17 @@ never into a broken pipeline. Corollaries:
   store needs FDA and can't be assumed readable, the walkthrough's **Done**
   button is the mechanism and the poll is a bonus that ticks apps off where
   it can. Don't "fix" the panel by making it wait for confirmation again.
+- **A resolver is named on the wire and *declared* in `rules.json`.** An
+  `ask` can clear itself — `trill resolve`, an event carrying `resolves`, or
+  a `--until` poller — but what that poller runs lives in the user's own
+  rules file, runs as argv through `/usr/bin/env` with no shell anywhere,
+  and takes wire arguments only into numbered holes (`$1`…`$9`, never a
+  leading `-`). Any process on this Mac can write to trill's socket; a
+  command string on the wire would make the daemon a run-this-on-a-timer
+  service for all of them, in a session that may hold Full Disk Access.
+  Resolution is also one-way: nothing may put an answered question back on
+  screen, and a poller that gives up leaves the fin — trill never invents an
+  answer it didn't get.
 - **The queue is the truth; panels are disposable.** Display topology
   rebuilds re-render from `BannerQueue` state. Never park event state in a
   panel or view.

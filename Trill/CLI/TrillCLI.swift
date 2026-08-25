@@ -13,7 +13,9 @@ import Foundation
 /// One JSON line out, one JSON line back, exit code says what happened:
 /// 0 ok · 1 bad usage · 2 daemon unreachable · 3 daemon refused.
 enum TrillCLI {
-    static let subcommands: Set<String> = ["send", "ping", "doctor", "inbox", "help", "--help", "-h"]
+    static let subcommands: Set<String> = [
+        "send", "ping", "doctor", "inbox", "resolve", "help", "--help", "-h",
+    ]
 
     static func run(arguments: [String]) -> Int32 {
         switch arguments.first {
@@ -33,6 +35,20 @@ enum TrillCLI {
             switch parseInbox(Array(arguments.dropFirst())) {
             case .success(let request):
                 return roundTrip(request)
+            case .failure(let message):
+                FileHandle.standardError.write(Data("trill: \(message)\n".utf8))
+                return 1
+            }
+        case "resolve":
+            switch parseResolve(Array(arguments.dropFirst())) {
+            case .success(let request):
+                // The count, like `send` prints the id: what the daemon
+                // actually did. Zero is a success — the question had already
+                // been answered by hand, which is the ending a poller wants.
+                return roundTrip(request) { response in
+                    print(response.cleared ?? 0)
+                    return 0
+                }
             case .failure(let message):
                 FileHandle.standardError.write(Data("trill: \(message)\n".utf8))
                 return 1
@@ -74,6 +90,9 @@ enum TrillCLI {
         var source = "cli"
         var symbol: String?
         var thread: String?
+        var key: String?
+        var resolves: [String] = []
+        var until: String?
         var kind: NotificationEvent.Kind?
         var urgency = NotificationEvent.Urgency.normal
         var privacy = NotificationEvent.Privacy.visible
@@ -89,6 +108,15 @@ enum TrillCLI {
             case "--source": source = value() ?? source
             case "--symbol": symbol = value()
             case "--thread": thread = value()
+            case "--key": key = value()
+            case "--resolves":
+                guard let raw = value() else { return .failure("--resolves wants a key") }
+                resolves.append(raw)
+            case "--until":
+                guard let raw = value() else {
+                    return .failure("--until wants a resolver name from rules.json (NAME or NAME:arg,arg)")
+                }
+                until = raw
             case "--redact": privacy = .redacted
             case "--urgency":
                 guard let raw = value(), let parsed = NotificationEvent.Urgency(rawValue: raw) else {
@@ -142,7 +170,8 @@ enum TrillCLI {
             return .failure("send requires --title (or --json on stdin)")
         }
         return .success(NotificationEvent(
-            source: source, title: title, subtitle: subtitle, body: body,
+            source: source, key: key, resolves: resolves, until: until,
+            title: title, subtitle: subtitle, body: body,
             symbol: symbol, thread: thread,
             // Same inference the decoder applies to un-kinded events: an
             // unlabeled critical keeps its old red reading by being a fault.
@@ -173,6 +202,33 @@ enum TrillCLI {
         return .success(SocketProvider.Request(
             v: 1, verb: "inbox", event: nil, asks: asks ? true : nil
         ))
+    }
+
+    // MARK: - resolve
+
+    enum ResolveParseResult: Equatable {
+        case success(SocketProvider.Request)
+        case failure(String)
+    }
+
+    /// `trill resolve KEY [KEY …]` — the question was answered; take its
+    /// banner or fin down. A KEY is either the id `trill send` printed or a
+    /// `--key` the sender chose, which is the whole reason `--key` exists:
+    /// the id is fine when the same script sends and resolves, and useless
+    /// when the resolver is a different process entirely.
+    ///
+    /// Idempotent by design: resolving something already gone prints `0` and
+    /// exits 0. A rebuild hook that fires twice is not an error.
+    static func parseResolve(_ args: [String]) -> ResolveParseResult {
+        var keys: [String] = []
+        for arg in args {
+            // No flags here, and a leading `-` is a typo worth catching:
+            // silently resolving a fin named "--json" helps nobody.
+            if arg.hasPrefix("-") { return .failure("unknown flag '\(arg)' (see `trill help`)") }
+            keys.append(arg)
+        }
+        guard !keys.isEmpty else { return .failure("resolve wants at least one key (see `trill help`)") }
+        return .success(SocketProvider.Request(v: 1, verb: "resolve", event: nil, keys: keys))
     }
 
     // MARK: - doctor
@@ -357,7 +413,9 @@ enum TrillCLI {
                  [--urgency low|normal|critical] [--redact] [--url URL]
                  [--action "Label=https://…"] [--action "Label=app:bundle.id"]
                  [--action "Label=lane:repo/name"]
+                 [--key NAME] [--resolves KEY]… [--until RESOLVER[:args]]
       trill send --json          # full NotificationEvent JSON on stdin
+      trill resolve KEY [KEY …]  # that question got answered — take it down
       trill ping                 # is the daemon up?
       trill doctor [--all] [--notify] [--json] [BUNDLE_ID …]
       trill inbox [--asks]       # open the inbox window (--asks: asks only)
@@ -372,7 +430,24 @@ enum TrillCLI {
     An ask whose banner times out unattended doesn't vanish: it parks as a
     slim fin on the right screen edge until you answer or dismiss it. Hover
     the fin to slide the card back out. At most 5 park; older asks yield
-    (they stay in the inbox — `trill inbox --asks` lists them).
+    (they stay in the inbox — `trill inbox --asks` lists them). Fins survive
+    a restart of the daemon; a fin nobody answers for a week is dropped.
+
+    A parked question can also answer itself. Three ways, cheapest first:
+
+      trill resolve <id>              # the id `trill send` printed
+      trill send … --resolves KEY     # this event answers that question
+      trill send … --key K --until R  # the daemon polls resolver R for you
+
+    `--key` is optional and rarely needed: the printed id already names the
+    event. Give one when *something else* has to name it later — a webhook,
+    tomorrow's rebuild hook, a lane that respawned. Re-sending an ask with
+    the same --key replaces its fin instead of growing a second one.
+
+    `--until` names a resolver **declared in your rules.json** — never a
+    command on this line. Anything local can talk to trill's socket, so the
+    wire may only name what you already wrote down. See `resolvers` in
+    ~/.config/trill/rules.json.
 
     --action adds a button (up to 3 drawn; the first is also what clicking
     the banner body does). --url is shorthand for --action "Open=URL".

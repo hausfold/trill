@@ -68,8 +68,15 @@ struct RuleSet: Codable, Sendable, Equatable {
 
     var rules: [Rule]
     var quietHours: QuietHours?
+    /// Named ways to find out whether a parked ask has answered itself —
+    /// see `Resolver`. Declared here and only here: `--until` names one of
+    /// these, and a name that isn't in this map resolves nothing.
+    var resolvers: [String: Resolver]?
 
     static let empty = RuleSet(rules: [], quietHours: nil)
+
+    /// The resolver `--until NAME` meant, if the user declared it.
+    func resolver(named name: String) -> Resolver? { resolvers?[name] }
 }
 
 /// A rule's `delivery` is written **flat**, beside `match`:
