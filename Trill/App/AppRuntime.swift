@@ -73,7 +73,7 @@ final class AppRuntime {
         // was about must fall back to the ones the rules name, not the Mac.
         actionRouter = ActionRouter(
             listedApps: {
-                NotificationSettingsAudit.listedBundleIDs(in: watcher.current())
+                AppRuntime.listedApps(rules: watcher.current())
             },
             askBroker: askBroker
         )
@@ -153,9 +153,7 @@ final class AppRuntime {
             // rules name — read live, so an edited rules.json changes the
             // next audit without a restart.
             await repository.supervise(SocketProvider(
-                listedApps: {
-                    NotificationSettingsAudit.listedBundleIDs(in: rulesWatcher.current())
-                },
+                listedApps: { AppRuntime.listedApps(rules: rulesWatcher.current()) },
                 openInbox: { [weak self] asksOnly in
                     Task { @MainActor in self?.onOpenInbox?(asksOnly ? .asks : .all) }
                 },
@@ -175,6 +173,12 @@ final class AppRuntime {
             await repository.supervise(GitHubWebhookProvider(
                 enabled: { ConfigFileStore.shared.current().githubBridgeEnabled }
             ))
+            // Same "always probed" reasoning: the Sources row has to be able
+            // to say *why* the calendar is quiet — switched off, or granted
+            // write-only — and it can only know that from this provider's
+            // health. The probe never asks macOS for anything; the grant is
+            // requested where the switch is flipped.
+            await repository.supervise(CalendarProvider())
             await self?.reconcileSystemMirrorSetting()
         }
 
@@ -266,7 +270,21 @@ final class AppRuntime {
     /// the Settings audit mean by "a listed app". Read live, so an edited
     /// rules.json is reflected without a restart.
     var listedApps: [String] {
-        NotificationSettingsAudit.listedBundleIDs(in: rulesWatcher.current())
+        Self.listedApps(rules: rulesWatcher.current())
+    }
+
+    /// One answer for every caller, because there are three of them and the
+    /// helper walks whatever they agree on. Both inputs are read at call time:
+    /// an edited rules.json or a flipped calendar switch changes the next
+    /// audit without a restart.
+    /// `nonisolated` because two of the three callers are `@Sendable` closures
+    /// the supervisor runs off the main actor; everything it touches is either
+    /// pure or already queue-guarded.
+    nonisolated static func listedApps(rules: RuleSet) -> [String] {
+        NotificationSettingsAudit.listedBundleIDs(
+            in: rules,
+            calendarSourceEnabled: ConfigFileStore.shared.current().calendarEnabled
+        )
     }
 }
 

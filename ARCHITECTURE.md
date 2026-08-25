@@ -47,6 +47,9 @@ usernoted db2 ──read-only──► SystemMirrorProvider   normalize · dedup
 GitHub ──webhook──► tunnel ──► GitHubWebhookProvider
    (HMAC-gated; tunnel = haus's wiring)
                                       │
+EventKit ──push──► CalendarProvider   │
+   (in-process; read-only grant, opt-in)
+                                      │
                         PolicyEngine (pure) ── rules.json, hot-reloaded
                                       │
         SettingsView ◄── AppSettings ── config.json, hot-reloaded
@@ -61,8 +64,9 @@ GitHub ──webhook──► tunnel ──► GitHubWebhookProvider
    NSPanel per banner · all Spaces ·  scoped: all · asks · one digest
    fullscreen aux                     (the card's click is the query)
               ▼
-        ActionRouter ── open app · open URL · focus lane · open inbox ·
-                        silence native · reply (answers an ask) · (hooks, M2)
+        ActionRouter ── open app · open URL · focus lane · open event ·
+                        open inbox · silence native · reply (answers an ask) ·
+                        (hooks, M2)
               │
               ▼
           AskBroker ──── the reply half of `trill ask`: who is still on the
@@ -340,6 +344,36 @@ get, and `ResolutionMonitor` arms and disarms purely by reconciling against
 the parked list — so every way a fin can leave, including a relaunch, stops
 its poller through the same one path.
 
+### A meeting that moves
+
+The calendar source is the only one where the *truth changes after trill has
+already decided something*. A 2pm standup can move to 2:30, be declined from a
+phone, or be deleted outright — and the machine can be asleep through all of it.
+
+Three rules cover the whole space, and each exists because the obvious
+implementation gets it wrong:
+
+- **The schedule is rebuilt whole, never patched.** `EKEventStoreChanged` says
+  *something* changed, not what; re-querying is both simpler than a diff and
+  the only version that can't drift. Deletion, decline and reschedule are all
+  just "the answer is different now".
+- **An occurrence is named by item id *and* start time.** A recurring event
+  shares one identifier across every instance, so the start has to be part of
+  the name — which also means a *moved* meeting is a new occurrence that earns
+  its own banner, rather than one the dedupe window swallows.
+- **The tick is a wall-clock timer, and a missed reminder is still owed.** A
+  monotonic timer measures uptime, and the Mac sleeps through most of any lead
+  time. So the deadline is `wallDeadline`, and "is it due" is asked of the fire
+  date rather than of a window — a reminder whose moment passed during sleep
+  still banners, right up until the meeting itself has started (`grace`), after
+  which the occurrence is marked seen and stays silent. trill does not tell you
+  about a meeting you are already in.
+
+The banner is a `note`, not an `ask`, and that is a decision rather than an
+omission: an `ask` that times out parks on the ledge until something answers
+it, and nothing ever answers "your 2pm is in ten minutes". It would still be
+sitting there at five, still claiming ten minutes.
+
 ### The undocumented mirror
 
 `SystemMirrorProvider` treats the usernoted store the way any undocumented
@@ -485,8 +519,9 @@ would have gone down.
   pounce command.
 - Per-display routing: `BannerWindowSystem` already keys panels by entry;
   a queue per screen descriptor is additive.
-- Provider actions (chat reply, calendar open): richer capability sets on
-  existing providers.
+- Provider actions (chat reply, dismiss-at-source): richer capability sets on
+  existing providers. Calendar's `open_event` is the shape they take — a named
+  capability with a validated target, not a URL on the wire.
 - Nebelung theming, second half: kind hues already arrive through
   `~/.config/trill/theme.json` (`BannerTheme`, system-color fallbacks);
   surface/text tokens would ride the same file.

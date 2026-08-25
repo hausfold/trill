@@ -54,6 +54,22 @@ enum SettingsPane: String, CaseIterable, Identifiable {
     }
 }
 
+extension SettingsPane {
+    /// "10m", "1h 30m", "At start" — one lead time, in the fewest words that
+    /// stay unambiguous.
+    static func leadLabel(_ minutes: Int) -> String {
+        guard minutes > 0 else { return "At start" }
+        guard minutes >= 60 else { return "\(minutes)m" }
+        let (hours, rest) = (minutes / 60, minutes % 60)
+        return rest == 0 ? "\(hours)h" : "\(hours)h \(rest)m"
+    }
+
+    /// The same number as a clause: "10m before", or "just as" for zero.
+    static func leadDescription(_ minutes: Int) -> String {
+        minutes > 0 ? "\(leadLabel(minutes)) before" : "just as"
+    }
+}
+
 // MARK: - General
 
 struct GeneralPane: View {
@@ -203,6 +219,56 @@ struct ProvidersPane: View {
                 if settings.githubBridgeEnabled, let reason = status["github"].flatMap({ $0 }) {
                     SettingsDivider()
                     ProviderReason(reason)
+                }
+                SettingsDivider()
+                SettingsRow(
+                    symbol: "calendar",
+                    tint: .red,
+                    title: "Calendar",
+                    subtitle: "Your next meeting, \(SettingsPane.leadDescription(settings.calendarLeadMinutes)) it starts — with a pill that opens it, and one that joins it when the invite carries a link trill knows. EventKit pushes, so a meeting moved on your phone moves the banner."
+                ) {
+                    Toggle("Calendar", isOn: $settings.calendarEnabled)
+                        .labelsHidden()
+                        .toggleStyle(.switch)
+                        .disabled(settings.isManagedExternally)
+                }
+                if settings.calendarEnabled {
+                    SettingsDivider()
+                    SettingsRow(
+                        symbol: "clock",
+                        tint: .red,
+                        title: "Lead time",
+                        subtitle: "How much warning you get. Zero means the banner lands as the meeting starts."
+                    ) {
+                        Stepper(
+                            value: $settings.calendarLeadMinutes,
+                            in: AppConfig.calendarLeadRange,
+                            step: 5
+                        ) {
+                            Text(SettingsPane.leadLabel(settings.calendarLeadMinutes))
+                                .monospacedDigit()
+                        }
+                        .disabled(settings.isManagedExternally)
+                    }
+                    // The grant is macOS's, and its sheet only ever appears
+                    // once: after a "Don't Allow" the only road back is the
+                    // Privacy pane, so the row hands the user that door rather
+                    // than a switch that is already on and doing nothing.
+                    if let reason = status["calendar"].flatMap({ $0 }) {
+                        SettingsDivider()
+                        SettingsRow(
+                            symbol: "exclamationmark.triangle.fill",
+                            tint: .orange,
+                            title: "Not running",
+                            subtitle: reason
+                        ) {
+                            if CalendarProvider.authorization != .fullAccess {
+                                Button("Open Settings…") {
+                                    SystemIntegration.openCalendarPrivacySettings()
+                                }
+                            }
+                        }
+                    }
                 }
             }
 

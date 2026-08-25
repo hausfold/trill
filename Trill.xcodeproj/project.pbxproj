@@ -188,6 +188,8 @@
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
 				INFOPLIST_KEY_LSBackgroundOnly = NO;
 				INFOPLIST_KEY_LSUIElement = YES;
+				INFOPLIST_KEY_NSCalendarsFullAccessUsageDescription = "Trill draws a quiet banner before your next meeting. It reads your calendar; it never writes to it.";
+				INFOPLIST_KEY_NSCalendarsUsageDescription = "Trill draws a quiet banner before your next meeting. It reads your calendar; it never writes to it.";
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/../Frameworks";
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				MARKETING_VERSION = 0.1.0;
@@ -216,6 +218,8 @@
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
 				INFOPLIST_KEY_LSBackgroundOnly = NO;
 				INFOPLIST_KEY_LSUIElement = YES;
+				INFOPLIST_KEY_NSCalendarsFullAccessUsageDescription = "Trill draws a quiet banner before your next meeting. It reads your calendar; it never writes to it.";
+				INFOPLIST_KEY_NSCalendarsUsageDescription = "Trill draws a quiet banner before your next meeting. It reads your calendar; it never writes to it.";
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/../Frameworks";
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				MARKETING_VERSION = 0.1.0;

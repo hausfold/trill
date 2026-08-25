@@ -60,6 +60,28 @@ final class AppSettings: ObservableObject {
         }
     }
 
+    @Published var calendarEnabled: Bool {
+        didSet {
+            guard !isApplyingFileChange, calendarEnabled != oldValue else { return }
+            guard commit(\.calendarEnabled, calendarEnabled, revert: { self.calendarEnabled = oldValue })
+            else { return }
+            // The permission sheet belongs to the click that asked for it. Left
+            // to `CalendarProvider.probe()`, it would appear whenever the
+            // supervisor's backoff next came round — up to a minute later,
+            // which reads as trill being broken rather than as macOS asking.
+            if calendarEnabled, CalendarProvider.authorization == .notDetermined {
+                Task { await CalendarProvider.requestAccess() }
+            }
+        }
+    }
+
+    @Published var calendarLeadMinutes: Int {
+        didSet {
+            guard !isApplyingFileChange, calendarLeadMinutes != oldValue else { return }
+            commit(\.calendarLeadMinutes, calendarLeadMinutes, revert: { self.calendarLeadMinutes = oldValue })
+        }
+    }
+
     /// Why the last write didn't land, if it didn't. Settings shows it rather
     /// than leaving a switch that moved over a file that didn't.
     @Published private(set) var writeError: String?
@@ -113,6 +135,8 @@ final class AppSettings: ObservableObject {
         systemMirrorEnabled = config.systemMirrorEnabled
         githubBridgeEnabled = config.githubBridgeEnabled
         shyWhenWatched = config.shyWhenWatched
+        calendarEnabled = config.calendarEnabled
+        calendarLeadMinutes = config.calendarLeadMinutes
         reopenSettingsOnLaunch = defaults.bool(forKey: Keys.reopenSettingsOnLaunch)
 
         store.start { [weak self] config in
@@ -128,12 +152,21 @@ final class AppSettings: ObservableObject {
         isApplyingFileChange = true
         defer { isApplyingFileChange = false }
         let loginChanged = config.launchAtLogin != launchAtLogin
+        // Same reason as the toggle's own didSet: the file is the truth, so
+        // typing `"calendar": true` into it has to ask macOS for the grant
+        // just as clicking the switch does.
+        let calendarTurnedOn = config.calendarEnabled && !calendarEnabled
         launchAtLogin = config.launchAtLogin
         persistHistory = config.persistHistory
         systemMirrorEnabled = config.systemMirrorEnabled
         githubBridgeEnabled = config.githubBridgeEnabled
         shyWhenWatched = config.shyWhenWatched
+        calendarEnabled = config.calendarEnabled
+        calendarLeadMinutes = config.calendarLeadMinutes
         writeError = nil
+        if calendarTurnedOn, CalendarProvider.authorization == .notDetermined {
+            Task { await CalendarProvider.requestAccess() }
+        }
         // The file is the truth for this one too: someone who writes
         // `"launchAtLogin": false` expects the login item to actually go.
         if loginChanged {
@@ -150,9 +183,9 @@ final class AppSettings: ObservableObject {
     /// was put while the file disagrees is the one outcome a file-backed
     /// settings window must not produce.
     @discardableResult
-    private func commit(
-        _ keyPath: WritableKeyPath<AppConfig, Bool> & Sendable,
-        _ value: Bool,
+    private func commit<Value: Equatable & Sendable>(
+        _ keyPath: WritableKeyPath<AppConfig, Value> & Sendable,
+        _ value: Value,
         revert: () -> Void
     ) -> Bool {
         if let error = store.update({ config in config[keyPath: keyPath] = value }) {

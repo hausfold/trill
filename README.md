@@ -51,6 +51,11 @@ notifications experimentally tomorrow.
   something else says it's answered (`trill resolve`, or a merged PR the
   GitHub bridge recognizes), or when a check *you declared in your rules
   file* finally says yes.
+- **your next meeting, ten minutes out** — switch the Calendar source on and
+  trill draws one quiet card before each meeting: the title, *in 10m*, a pill
+  that opens the event, and a **Join** pill when the invite carries a link it
+  recognizes. EventKit pushes, so a meeting moved on your phone moves the
+  banner. trill reads your calendar; it never writes to it.
 - **rules, not settings mazes** — `~/.config/trill/rules.json`: route a
   source to banner / inbox / digest / drop; quiet hours; critical punches
   through. A `digest` rule batches quietly and flushes on the hour as one
@@ -73,11 +78,12 @@ notifications experimentally tomorrow.
 ## the shape
 
 ```text
-trill CLI      pounce/perch     usernoted db (experimental)
-    │  ▲          │                │ read-only, schema-probed
- SocketProvider   │          SystemMirrorProvider
+trill CLI     GitHub webhook    your calendar     usernoted db (experimental)
+pounce/perch      │             │ EventKit push   │ read-only, schema-probed
+    │  ▲          │             │                 │
+ SocketProvider  GitHubWebhook  CalendarProvider  SystemMirrorProvider
     │  └── the answer to `trill ask`, written back when a pill is pressed
-    └─────────────┴────────────────┘
+    └─────────────┴─────────────┴─────────────────┘
                   ▼
           EventRepository (actor: normalize · dedupe · persist · supervise)
                   ▼

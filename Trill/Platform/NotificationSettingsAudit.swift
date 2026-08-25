@@ -316,12 +316,20 @@ enum NotificationSettingsAudit {
     /// A rule's `source` is either a short slug (`deploy`, `ci`) or a bundle
     /// id for a mirrored system app; only the latter has notification
     /// settings to audit, and a dot is what tells them apart.
-    static func listedBundleIDs(in ruleSet: RuleSet) -> [String] {
+    ///
+    /// Calendar joins the list when the calendar source is on, and is the one
+    /// app that gets in without a rule naming it: switching that source on
+    /// *is* telling trill about Calendar, and it is the case where the two
+    /// banners are about the same meeting, at the same moment, on the same
+    /// screen. This still only ever *reports* — the clicking stays the user's,
+    /// as it does for every other row.
+    static func listedBundleIDs(in ruleSet: RuleSet, calendarSourceEnabled: Bool = false) -> [String] {
         var seen: Set<String> = []
-        return ruleSet.rules
+        var listed = ruleSet.rules
             .compactMap(\.match.source)
             .filter { $0.contains(".") }
-            .filter { seen.insert($0).inserted }
+        if calendarSourceEnabled { listed.append(CalendarEventMapper.calendarBundleID) }
+        return listed.filter { seen.insert($0).inserted }
     }
 
     /// trill's own row is in this store too, and telling the user to silence

@@ -32,6 +32,14 @@ struct AppConfig: Equatable, Sendable {
     /// watching the screen. A privacy default that has to be switched on is a
     /// privacy default nobody has on when it matters.
     var shyWhenWatched = true
+    /// Reading your calendar is a TCC grant and a real read of personal data.
+    /// Opt-in, and nothing asks macOS for it until this is on.
+    var calendarEnabled = false
+    /// How long before a meeting its banner is drawn. Ten minutes is the
+    /// default because it is the one everybody's calendar app already uses;
+    /// it is a number rather than a switch because "enough time to walk
+    /// there" is different for everyone.
+    var calendarLeadMinutes = 10
 
     /// The JSON key for each field. Spelled the way someone typing the file by
     /// hand would spell it — these names are user-facing surface, so renaming
@@ -42,7 +50,14 @@ struct AppConfig: Equatable, Sendable {
         static let systemMirror = "systemMirror"
         static let githubBridge = "githubBridge"
         static let shyWhenWatched = "shyWhenWatched"
+        static let calendar = "calendar"
+        static let calendarLeadMinutes = "calendarLeadMinutes"
     }
+
+    /// What a lead time may be. Zero is legitimate ("tell me when it starts");
+    /// past a day it stops meaning anything, and a typo'd 100000 would arm a
+    /// banner for every event the horizon can see.
+    static let calendarLeadRange = 0...(24 * 60)
 
     init() {}
 
@@ -56,6 +71,13 @@ struct AppConfig: Equatable, Sendable {
         if let value = json[Key.systemMirror] as? Bool { systemMirrorEnabled = value }
         if let value = json[Key.githubBridge] as? Bool { githubBridgeEnabled = value }
         if let value = json[Key.shyWhenWatched] as? Bool { shyWhenWatched = value }
+        if let value = json[Key.calendar] as? Bool { calendarEnabled = value }
+        // Clamped rather than refused: a file is a place people typo, and the
+        // honest recovery for "600000" is the nearest legal lead, not a
+        // silently ignored key.
+        if let value = json[Key.calendarLeadMinutes] as? Int {
+            calendarLeadMinutes = value.clamped(to: Self.calendarLeadRange)
+        }
     }
 
     /// Every key, at its current value — what gets merged back into the file
@@ -68,7 +90,15 @@ struct AppConfig: Equatable, Sendable {
             Key.systemMirror: systemMirrorEnabled,
             Key.githubBridge: githubBridgeEnabled,
             Key.shyWhenWatched: shyWhenWatched,
+            Key.calendar: calendarEnabled,
+            Key.calendarLeadMinutes: calendarLeadMinutes,
         ]
+    }
+}
+
+private extension Comparable {
+    func clamped(to range: ClosedRange<Self>) -> Self {
+        min(max(self, range.lowerBound), range.upperBound)
     }
 }
 

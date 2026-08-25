@@ -20,6 +20,7 @@ it's launched, themed at the source, or packaged.
 | Want to change… | Repo |
 |---|---|
 | the trill app (compositor, providers, rules, CLI, inbox) | **you are here** |
+| which calendars sync to this Mac at all | Apple's Calendar / Internet Accounts — trill only *reads* what EventKit already has |
 | how trill is *installed* on the system (flake wiring, launchd) | `haus` (the layer) |
 | the palette trill is themed with (source hex) | `nebelung` |
 | DND / Focus toggling ("Hush") | `haus` (the layer) — trill only deep-links there |
@@ -43,6 +44,19 @@ never into a broken pipeline. Corollaries:
   with a visible reason on any drift. It is opt-in, experimental, and the
   app must stay fully useful without it. No usernoted type or column name
   may appear outside `Providers/SystemMirror/`.
+- **The calendar is read, never written, and never asked for unprompted.**
+  `CalendarProvider` runs EventKit in-process — the OS pushes changes, so
+  there is no poller — and draws one `note` per occurrence, `calendarLeadMinutes`
+  before it starts. EventKit types stop at that provider the way usernoted's
+  stop at System Mirror: everything crossing out is a `CalendarOccurrence`,
+  and every decision (does this banner, when, what does it say, is that link
+  really a meeting) is `CalendarEventMapper`'s and pure. The source is
+  **off by default and the toggle is checked before anything asks macOS for
+  permission** — trill never springs a Calendars prompt on a launch nobody
+  asked anything of, and it holds no write access to ask with. The Join pill
+  is drawn only for a **recognized conferencing host**: the first `https://`
+  in someone's notes is as often a doc, and a pill that opens one is a lie in
+  a button.
 - **trill reads Apple's settings; it never writes them.** `trill doctor` and
   the "Silence Native Banners" helper decode the private per-app store
   read-only (`Platform/NotificationSettingsAudit`)
@@ -154,7 +168,8 @@ Trill/
   App/           entry, composition root, settings (config.json-backed)
   CLI/           `trill send/ping` — same binary, CLI personality
   Domain/        NotificationEvent, RuleSet, PolicyEngine (pure)
-  Providers/     protocol + Socket (shipping) + SystemMirror (quarantined)
+  Providers/     protocol + Socket · GitHub webhook · Calendar (EventKit)
+                 + SystemMirror (quarantined)
   Repositories/  EventRepository actor: supervise, normalize, dedupe, fan out
   Persistence/   AppDatabase — trill's OWN sqlite; the only writer in the app
   Compositor/    ScreenGeometry (pure), BannerQueue, panels, window system
