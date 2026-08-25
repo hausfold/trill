@@ -3,3 +3,11 @@ DerivedData/
 build/
 xcuserdata/
 *.xcuserstate
+
+# `nix build` output. Tracked once by accident, which made every lane's tree
+# dirty the moment anyone built the flake — and `holt reap` refuses to reap a
+# checkout with uncommitted work in it, so lanes piled up until someone
+# deleted files by hand. Same reasoning as the *.profraw rule in AGENTS.md:
+# a build artifact showing up in `git status` is the signal, not the noise.
+result
+result-*

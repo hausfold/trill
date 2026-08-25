@@ -117,9 +117,11 @@ Read and edit it as a file. First matching rule wins; no match means banner.
 filled from the invocation's comma-separated args, and the only place a command may live
 (**never the command line**), so adding one is theirs.
 
-`match` takes `source` (exact, case-insensitive), `titleContains`, `urgencyAtMost` and
-`kind`. `delivery` — `banner`, `inbox`, `digest` (with a sibling `digest` name) or
-`drop` — goes **flat beside** `match`, never nested in it. `display` names the screen:
+`match` takes `source` (exact, case-insensitive — a sender's slug, or a bundle id like
+`com.apple.MobileSMS` for anything System Mirror redrew, ~5 s late because macOS batches
+its store writes), `titleContains`, `urgencyAtMost` and `kind`. `delivery` — `banner`,
+`inbox`, `digest` (with a sibling `digest` name) or `drop` — goes **flat beside**
+`match`, never nested in it. `display` names the screen:
 `primary` (menu-bar, the default), `active` (the pointer's), `builtin`, `external`;
 naming one alone still banners, and an unplugged one falls back rather than swallowing.
 A `digest` rule banners nothing: it tallies, drawing one card on the hour ("9 quiet
