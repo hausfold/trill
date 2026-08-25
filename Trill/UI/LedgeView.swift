@@ -12,6 +12,9 @@ import SwiftUI
 /// already defends against, manufactured on purpose.
 struct LedgeItemView: View {
     let entry: BannerQueue.Entry
+    /// Passed straight through to the card the fin slides out into — a
+    /// parked ask is as readable over a shared screen as a fresh banner.
+    let shy: Bool
     var onHover: (Bool) -> Void
     var onDismiss: () -> Void
     var onActivate: () -> Void
@@ -34,6 +37,7 @@ struct LedgeItemView: View {
                 BannerView(
                     entry: entry,
                     maxFoldRows: 0,
+                    shy: shy,
                     onHover: { _ in }, // the container below owns the queue's hover
                     onDismiss: onDismiss,
                     onActivate: onActivate,

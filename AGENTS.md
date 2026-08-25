@@ -101,6 +101,16 @@ never into a broken pipeline. Corollaries:
   can ship a banner whose Deny answers 0 — and a fin restored from the ledge
   after a restart loses its pills, because the socket that could have carried
   that answer died with the last daemon.
+- **Shyness is ambient, and it is a rendering rule.** When macOS shows its
+  in-use indicator (screen capture, camera or mic — one indicator, no way to
+  tell them apart) or a display is mirrored, every card draws its redacted
+  form. It is polled, never notified, because no API reports capture:
+  `NSScreen.isCaptured` is UIKit's, `CGDisplayIsCaptured` died in 10.9, and
+  nothing is posted when a capture starts — all measured, see
+  `ARCHITECTURE.md`. Read the indicator's *geometry*, never its window name:
+  `kCGWindowName` needs Screen Recording permission, and trill will not ask
+  for the screen in order to be shy about the screen. The queue never learns
+  any of this — no event is dropped, delayed, or stored differently.
 - **The queue is the truth; panels are disposable.** Display topology
   rebuilds re-render from `BannerQueue` state. Never park event state in a
   panel or view.

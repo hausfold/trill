@@ -59,6 +59,11 @@ notifications experimentally tomorrow.
   (`config.json`, same directory) — the Settings window reads and writes that
   file and keeps nothing of its own, so anything you can click you can also
   type, and vice versa, without a restart.
+- **shy on a shared screen** — while macOS is showing its in-use indicator
+  (something is capturing the screen, or the camera or mic is live) or a
+  display is mirrored, every card drops its body and keeps only the title,
+  exactly as if it had been sent `--redact`. Nothing to arm before a call; a
+  small `eye.slash` on the card says why. One switch, on by default.
 - **resilient compositor** — panels are disposable; the queue is the truth.
   Unplug a display mid-burst and nothing is lost. A provider dying can't
   take rendering down; it re-probes and backs off on its own.

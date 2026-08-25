@@ -50,6 +50,16 @@ final class AppSettings: ObservableObject {
         }
     }
 
+    /// Cards degrade to their redacted form while macOS says the screen is
+    /// being watched. The reading itself is `ScreenWatchSentinel`'s; this is
+    /// only whether trill acts on it.
+    @Published var shyWhenWatched: Bool {
+        didSet {
+            guard !isApplyingFileChange, shyWhenWatched != oldValue else { return }
+            commit(\.shyWhenWatched, shyWhenWatched, revert: { self.shyWhenWatched = oldValue })
+        }
+    }
+
     /// Why the last write didn't land, if it didn't. Settings shows it rather
     /// than leaving a switch that moved over a file that didn't.
     @Published private(set) var writeError: String?
@@ -102,6 +112,7 @@ final class AppSettings: ObservableObject {
         persistHistory = config.persistHistory
         systemMirrorEnabled = config.systemMirrorEnabled
         githubBridgeEnabled = config.githubBridgeEnabled
+        shyWhenWatched = config.shyWhenWatched
         reopenSettingsOnLaunch = defaults.bool(forKey: Keys.reopenSettingsOnLaunch)
 
         store.start { [weak self] config in
@@ -121,6 +132,7 @@ final class AppSettings: ObservableObject {
         persistHistory = config.persistHistory
         systemMirrorEnabled = config.systemMirrorEnabled
         githubBridgeEnabled = config.githubBridgeEnabled
+        shyWhenWatched = config.shyWhenWatched
         writeError = nil
         // The file is the truth for this one too: someone who writes
         // `"launchAtLogin": false` expects the login item to actually go.

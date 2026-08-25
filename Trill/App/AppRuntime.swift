@@ -25,6 +25,8 @@ final class AppRuntime {
     private var rulesWatcher: RulesWatcher
     /// Follows `persistHistory` — see `applyPersistence`.
     private var persistenceObserver: AnyCancellable?
+    /// Follows `shyWhenWatched`, so a flipped switch re-renders what's up.
+    private var shynessObserver: AnyCancellable?
     /// Armed pollers for parked asks that named a `--until` resolver. Held
     /// here so `stop()` can cancel them — a resolver outliving the daemon
     /// would be a process trill can no longer report on.
@@ -105,6 +107,16 @@ final class AppRuntime {
         // through.
         persistenceObserver = settings.$persistHistory.sink { [weak self] enabled in
             Task { @MainActor in self?.applyPersistence(enabled) }
+        }
+
+        // Same shape, and the same reason: the file is the truth for shyness
+        // too, so typing `"shyWhenWatched": false` has to un-redact the cards
+        // that are on screen right now. The sentinel re-reads the switch
+        // itself — this only tells it when to look. Deferred a turn because
+        // `@Published` delivers in `willSet`, before the write reaches the
+        // config store the sentinel asks.
+        shynessObserver = settings.$shyWhenWatched.sink { _ in
+            Task { @MainActor in ScreenWatchSentinel.shared.refresh() }
         }
 
         deliveryTask = Task { [repository, queue, digests, askBroker] in

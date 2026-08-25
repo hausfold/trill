@@ -129,9 +129,9 @@ quiet things · ci ×4, garden ×3") opening the inbox on exactly those.
 ## Settings file — `~/.config/trill/config.json`
 
 The app's own switches, and the truth for them — Settings reads and writes this
-same file, live. All four keys at their defaults, each optional —
-`{"launchAtLogin": true, "persistHistory": true, "systemMirror": false,
-"githubBridge": false}`. Don't write it if it's a symlink into `/nix/store`:
+same file, live. Every key at its default, each optional — `{"launchAtLogin":
+true, "persistHistory": true, "systemMirror": false, "githubBridge": false,
+"shyWhenWatched": true}`. Don't write it if it's a symlink into `/nix/store`:
 the desktop generates it there and a rebuild reverts you.
 
 ## Traps
@@ -142,8 +142,8 @@ the desktop generates it there and a rebuild reverts you.
   never got it", read `~/.config/trill/rules.json`; the answer is only there.
 - **Quiet hours silently demote** non-critical events (an `ask` there exits
   75); `--urgency critical` is the way through.
-- **`--redact` is for a shared screen, not for secrets** — it keeps body and
-  subtitle off the *banner*, not out of the inbox. Never put one in any field.
+- **`--redact` keeps body/subtitle off the *banner*, not the inbox** — and trill
+  does it itself while the screen is watched. Never put a secret in any field.
 - **`--until` is a promise about the user's config, not yours.** An undeclared
   resolver is logged and the fin stays — read their `rules.json` first.
 - **`trill ask` blocks your shell**; 75 means nobody answered, not yes. And
