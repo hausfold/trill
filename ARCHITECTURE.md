@@ -70,6 +70,8 @@ EventKit ──push──► CalendarProvider   │
    (in-process; read-only grant, opt-in)
                                       │
                         PolicyEngine (pure) ── rules.json, hot-reloaded
+                                      │        + the clock, + the Focus
+                                      │          (FocusWatch, read-only)
                                       │
         SettingsView ◄── AppSettings ── config.json, hot-reloaded
               (the file is the truth; UserDefaults holds only ephemera)
@@ -458,6 +460,65 @@ Two rules the ingest can't be built without:
   appears twice. They are one app to the person reading the banner, and asking
   someone to write a rule naming an internal prefix is asking them to know it
   exists. The raw identifier survives in `metadata.bundleId`.
+
+### Reading the Focus (and never writing it)
+
+A Focus is the user having already answered "should this interrupt me". So
+`PolicyEngine` takes it as an input beside the clock — `SystemFocus`, read by
+`FocusReader` — and routes what would have bannered: **chatter to the inbox,
+faults through unchanged, an `ask` straight to the ledge.** That last one is
+the whole reason this isn't just "quiet hours with a different trigger": an
+`ask` has a caller blocked on it, and a question silently filed is a process
+waiting forever for an answer nobody was shown. It parks as a fin instead —
+the same place an unattended question already goes when its clock runs out,
+answerable, evictable, and watched by any `--until` poller
+(`BannerQueue.park`, the second door onto `expire`'s ledge).
+
+`critical` punches through a Focus exactly as it punches through quiet
+hours — one rule, not two kept in step — and **quiet hours have the last
+word** over whatever a Focus decided, including the fin: "22:00 to 07:00,
+nothing on this screen" means the edge of it too. Everything is tunable
+per kind in `rules.json` under `focus`, layered over trill's defaults so
+naming one kind never silently clears the others; whether trill looks at
+Focus at all is `focusAware` in `config.json`, beside shyness.
+
+**Where the state lives.** `~/Library/DoNotDisturb/DB/Assertions.json`, plain
+JSON in the user's own home — not a TCC-protected container like the
+notification-settings store. Measured on macOS 26.6, 2026-08-25, both ways:
+with nothing asserted the `storeAssertionRecords` key is *absent* (not empty),
+and with Do Not Disturb on it holds one record whose
+`assertionDetails.assertionDetailsModeIdentifier` is
+`com.apple.donotdisturb.mode.default`, written within a second of the Control
+Center toggle. `ModeConfigurations.json` names the same four identifiers this
+Mac has — Do Not Disturb, Work, Personal, Reduce Interruptions — so the label
+path is real and not a fallback nobody exercises. Two things about the shape
+are load-bearing:
+
+- **Only `storeAssertionRecords` says a Focus is on.** Ending one does not
+  delete its record so much as move it to `storeInvalidationRecords`, which
+  is therefore a history of every Focus this Mac has ever finished. A reader
+  that counted both would report a Focus from March, permanently.
+- **The name is in a second file.** `ModeConfigurations.json`, keyed by the
+  same mode identifier. It is used for a label and nothing else — a Focus
+  trill can see but can't name is still a Focus.
+
+It is read at the instant a decision is made, memoised for a second, with no
+timer and no watcher: the answer is only ever needed once per delivered
+event, so reading it *then* is both cheaper than polling and impossible to
+miss a change with. And because the source is a file, the reading has
+**three** verdicts like the settings audit does — on, off, and *can't tell* —
+and can't-tell **fails open**: trill decides exactly what it would with no
+Focus at all, and says so in Settings. Silencing somebody's chats on the
+strength of a file that changed shape under a macOS update is the failure
+that case exists to prevent.
+
+**Nothing here writes.** Not the assertion store, not the pane, not a private
+API, not "just a Shortcut". Turning a Focus on or off changes the whole Mac
+to change trill's banners, and it is the desktop's dial — haus's "Hush" lane
+— and the user's click. Settings shows which Focus is on and offers a button
+that opens System Settings → Focus. That is the entire offer, and it is the
+same shape as the native-banner helper: read Apple's state, name it, open the
+pane, stop.
 
 ### Suppressing Apple's banners
 

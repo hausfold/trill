@@ -75,6 +75,12 @@ notifications experimentally tomorrow.
   display is mirrored, every card drops its body and keeps only the title,
   exactly as if it had been sent `--redact`. Nothing to arm before a call; a
   small `eye.slash` on the card says why. One switch, on by default.
+- **it knows you're in a Focus** — turn one on and trill stops competing
+  with your own decision: chatter goes to the inbox, faults still land, and a
+  question parks on the ledge as a fin so nobody is left blocked on an answer
+  that never appeared. trill *reads* the Focus and never writes it — the
+  toggle stays Apple's, and Settings deep-links you there. One switch, on by
+  default; the per-kind detail is `focus` in rules.json.
 - **resilient compositor** — panels are disposable; the queue is the truth.
   Unplug a display mid-burst and nothing is lost. A provider dying can't
   take rendering down; it re-probes and backs off on its own.
@@ -179,6 +185,18 @@ trill doctor --notify   # …and put the findings on screen, click to be walked 
   ],
   "quietHours": { "startMinute": 1320, "endMinute": 420 },
 
+  // What a *Focus* means, per kind. trill reads the Focus macOS is in — it
+  // never turns one on or off. This block is the shipped default, so a file
+  // that never mentions it behaves exactly like this: chatter stops
+  // interrupting, faults still land, and a question parks on the ledge as a
+  // fin instead of being swallowed (somebody is blocked on the answer).
+  // Name one kind and the rest keep their defaults. `critical` punches
+  // through regardless, the way it does through quiet hours — and quiet
+  // hours have the last word over all of it.
+  // The switch for whether trill looks at Focus at all is `focusAware` in
+  // config.json, beside shyness.
+  "focus": { "default": "inbox", "fault": "banner", "ask": "ledge" },
+
   // What `--until NAME` may name. The command lives here, in your file —
   // never on the wire, because anything local can talk to trill's socket.
   // argv, not a command line: there is no shell in this path.
@@ -210,7 +228,10 @@ Three lanes, in order of honesty:
    what the mirror is good for. Its *timestamp* is exact, so a late card
    still says when the thing happened.
 3. **Suppressing Apple's own banners** is Focus + per-app settings — trill
-   deep-links you there but never pretends to own that dial.
+   deep-links you there but never pretends to own that dial. It *reads* the
+   Focus you're in (see `focus` in rules.json above) and routes accordingly;
+   turning one on or off stays a click of yours, in Apple's pane or in
+   whatever drives it on your desktop.
 
 ### `trill doctor` — the duplicate-banner check
 

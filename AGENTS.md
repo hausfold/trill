@@ -24,7 +24,7 @@ it's launched, themed at the source, or packaged.
 | how trill is *installed* on the system (flake wiring, launchd) | `haus` (the layer) |
 | whether `trill` resolves on PATH | **shared, by install source** — `nix/package.nix` ships `bin/trill`; `scripts/dev-install.sh` links into a directory on the real login PATH; the app itself covers an install that runs no script (`SystemIntegration.ensureCLILink`), and defers to anything already answering the name. Change the one that matches the source you're fixing, and keep the README's table honest. ⚠️ A desktop that copies the bundle to a fixed path adds **no fourth link** — haus's `haus.trill.enable` room places the bundle at `/Applications/Trill.app` and lets its own `trill` wrapper find it there, because whether the bundle exists is a runtime fact and a second `bin/trill` would collide with the wrapper. This row used to predict the opposite; the room exists now and chose the other way |
 | the palette trill is themed with (source hex) | `nebelung` |
-| DND / Focus toggling ("Hush") | `haus` (the layer) — trill only deep-links there |
+| DND / Focus toggling ("Hush") | `haus` (the layer) — trill only deep-links there. *Reading* which Focus is on is here (`Platform/FocusWatch`), and it is read-only by rule |
 | the tunnel fronting the GitHub bridge (cloudflared, DNS, the org webhook) | `haus` (the layer) — trill only listens on localhost |
 | trill's Homebrew cask (once released) | `homebrew-tap` — CI-owned. The `trill` cask token is free |
 | the flake's release pin (`nix/release.nix`) | this repo — **CI-owned**; never hand-bump |
@@ -125,6 +125,22 @@ never into a broken pipeline. Corollaries:
   can ship a banner whose Deny answers 0 — and a fin restored from the ledge
   after a restart loses its pills, because the socket that could have carried
   that answer died with the last daemon.
+- **A Focus is read, and it is a routing rule.** When macOS is in a Focus,
+  `PolicyEngine` takes it as an input beside the clock (`SystemFocus`, from
+  `FocusReader`) and quietens what would have bannered: chatter goes to the
+  inbox, **faults still land**, and an `ask` goes **straight to the ledge** —
+  because a question swallowed is a caller blocked forever, and the ledge is
+  already where an unanswered one lives. `critical` punches through exactly
+  as it does through quiet hours, and quiet hours have the last word over
+  what a Focus decided. **trill never writes a Focus** — not the assertion
+  store, not the pane, not a private API. Turning one on is the desktop's
+  dial (haus's "Hush" lane) and the user's click; Settings deep-links there
+  and stops. Two more things that cannot slip: the store is a *file*
+  (`~/Library/DoNotDisturb/DB/Assertions.json`) so the reading has **three**
+  verdicts — on, off, and *can't tell* — and can't-tell **fails open**,
+  deciding exactly what no Focus decides; and only `storeAssertionRecords`
+  says a Focus is on, never `storeInvalidationRecords`, which is a history of
+  every Focus ever *ended* and would report one from March.
 - **Shyness is ambient, and it is a rendering rule.** When macOS shows its
   in-use indicator (screen capture, camera or mic — one indicator, no way to
   tell them apart) or a display is mirrored, every card draws its redacted
@@ -220,15 +236,16 @@ moving a switch that won't stick.
 Trill/
   App/           entry, composition root, settings (config.json-backed)
   CLI/           `trill send/ping` — same binary, CLI personality
-  Domain/        NotificationEvent, RuleSet, PolicyEngine, InboxList,
-                 Digest, CatchUp (all pure)
+  Domain/        NotificationEvent, RuleSet (+ FocusPolicy), PolicyEngine,
+                 InboxList, Digest, CatchUp (all pure)
   Providers/     protocol + Socket · GitHub webhook · Calendar (EventKit)
                  + SystemMirror (quarantined)
   Repositories/  EventRepository actor: supervise, normalize, dedupe, fan out
                  + the two composed-card consumers (digest · catch-up)
   Persistence/   AppDatabase — trill's OWN sqlite; the only writer in the app
   Compositor/    ScreenGeometry (pure), BannerQueue, panels, window system
-  Platform/      ActionRouter, SystemIntegration (all Apple hooks, one file)
+  Platform/      ActionRouter, SystemIntegration (all Apple hooks, one file),
+                 ScreenWatch · PresenceWatch · FocusWatch (the ambient reads)
   UI/            BannerView, InboxView + InboxRowView, LedgeView,
                  Settings (View · Panes · Chrome)
 TrillTests/      geometry, policy, pipeline, inbox, presence — no display

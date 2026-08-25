@@ -64,10 +64,17 @@ final class AppRuntime {
         // makes both the inbox's count and the catch-up card's tally mean
         // "trill never put this in front of you".
         let presence = PresenceSentinel.shared.flag
+        // Read, never written. The reader applies the `focusAware` switch
+        // itself and hands the engine `.off` while it is off, so a trill that
+        // has been told not to care decides exactly what it decided before
+        // this existed. It is the sentinel's reader so Settings and the
+        // ingest path can never disagree about what macOS is doing.
+        let focus = FocusSentinel.shared.reader
         repository = EventRepository(
             policy: { PolicyEngine(ruleSet: watcher.current()) },
             database: database,
-            presence: { presence.isPresent }
+            presence: { presence.isPresent },
+            focus: { focus.effective() }
         )
         // Read live, so a switch flipped in Settings — or typed into
         // config.json — applies to the next absence rather than the next
@@ -175,6 +182,14 @@ final class AppRuntime {
                     // broker's claim watchdog stands down.
                     askBroker.claim(id: delivered.event.id)
                     queue.enqueue(delivered.event, on: display)
+                case .ledge(let display):
+                    // A fin is on screen and answerable, so the claim is a
+                    // banner's claim: the asker waits for as long as the user
+                    // takes, and the broker's watchdog stands down. What a
+                    // Focus changes is that the question never interrupted —
+                    // not that it went unasked.
+                    askBroker.claim(id: delivered.event.id)
+                    queue.park(delivered.event, on: display)
                 case .digest(let name):
                     // Counted now, drawn on the hour. The event itself was
                     // already persisted by the repository — the scheduler

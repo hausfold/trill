@@ -70,6 +70,23 @@ final class AppSettings: ObservableObject {
         }
     }
 
+    /// Whether trill routes differently while macOS is in a Focus. The
+    /// *reading* is `FocusReader`'s and the Focus itself is macOS's — this is
+    /// only whether trill acts on it. Nothing here can turn a Focus on or off.
+    @Published var focusAware: Bool {
+        didSet {
+            guard !isApplyingFileChange, focusAware != oldValue else { return }
+            // Nothing to re-render and nothing to invalidate: the switch is
+            // read live by `FocusReader.effective()` on the ingest path, so
+            // the next event decides against it, and the readout in Settings
+            // shows the Focus itself either way. Unlike shyness, this changes
+            // no card already on screen — routing happened when each one
+            // arrived, and a fin parked during a Focus stays parked after it,
+            // because a question stays asked.
+            commit(\.focusAware, focusAware, revert: { self.focusAware = oldValue })
+        }
+    }
+
     @Published var calendarEnabled: Bool {
         didSet {
             guard !isApplyingFileChange, calendarEnabled != oldValue else { return }
@@ -166,6 +183,7 @@ final class AppSettings: ObservableObject {
         githubBridgeEnabled = config.githubBridgeEnabled
         shyWhenWatched = config.shyWhenWatched
         catchUpCard = config.catchUpCard
+        focusAware = config.focusAware
         calendarEnabled = config.calendarEnabled
         calendarLeadMinutes = config.calendarLeadMinutes
         cliLink = config.cliLink
@@ -194,6 +212,7 @@ final class AppSettings: ObservableObject {
         githubBridgeEnabled = config.githubBridgeEnabled
         shyWhenWatched = config.shyWhenWatched
         catchUpCard = config.catchUpCard
+        focusAware = config.focusAware
         calendarEnabled = config.calendarEnabled
         calendarLeadMinutes = config.calendarLeadMinutes
         let cliLinkChanged = config.cliLink != cliLink

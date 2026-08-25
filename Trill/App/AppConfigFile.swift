@@ -32,6 +32,15 @@ struct AppConfig: Equatable, Sendable {
     /// watching the screen. A privacy default that has to be switched on is a
     /// privacy default nobody has on when it matters.
     var shyWhenWatched = true
+    /// On by default: when macOS is in a Focus, trill honors it — chatter
+    /// stops interrupting, faults still land, and a question parks on the
+    /// ledge instead of being swallowed (`RuleSet.FocusPolicy`). On rather
+    /// than off for the same reason shyness is: somebody who turned a Focus
+    /// on has already said "not now", and a compositor that has to be *told*
+    /// to believe them is one that interrupts the meeting. **trill only ever
+    /// reads the Focus** — the switch itself is macOS's, and haus's "Hush"
+    /// lane is what drives it on this desktop.
+    var focusAware = true
     /// On by default: one low card on the way back in, and only when
     /// something actually landed. It is the quietest thing in the app — it
     /// cannot fire while you are here, by construction — and a catch-up
@@ -61,6 +70,7 @@ struct AppConfig: Equatable, Sendable {
         static let githubBridge = "githubBridge"
         static let shyWhenWatched = "shyWhenWatched"
         static let catchUpCard = "catchUpCard"
+        static let focusAware = "focusAware"
         static let calendar = "calendar"
         static let calendarLeadMinutes = "calendarLeadMinutes"
         static let cliLink = "cliLink"
@@ -84,6 +94,7 @@ struct AppConfig: Equatable, Sendable {
         if let value = json[Key.githubBridge] as? Bool { githubBridgeEnabled = value }
         if let value = json[Key.shyWhenWatched] as? Bool { shyWhenWatched = value }
         if let value = json[Key.catchUpCard] as? Bool { catchUpCard = value }
+        if let value = json[Key.focusAware] as? Bool { focusAware = value }
         if let value = json[Key.calendar] as? Bool { calendarEnabled = value }
         if let value = json[Key.cliLink] as? Bool { cliLink = value }
         // Clamped rather than refused: a file is a place people typo, and the
@@ -105,6 +116,7 @@ struct AppConfig: Equatable, Sendable {
             Key.githubBridge: githubBridgeEnabled,
             Key.shyWhenWatched: shyWhenWatched,
             Key.catchUpCard: catchUpCard,
+            Key.focusAware: focusAware,
             Key.calendar: calendarEnabled,
             Key.calendarLeadMinutes: calendarLeadMinutes,
             Key.cliLink: cliLink,

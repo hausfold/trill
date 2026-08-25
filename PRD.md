@@ -138,11 +138,22 @@ this in front of you**: a drawn banner arrives read, anything quiet hours, an
 ledge's overflow with the still-parked ones marked, so the sixth ask that
 evicted the first is findable beside it.
 
+Focus-aware routing — **shipped**: trill reads the Focus macOS is in (the
+`DoNotDisturb` assertion store, read-only, three verdicts including *can't
+tell*) and takes it as a `PolicyEngine` input beside the clock. Chatter goes
+to the inbox, faults still land, and an `ask` parks straight on the ledge
+rather than being swallowed — a question filed quietly is a caller blocked
+forever. `critical` punches through as it does through quiet hours; quiet
+hours have the last word over both. Per-kind tuning is `focus` in rules.json;
+the master switch is `focusAware` in config.json. **trill never writes a
+Focus** — Settings deep-links to Apple's pane and stops there.
+
 Still open: per-digest cadences,
 per-source styling hooks, `trill history --source X --since 2h`, `trill watch
---json`, pounce integration, Hush handshake (enable Focus profile ↔ trill
-takeover), opt-in command hooks for banner *actions* (a click running a
-declared command, the way `--until` already runs a declared check).
+--json`, pounce integration, the *other* half of the Hush handshake (a Focus
+profile that silences Apple's rendering while trill keeps drawing — that half
+is haus's, not trill's), opt-in command hooks for banner *actions* (a click
+running a declared command, the way `--until` already runs a declared check).
 
 ### M2.1 — the progress card (shipped)
 

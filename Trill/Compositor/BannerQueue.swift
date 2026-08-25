@@ -183,11 +183,8 @@ final class BannerQueue {
         // an unanswered question happens to share would take that fin off the
         // ledge silently, with nobody told and its asker still blocked. A bar
         // may replace a bar; only an arrival may replace a question.
-        if event.progress == nil, let key = event.key,
-           let index = parked.firstIndex(where: { $0.event.key == key }) {
-            let superseded = parked.remove(at: index)
-            if parkedHoverID == superseded.id { parkedHoverID = nil }
-            notifyParked()
+        if event.progress == nil, let key = event.key {
+            supersedeParked(key: key)
         }
 
         // Swatted away already: see `hushedKeys`. Only the ticks are dropped —
@@ -244,6 +241,66 @@ final class BannerQueue {
             waiting.insert(entry, at: index)
         }
         notify()
+    }
+
+    /// Park a question without ever drawing it — the Focus route.
+    ///
+    /// `expire` is the other door onto the ledge, and the difference is only
+    /// *when*: that one parks an ask whose clock ran out with nobody there,
+    /// this one parks an ask that was never going to be shown, because macOS
+    /// is in a Focus and the user said "not now" (see `DeliveryDecision.ledge`).
+    /// Past the door they are the same fin — answerable, evictable, mirrored
+    /// to the ledge store, watched by any `--until` poller — which is why
+    /// everything below is the eviction path `expire` already uses.
+    ///
+    /// The `ask` guard is the ledge's contract said twice. `PolicyEngine`
+    /// already coerces every other kind, and this refuses it again rather
+    /// than trusting it: a `note` on the ledge is a fin with nothing to press.
+    func park(_ event: NotificationEvent, on display: DisplayTarget = .primary, now: Date = .now) {
+        guard event.kind == .ask else {
+            enqueue(event, on: display, now: now)
+            return
+        }
+        routing = displays()
+        // Same rule as an arrival's: a question re-asked is one question, so
+        // the earlier fin yields rather than the ledge growing a column of
+        // them. `progress` can't apply here — an ask never carries a bar.
+        if let key = event.key {
+            supersedeParked(key: key)
+        }
+        parked.append(Entry(
+            event: event,
+            display: display,
+            screenID: routing.screen(for: display)
+        ))
+        trimParked(announcingDrops: true)
+        notifyParked()
+    }
+
+    /// Drop the fin wearing this key, if there is one. A re-sent ask
+    /// supersedes its own: without this, a lane that says "still blocked"
+    /// every ten minutes grows a column of fins for one question — and the
+    /// ledge holds five, so three such lanes would evict everything else.
+    private func supersedeParked(key: String) {
+        guard let index = parked.firstIndex(where: { $0.event.key == key }) else { return }
+        let superseded = parked.remove(at: index)
+        if parkedHoverID == superseded.id { parkedHoverID = nil }
+        notifyParked()
+    }
+
+    /// Hold the ledge to `parkedCapacity`, oldest first.
+    ///
+    /// `announcingDrops` is the one difference between the two callers that
+    /// evict live fins and the one that restores remembered ones: an evicted
+    /// question owes its blocked caller an exit code (`onDropped` →
+    /// `AskBroker.abandon`), and a fin restored from disk has no caller left
+    /// to owe — the socket died with the last daemon.
+    private func trimParked(announcingDrops: Bool) {
+        while parked.count > Self.parkedCapacity {
+            let evicted = parked.removeFirst()
+            if parkedHoverID == evicted.id { parkedHoverID = nil }
+            if announcingDrops { notifyDropped([evicted]) }
+        }
     }
 
     /// How many entries no display has room for right now.
@@ -446,11 +503,7 @@ final class BannerQueue {
             rearm(lane: lane)
         }
         parked.append(entry)
-        while parked.count > Self.parkedCapacity {
-            let evicted = parked.removeFirst()
-            if parkedHoverID == evicted.id { parkedHoverID = nil }
-            notifyDropped([evicted])
-        }
+        trimParked(announcingDrops: true)
         refill()
         notify()
         notifyParked()
@@ -487,10 +540,7 @@ final class BannerQueue {
             entry.coalescedCount = item.coalescedCount
             parked.append(entry)
         }
-        while parked.count > Self.parkedCapacity {
-            let evicted = parked.removeFirst()
-            if parkedHoverID == evicted.id { parkedHoverID = nil }
-        }
+        trimParked(announcingDrops: false)
         notifyParked()
     }
 
