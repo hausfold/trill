@@ -71,13 +71,19 @@ stdenvNoCC.mkDerivation {
   # dodge here, unlike perch's `perch-cli`: `$out/bin/trill` and
   # `Contents/MacOS/Trill` differ in directory, not just in case.)
   #
-  # This is what makes `trill` resolve for a profile install. A desktop that
-  # copies the bundle to a fixed /Applications path will want a link pointing
-  # THERE instead — permission grants are keyed per app path, and the CLI's own
-  # fallback for finding its daemon is the bundle it sits in — the way haus's
-  # shelf room does it for perch (`perch-cli-link`). No such room exists for
-  # trill yet: trill is deliberately not a haus flake input, so this package's
-  # own bin/ is the only nix answer today.
+  # This is what makes `trill` resolve for a PROFILE install — someone who put
+  # `pkgs.trill` in their packages and expects the name to work.
+  #
+  # A desktop that copies the bundle to a fixed /Applications path is a
+  # different case, and haus's `haus.trill.enable` room settled it the other
+  # way from perch's: perch gets a `perch-cli-link` into /Applications because
+  # nothing else in haus answers `perch`, while haus already ships a `trill`
+  # WRAPPER that resolves the bundle at call time. A second bin/trill there
+  # would be a file collision, not a redundancy — and the wrapper is the better
+  # answer anyway, because whether Trill.app exists is a runtime fact and a
+  # symlink into a missing bundle is a `trill` that `command -v` finds and every
+  # call fails on. Nothing about that makes this link wrong; the two answer
+  # different installs.
   installPhase = ''
     runHook preInstall
     mkdir -p $out/Applications
