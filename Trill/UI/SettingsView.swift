@@ -1,5 +1,14 @@
+import AppKit
 import SwiftUI
 
+/// The Settings window: a sidebar of panes on the left, one scrolling pane on
+/// the right — the same shape perch uses, because two apps in one family with
+/// two different settings windows is two things to learn.
+///
+/// This view owns everything that has to be *polled* (provider health, and
+/// what macOS currently says about other apps' banners) and hands each pane
+/// the answer. The panes themselves are stateless, so a pane can be read
+/// top-to-bottom without chasing a task modifier.
 struct SettingsView: View {
     @ObservedObject var settings: AppSettings
     /// Live provider health, fed from the repository (name → reason string,
@@ -33,6 +42,9 @@ struct SettingsView: View {
     /// True when macOS's settings store couldn't be read at all — the answer
     /// is "can't tell", which is not the same as "nothing to fix".
     @State private var auditUnreadable = false
+    /// Which pane the window comes back to. Persisted, like every mac settings
+    /// window: reopening lands where you left off, not on the first tab.
+    @AppStorage("settingsSelectedPane") private var selectedPaneID = SettingsPane.general.rawValue
 
     private var currentStatus: [String: String?] {
         liveStatus ?? providerStatus
@@ -43,45 +55,35 @@ struct SettingsView: View {
     }
 
     var body: some View {
-        Form {
-            Section("General") {
-                Toggle("Start at login", isOn: $settings.launchAtLogin)
-                Toggle("Keep history on disk", isOn: $settings.persistHistory)
-            }
-
-            Section("Providers") {
-                LabeledContent("Socket (trill CLI)", value: currentStatus["socket"].flatMap { $0 } ?? "ready")
-
-                githubBridge
-
-                if hasFullDiskAccess {
-                    systemMirrorUnlocked
-                        .transition(.opacity.combined(with: .move(edge: .top)))
-                } else {
-                    systemMirrorLocked
-                        .transition(.opacity.combined(with: .move(edge: .top)))
+        NavigationSplitView {
+            List(SettingsPane.allCases, selection: selection) { pane in
+                Label {
+                    Text(pane.title)
+                        .padding(.leading, 2)
+                } icon: {
+                    SettingsPaneChip(symbol: pane.symbol, tint: pane.tint)
                 }
+                .padding(.vertical, 3)
             }
-
-            Section("Apple's banners") {
-                Text("trill can't turn other apps' native banners off for you — that dial is Apple's. This is what it currently says.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-
-                nativeBannerAudit
-
-                HStack {
-                    Button("Notification Settings…") {
-                        SystemIntegration.openNotificationSettings()
-                    }
-                    Button("Focus Settings…") {
-                        SystemIntegration.openFocusSettings()
-                    }
-                }
+            // Nothing to toggle: a settings window with a collapsible sidebar
+            // is a settings window you can hide the navigation of.
+            .toolbar(removing: .sidebarToggle)
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                SettingsSidebarFooter(version: Self.version)
             }
+            // Outermost, and fixed: this is the width that has to hold
+            // "Apple’s Banners" without an ellipsis, and a settings sidebar
+            // has no reason to be draggable.
+            .navigationSplitViewColumnWidth(210)
+        } detail: {
+            pane
+                .frame(minWidth: 460, idealWidth: 520)
         }
-        .formStyle(.grouped)
-        .frame(width: 440)
+        .frame(
+            minWidth: 670, maxWidth: .infinity,
+            minHeight: 400, maxHeight: .infinity
+        )
+        .navigationTitle(Self.windowTitle)
         .task {
             guard let fetchProviderStatus else { return }
             while !Task.isCancelled {
@@ -114,233 +116,88 @@ struct SettingsView: View {
         }
         .task {
             guard celebrateUnlock else { return }
+            // Land on the pane the unlock actually happened on, whatever pane
+            // the window was last closed on — the payoff is unreadable from
+            // the wrong tab.
+            selectedPaneID = SettingsPane.providers.rawValue
             withAnimation(.spring(response: 0.5, dampingFraction: 0.6)) { celebrating = true }
             try? await Task.sleep(nanoseconds: 3_200_000_000)
             withAnimation(.easeOut(duration: 0.8)) { celebrating = false }
         }
     }
 
-    // MARK: - Apple's own per-app settings
+    static let windowTitle = "Trill Settings"
+    /// What the window opens at the first time, before anyone has resized it.
+    static let defaultWindowSize = NSSize(width: 770, height: 560)
 
-    /// What macOS says right now about the apps trill is meant to be quiet
-    /// for. Read-only by design — every button here opens System Settings,
-    /// none of them writes a preference (see `NotificationSettingsAudit`).
+    private static var version: String {
+        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "—"
+    }
+
     @ViewBuilder
-    private var nativeBannerAudit: some View {
-        if auditUnreadable {
-            // The store lives in an Apple group container, which is
-            // TCC-protected — the same grant System Mirror needs. Say that
-            // rather than showing a reassuring green tick trill can't stand
-            // behind.
-            VStack(alignment: .leading, spacing: 6) {
-                Label(
-                    "Can't tell — trill needs Full Disk Access to read macOS's notification settings.",
-                    systemImage: "questionmark.circle"
-                )
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-
-                // Its own button, not a pointer at the System Mirror one:
-                // that grant flips System Mirror on when it lands, and a user
-                // who came here to make the audit work didn't ask for an
-                // experimental provider.
-                Button("Grant Full Disk Access…", action: onRequestAuditAccess)
-                    .controlSize(.small)
-            }
-        } else if auditFindings.isEmpty {
-            Label(
-                auditScopeIsEmpty
-                    ? "No apps listed in rules.json yet — nothing to check."
-                    : "Nothing doubling up. macOS is quiet for every listed app.",
-                systemImage: auditScopeIsEmpty ? "list.bullet" : "checkmark.circle.fill"
+    private var pane: some View {
+        switch SettingsPane(rawValue: selectedPaneID) ?? .general {
+        case .general:
+            GeneralPane(settings: settings)
+        case .providers:
+            ProvidersPane(
+                settings: settings,
+                status: currentStatus,
+                hasFullDiskAccess: hasFullDiskAccess,
+                celebrating: celebrating,
+                onRequestFullDiskAccess: onRequestFullDiskAccess
             )
-            .font(.caption)
-            .foregroundStyle(auditScopeIsEmpty ? Color.secondary : Color.green)
-        } else {
-            VStack(alignment: .leading, spacing: 8) {
-                ForEach(auditFindings, id: \.bundleID) { finding in
-                    HStack(spacing: 8) {
-                        VStack(alignment: .leading, spacing: 1) {
-                            Text(NotificationSettingsAudit.displayName(for: finding.bundleID))
-                                .font(.caption)
-                                .fontWeight(.medium)
-                            if let complaint = finding.complaint {
-                                Text(complaint)
-                                    .font(.caption2)
-                                    .foregroundStyle(.orange)
-                            }
-                        }
-                        Spacer()
-                        Button("Silence…") {
-                            SystemIntegration.presentNativeBannerAssistant(findings: [finding])
-                        }
-                        .controlSize(.small)
-                    }
-                }
-
-                if auditFindings.count > 1 {
-                    Button {
-                        SystemIntegration.presentNativeBannerAssistant(findings: auditFindings)
-                    } label: {
-                        Label("Walk me through all \(auditFindings.count)", systemImage: "bell.slash")
-                            .frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.small)
-                }
-            }
-            .padding(8)
-            .background(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(Color.orange.opacity(0.08))
+        case .banners:
+            BannersPane(
+                findings: auditFindings,
+                scopeIsEmpty: auditScopeIsEmpty,
+                unreadable: auditUnreadable,
+                onRequestAuditAccess: onRequestAuditAccess
             )
+        case .files:
+            FilesPane(settings: settings)
         }
     }
 
-    // MARK: - GitHub bridge
-
-    @ViewBuilder
-    private var githubBridge: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Toggle("GitHub Bridge", isOn: $settings.githubBridgeEnabled)
-
-            Text("Webhook deliveries become banners: a review request parks as an ask, a red run is a fault, a mention is a chat. trill listens on localhost behind your tunnel and never writes GitHub state.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-
-            // Health, not hope: the toggle alone promises nothing without
-            // github.json and a free port, so say what's missing.
-            if settings.githubBridgeEnabled, let reason = currentStatus["github"].flatMap({ $0 }) {
-                Text(reason)
-                    .font(.caption2)
-                    .foregroundStyle(.orange)
-                    .fixedSize(horizontal: false, vertical: true)
+    /// `List` selects by element ID, and a pane's ID is its raw value — so the
+    /// stored default *is* the selection. A nil set (clicking the sidebar's
+    /// empty space) is dropped: there is always a pane on screen.
+    private var selection: Binding<String?> {
+        Binding(
+            get: { selectedPaneID },
+            set: { newValue in
+                guard let newValue else { return }
+                selectedPaneID = newValue
             }
-        }
-    }
-
-    // MARK: - System Mirror, unlocked
-
-    @ViewBuilder
-    private var systemMirrorUnlocked: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Toggle("System Mirror (experimental)", isOn: $settings.systemMirrorEnabled)
-
-            HStack(spacing: 6) {
-                Image(systemName: "lock.open.fill")
-                    .font(.caption)
-                    .foregroundStyle(.green)
-                Text(celebrating ? "Unlocked — System Mirror is live" : "Full Disk Access granted")
-                    .font(.caption)
-                    .fontWeight(celebrating ? .semibold : .regular)
-                    .foregroundStyle(.green)
-                    .contentTransition(.opacity)
-            }
-            .scaleEffect(celebrating ? 1.06 : 1, anchor: .leading)
-
-            Text("Reads macOS's private notification store, read-only, to redraw other apps' banners. May stop working on any macOS update — trill stays fully useful without it.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-        }
-        .padding(celebrating ? 10 : 0)
-        .background(
-            RoundedRectangle(cornerRadius: 8)
-                .fill(Color.green.opacity(celebrating ? 0.12 : 0))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 8)
-                        .strokeBorder(Color.green.opacity(celebrating ? 0.35 : 0), lineWidth: 1)
-                )
         )
     }
+}
 
-    // MARK: - System Mirror, locked
+/// The sidebar's foot: which trill this is, in the place every mac app puts
+/// it.
+private struct SettingsSidebarFooter: View {
+    let version: String
 
-    /// Deliberately *not* a disabled switch with a button underneath: a
-    /// switch that silently refuses to move reads as a bug, and a button
-    /// below it reads as unrelated. Until Full Disk Access exists there is
-    /// exactly one thing to do here, so the section shows exactly that —
-    /// what the feature buys, the two steps to it, and one button.
-    @ViewBuilder
-    private var systemMirrorLocked: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 10) {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 9, style: .continuous)
-                        .fill(
-                            LinearGradient(
-                                colors: [Color.accentColor.opacity(0.85), Color.accentColor.opacity(0.45)],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            )
-                        )
-                        .frame(width: 34, height: 34)
-                    Image(systemName: "lock.fill")
-                        .font(.system(size: 15, weight: .semibold))
-                        .foregroundStyle(.white)
-                }
-
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("System Mirror")
-                        .font(.subheadline)
-                        .fontWeight(.semibold)
-                    Text("Locked · experimental")
-                        .font(.caption2)
+    var body: some View {
+        VStack(spacing: 0) {
+            Divider()
+                .opacity(0.6)
+            HStack(spacing: 9) {
+                Image(nsImage: NSApplication.shared.applicationIconImage)
+                    .resizable()
+                    .frame(width: 30, height: 30)
+                    .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("Trill")
+                        .font(.system(size: 12, weight: .semibold))
+                    Text(version)
+                        .font(.system(size: 11))
                         .foregroundStyle(.secondary)
                 }
-
-                Spacer()
+                Spacer(minLength: 0)
             }
-
-            Text("Unlock it and trill redraws **every other app's** banners in its own quiet style — Messages, Mail, Calendar, the lot. macOS keeps that store behind Full Disk Access, so it has to be granted once.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-
-            VStack(alignment: .leading, spacing: 6) {
-                unlockStep(1, "Grant trill Full Disk Access", isCurrent: true)
-                unlockStep(2, "trill switches System Mirror on for you", isCurrent: false)
-            }
-
-            Button(action: onRequestFullDiskAccess) {
-                Label("Unlock System Mirror…", systemImage: "lock.open.fill")
-                    .frame(maxWidth: .infinity)
-            }
-            .buttonStyle(.borderedProminent)
-            .controlSize(.large)
-
-            if let reason = currentStatus["system-mirror"].flatMap({ $0 }) {
-                Text(reason)
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-        }
-        .padding(12)
-        .background(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(Color.accentColor.opacity(0.07))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .strokeBorder(Color.accentColor.opacity(0.22), lineWidth: 1)
-                )
-        )
-    }
-
-    private func unlockStep(_ number: Int, _ text: String, isCurrent: Bool) -> some View {
-        HStack(spacing: 8) {
-            ZStack {
-                Circle()
-                    .fill(isCurrent ? Color.accentColor : Color.secondary.opacity(0.22))
-                    .frame(width: 17, height: 17)
-                Text("\(number)")
-                    .font(.system(size: 10, weight: .bold))
-                    .foregroundStyle(isCurrent ? Color.white : Color.secondary)
-            }
-            Text(text)
-                .font(.caption)
-                .foregroundStyle(isCurrent ? .primary : .secondary)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 9)
         }
     }
 }

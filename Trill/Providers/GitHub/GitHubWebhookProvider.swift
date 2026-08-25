@@ -18,8 +18,9 @@ struct GitHubWebhookProvider: NotificationProvider {
     let capabilities = ProviderCapabilities(canOpenSource: false, canDismissAtSource: false)
 
     private let configFile: URL
-    /// Read from defaults, not `AppSettings`: the supervisor calls this off
-    /// the main actor, and the toggle's only job here is yes/no.
+    /// Read from the config file's store, not `AppSettings`: the supervisor
+    /// calls this off the main actor, and the toggle's only job here is
+    /// yes/no.
     private let enabled: @Sendable () -> Bool
 
     private static let log = Logger(subsystem: "com.hausfold.trill", category: "github")

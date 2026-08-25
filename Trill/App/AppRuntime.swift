@@ -81,7 +81,7 @@ final class AppRuntime {
             // Also always probed: the Settings row shows *why* the bridge is
             // off (no config, taken port) even before the toggle goes on.
             await repository.supervise(GitHubWebhookProvider(
-                enabled: { UserDefaults.standard.bool(forKey: AppSettings.githubBridgeKey) }
+                enabled: { ConfigFileStore.shared.current().githubBridgeEnabled }
             ))
             await self?.reconcileSystemMirrorSetting()
         }
