@@ -215,6 +215,10 @@ enum AppPaths {
     }
 
     static var rulesFile: URL { configDirectory.appendingPathComponent("rules.json") }
+    /// The app-level switches — the source of truth for everything in
+    /// Settings. Shared with the installed app the way `rules.json` is: a
+    /// Debug build gets its own *state*, not its own configuration.
+    static var configFile: URL { configDirectory.appendingPathComponent("config.json") }
     static var databaseFile: URL { supportDirectory.appendingPathComponent("trill.db") }
 }
 

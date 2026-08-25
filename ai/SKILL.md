@@ -122,6 +122,15 @@ case-insensitive) and `urgencyAtMost`. `delivery` is `banner`, `inbox`,
 may cross midnight — `1320`/`420` is 22:00–07:00 — and inside that window every
 non-critical event is demoted to inbox-only whatever the rules said.
 
+## Settings file — `~/.config/trill/config.json`
+
+The app's own switches, and the source of truth for them: Settings reads and
+writes this same file, and trill re-reads it live. All four keys, at their
+defaults — `{"launchAtLogin": true, "persistHistory": true, "systemMirror":
+false, "githubBridge": false}`; each is optional. `persistHistory` off stops
+disk writes from that moment on. Don't write the file if it's a symlink into
+`/nix/store`: the desktop generates it there and a rebuild reverts you.
+
 ## Traps
 
 - **`trill send` and `trill doctor` need the daemon; `trill help` doesn't.**

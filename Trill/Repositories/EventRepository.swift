@@ -7,7 +7,7 @@ import os.log
 /// compositor.
 actor EventRepository {
     private let policy: () -> PolicyEngine
-    private let database: AppDatabase?
+    private var database: AppDatabase?
     private var seenIDs: OrderedIDWindow
 
     private var subscribers: [UUID: AsyncStream<DeliveredEvent>.Continuation] = [:]
@@ -20,6 +20,13 @@ actor EventRepository {
     struct DeliveredEvent: Sendable {
         let event: NotificationEvent
         let decision: DeliveryDecision
+    }
+
+    /// Turn persistence on or off while trill runs. `persistHistory` is a
+    /// privacy dial before it is a storage one, so "off" has to mean "no more
+    /// rows from now on", not "no more rows after you restart me".
+    func setDatabase(_ database: AppDatabase?) {
+        self.database = database
     }
 
     init(policy: @escaping @Sendable () -> PolicyEngine, database: AppDatabase?) {

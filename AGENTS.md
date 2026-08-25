@@ -94,11 +94,33 @@ never into a broken pipeline. Corollaries:
   no I/O. New delivery behaviors go through `DeliveryDecision`, not ad-hoc
   branches in the queue.
 
+## Settings are a file
+
+**`~/.config/trill/config.json` is the source of truth for every app-level
+switch**, and Settings is a view onto it. A toggle writes the file; an edit to
+the file moves the toggle, live, through the same watcher shape `rules.json`
+uses. There is no second copy — UserDefaults holds only UI ephemera (the
+window frame, the selected pane, the one-shot flags the Full Disk Access flow
+arms across a relaunch).
+
+Adding a switch means adding it to `AppConfig` in **both** directions —
+`init(json:)` and `json` — and to a pane. Miss `json` and the switch moves
+while the file never changes, so the value reverts the next time the file is
+read; miss `init(json:)` and what someone typed into the file is ignored. A key
+the file doesn't name is that key at its default; a partial config.json is the
+normal case, not a broken one. Keys trill doesn't know are preserved verbatim
+across writes.
+
+The file is refused as read-only when it's a symlink into the Nix store —
+i.e. this Mac's desktop generated it, and a rebuild would revert a click. Same
+rule pounce applies to its own `config.json`; Settings says so rather than
+moving a switch that won't stick.
+
 ## Layout (pounce/perch convention)
 
 ```text
 Trill/
-  App/           entry, composition root, settings
+  App/           entry, composition root, settings (config.json-backed)
   CLI/           `trill send/ping` — same binary, CLI personality
   Domain/        NotificationEvent, RuleSet, PolicyEngine (pure)
   Providers/     protocol + Socket (shipping) + SystemMirror (quarantined)
@@ -106,7 +128,7 @@ Trill/
   Persistence/   AppDatabase — trill's OWN sqlite; the only writer in the app
   Compositor/    ScreenGeometry (pure), BannerQueue, panels, window system
   Platform/      ActionRouter, SystemIntegration (all Apple hooks, one file)
-  UI/            BannerView, InboxView, SettingsView
+  UI/            BannerView, InboxView, Settings (View · Panes · Chrome)
 TrillTests/      geometry, policy, pipeline — pure logic tests, no display
 ```
 

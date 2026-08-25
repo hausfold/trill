@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import SwiftUI
 import os.log
 
@@ -8,12 +9,14 @@ import os.log
 @MainActor
 final class AppRuntime {
     let settings: AppSettings
-    private let database: AppDatabase?
+    private var database: AppDatabase?
     private let repository: EventRepository
     private let queue: BannerQueue
     private let windowSystem: BannerWindowSystem
     private var deliveryTask: Task<Void, Never>?
     private var rulesWatcher: RulesWatcher
+    /// Follows `persistHistory` — see `applyPersistence`.
+    private var persistenceObserver: AnyCancellable?
     /// The daemon side of `trill inbox` — set by the app delegate, which
     /// owns the windows. The Bool is "asks only".
     var onOpenInbox: ((Bool) -> Void)?
@@ -52,6 +55,16 @@ final class AppRuntime {
         windowSystem.start()
         rulesWatcher.start()
 
+        // The file is the truth for this one too, and it is the setting where
+        // that matters most: switching history off — in Settings or by typing
+        // it into config.json — has to stop the writing now, not at the next
+        // launch. `@Published` delivers the new value in `willSet`, so the
+        // published property itself is still the old one here; use what came
+        // through.
+        persistenceObserver = settings.$persistHistory.sink { [weak self] enabled in
+            Task { @MainActor in self?.applyPersistence(enabled) }
+        }
+
         deliveryTask = Task { [repository, queue] in
             for await delivered in await repository.deliveries() {
                 if case .banner = delivered.decision {
@@ -81,13 +94,24 @@ final class AppRuntime {
             // Also always probed: the Settings row shows *why* the bridge is
             // off (no config, taken port) even before the toggle goes on.
             await repository.supervise(GitHubWebhookProvider(
-                enabled: { UserDefaults.standard.bool(forKey: AppSettings.githubBridgeKey) }
+                enabled: { ConfigFileStore.shared.current().githubBridgeEnabled }
             ))
             await self?.reconcileSystemMirrorSetting()
         }
 
         database?.prune(olderThan: 30 * 24 * 3600)
         Self.log.info("trill runtime started")
+    }
+
+    /// Open or drop trill's own database to match the setting. Idempotent:
+    /// `@Published` fires on every assignment, including the ones that don't
+    /// change anything.
+    private func applyPersistence(_ enabled: Bool) {
+        guard enabled != (database != nil) else { return }
+        let database = enabled ? AppDatabase(url: AppPaths.databaseFile) : nil
+        self.database = database
+        Task { [repository] in await repository.setDatabase(database) }
+        Self.log.info("history persistence \(enabled ? "on" : "off", privacy: .public)")
     }
 
     func stop() {
@@ -167,9 +191,13 @@ final class RulesWatcher: @unchecked Sendable {
     }
 
     private func watch() {
+        // The fd belongs to the cancel handler, which captured it and runs on
+        // this queue after we return — closing it here would hand `open` the
+        // same number back and let the stale handler close the new one. See
+        // the note in ConfigFileStore.watch().
         source?.cancel()
         source = nil
-        if watchedFD >= 0 { close(watchedFD); watchedFD = -1 }
+        watchedFD = -1
 
         // Editors replace the file (rename+write), so watch for both and
         // re-arm on delete.

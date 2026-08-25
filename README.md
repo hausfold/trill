@@ -43,7 +43,10 @@ notifications experimentally tomorrow.
   event.
 - **rules, not settings mazes** — `~/.config/trill/rules.json`: route a
   source to banner / inbox / digest / drop; quiet hours; critical punches
-  through. Hot-reloaded on save.
+  through. Hot-reloaded on save. The app's own switches are a file too
+  (`config.json`, same directory) — the Settings window reads and writes that
+  file and keeps nothing of its own, so anything you can click you can also
+  type, and vice versa, without a restart.
 - **resilient compositor** — panels are disposable; the queue is the truth.
   Unplug a display mid-burst and nothing is lost. A provider dying can't
   take rendering down; it re-probes and backs off on its own.

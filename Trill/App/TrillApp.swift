@@ -116,6 +116,8 @@ final class TrillAppDelegate: NSObject, NSApplicationDelegate {
         windowManager.show(window)
     }
 
+    private static let settingsFrameAutosaveName = "TrillSettingsWindow"
+
     @objc private func showSettings() {
         presentSettings(celebrateUnlock: false)
     }
@@ -134,22 +136,28 @@ final class TrillAppDelegate: NSObject, NSApplicationDelegate {
             // A deterministic frame, not one measured off SwiftUI's
             // fittingSize (which can read stale content from the same run
             // loop turn as a @State change) — an unsized NSWindow shows
-            // only its titlebar, which is the bug this replaced. Form's
-            // own scrolling absorbs any content taller than this.
+            // only its titlebar, which is the bug this replaced. Each
+            // pane scrolls on its own, so nothing here has to grow to fit
+            // the longest one.
             //
             // contentView (NSHostingView), not contentViewController
             // (NSHostingController) — the controller variant auto-resizes
             // the window to the view's "preferred content size" once
-            // layout settles, which for a Form without a fixed height
-            // collapses it back down to titlebar-only, silently undoing
-            // this frame.
+            // layout settles, which for a split view without a fixed
+            // height collapses it back down to titlebar-only, silently
+            // undoing this frame.
+            let size = SettingsView.defaultWindowSize
             let window = NSWindow(
-                contentRect: NSRect(x: 0, y: 0, width: 440, height: 420),
-                styleMask: [.titled, .closable, .resizable],
+                contentRect: NSRect(origin: .zero, size: size),
+                styleMask: [.titled, .closable, .resizable, .fullSizeContentView],
                 backing: .buffered,
                 defer: false
             )
-            window.title = "Trill Settings"
+            window.title = SettingsView.windowTitle
+            // A settings window that reopens where you left it, at the size
+            // you left it. Autosave restores nothing on first run, which is
+            // what the explicit size above is for.
+            window.titlebarSeparatorStyle = .none
             window.contentView = NSHostingView(
                 rootView: SettingsView(
                     settings: runtime.settings,
@@ -167,6 +175,10 @@ final class TrillAppDelegate: NSObject, NSApplicationDelegate {
                     celebrateUnlock: celebrateUnlock
                 )
             )
+            if !window.setFrameUsingName(Self.settingsFrameAutosaveName) {
+                window.center()
+            }
+            _ = window.setFrameAutosaveName(Self.settingsFrameAutosaveName)
             settingsWindow = window
             windowManager.show(window)
         }

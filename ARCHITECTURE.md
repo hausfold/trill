@@ -38,6 +38,9 @@ GitHub ──webhook──► tunnel ──► GitHubWebhookProvider
                                       │
                         PolicyEngine (pure) ── rules.json, hot-reloaded
                                       │
+        SettingsView ◄── AppSettings ── config.json, hot-reloaded
+              (the file is the truth; UserDefaults holds only ephemera)
+                                      │
               ┌───────────────────────┼─────────────────────┐
               ▼                       ▼                     ▼
         BannerQueue             inbox (sqlite)        digests (M2)
