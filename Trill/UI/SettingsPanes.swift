@@ -354,7 +354,7 @@ struct ProvidersPane: View {
                 symbol: "rectangle.on.rectangle",
                 tint: .green,
                 title: "System Mirror (experimental)",
-                subtitle: "Reads macOS’s private notification store, read-only, to redraw other apps’ banners. May stop working on any macOS update — trill stays fully useful without it."
+                subtitle: "Reads macOS’s private notification store, read-only, to redraw other apps’ banners. A mirrored card lands about five seconds late — macOS batches its writes and nothing outside that daemon can hurry it, though the time on the card is exact. May stop working on any macOS update — trill stays fully useful without it."
             ) {
                 Toggle("System Mirror", isOn: $settings.systemMirrorEnabled)
                     .labelsHidden()
@@ -414,7 +414,7 @@ struct ProvidersPane: View {
                 Spacer()
             }
 
-            Text("Unlock it and trill redraws **every other app’s** banners in its own quiet style — Messages, Mail, Calendar, the lot. macOS keeps that store behind Full Disk Access, so it has to be granted once.")
+            Text("Unlock it and trill redraws **every other app’s** banners in its own quiet style — Messages, Mail, Calendar, the lot, about five seconds after macOS gets them. macOS keeps that store behind Full Disk Access, so it has to be granted once.")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
