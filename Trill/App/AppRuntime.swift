@@ -78,6 +78,11 @@ final class AppRuntime {
             // toggle itself on Full Disk Access being granted, which it can
             // only know by reading this provider's health.
             await repository.supervise(SystemMirrorProvider())
+            // Also always probed: the Settings row shows *why* the bridge is
+            // off (no config, taken port) even before the toggle goes on.
+            await repository.supervise(GitHubWebhookProvider(
+                enabled: { UserDefaults.standard.bool(forKey: AppSettings.githubBridgeKey) }
+            ))
             await self?.reconcileSystemMirrorSetting()
         }
 

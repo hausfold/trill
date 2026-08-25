@@ -52,6 +52,8 @@ struct SettingsView: View {
             Section("Providers") {
                 LabeledContent("Socket (trill CLI)", value: currentStatus["socket"].flatMap { $0 } ?? "ready")
 
+                githubBridge
+
                 if hasFullDiskAccess {
                     systemMirrorUnlocked
                         .transition(.opacity.combined(with: .move(edge: .top)))
@@ -193,6 +195,29 @@ struct SettingsView: View {
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
                     .fill(Color.orange.opacity(0.08))
             )
+        }
+    }
+
+    // MARK: - GitHub bridge
+
+    @ViewBuilder
+    private var githubBridge: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Toggle("GitHub Bridge", isOn: $settings.githubBridgeEnabled)
+
+            Text("Webhook deliveries become banners: a review request parks as an ask, a red run is a fault, a mention is a chat. trill listens on localhost behind your tunnel and never writes GitHub state.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            // Health, not hope: the toggle alone promises nothing without
+            // github.json and a free port, so say what's missing.
+            if settings.githubBridgeEnabled, let reason = currentStatus["github"].flatMap({ $0 }) {
+                Text(reason)
+                    .font(.caption2)
+                    .foregroundStyle(.orange)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
     }
 

@@ -37,6 +37,13 @@ final class AppSettings: ObservableObject {
         }
     }
 
+    /// Opt-in like every non-socket provider: the bridge also needs
+    /// `~/.config/trill/github.json` and a tunnel, so the switch alone
+    /// promises nothing — provider health in Settings says what's missing.
+    @Published var githubBridgeEnabled: Bool {
+        didSet { defaults.set(githubBridgeEnabled, forKey: Keys.githubBridge) }
+    }
+
     /// Set when FDA assistant flow is triggered so that if the user or macOS
     /// quits & relaunches Trill, Settings re-opens automatically to show status.
     @Published var reopenSettingsOnLaunch: Bool {
@@ -46,12 +53,17 @@ final class AppSettings: ObservableObject {
         }
     }
 
+    /// Shared with the provider's `enabled` closure, which reads defaults
+    /// directly — the supervisor asks off the main actor.
+    nonisolated static let githubBridgeKey = "githubBridgeEnabled"
+
     private let defaults: UserDefaults
 
     private enum Keys {
         static let launchAtLogin = "launchAtLogin"
         static let persistHistory = "persistHistory"
         static let systemMirror = "systemMirrorEnabled"
+        static let githubBridge = AppSettings.githubBridgeKey
         static let reopenSettingsOnLaunch = "reopenSettingsOnLaunch"
         static let loginItemBundlePath = "loginItemBundlePath"
     }
@@ -62,11 +74,13 @@ final class AppSettings: ObservableObject {
             Keys.launchAtLogin: true,
             Keys.persistHistory: true,
             Keys.systemMirror: false, // experimental: always opt-in
+            Keys.githubBridge: false, // needs config + a tunnel: opt-in
             Keys.reopenSettingsOnLaunch: false,
         ])
         launchAtLogin = defaults.bool(forKey: Keys.launchAtLogin)
         persistHistory = defaults.bool(forKey: Keys.persistHistory)
         systemMirrorEnabled = defaults.bool(forKey: Keys.systemMirror)
+        githubBridgeEnabled = defaults.bool(forKey: Keys.githubBridge)
         reopenSettingsOnLaunch = defaults.bool(forKey: Keys.reopenSettingsOnLaunch)
 
         syncLoginItemRegistration()
