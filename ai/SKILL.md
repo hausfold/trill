@@ -35,11 +35,11 @@ own: `trill resolve <id>` (the id `send` printed), from any process; or `--until
 NAME[:args]`, a check *the user declared* in their rules file. `--key K` names it, and
 re-sending with that key replaces its fin.
 
-`--progress 0.42|42%` draws a bar; with `--key`, later sends under that key **replace**
-that card instead of stacking a second one — one card for a whole build, `--kind`
-defaulting to `pulse`. Send the ending under the same key (`--kind done`, or `fault`).
-Ticks are live, not history: only the ending is kept. A bare `42` is refused — say which
-unit.
+`--progress 0.42|42%` draws a bar and **requires `--key`**: the key is what makes later
+sends under it **replace** that card instead of stacking a second one — one card for a
+whole build, `--kind` defaulting to `pulse`. Send the ending under the same key (`--kind
+done`, or `fault`). Ticks are live, not history: only the ending is kept. A bare `42` is
+refused — say which unit. Swatting a bar away hushes its ticks; the ending still lands.
 
 `--urgency` (`low`/`normal`/`critical`) is the loudness, a different axis: a fault can
 be low, a note critical. `--thread` groups related banners; `--source <slug>` is what

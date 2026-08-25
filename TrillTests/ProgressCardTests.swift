@@ -59,20 +59,33 @@ final class ProgressCardTests: XCTestCase {
     }
 
     func testABarWithNoKindIsARunningJob() throws {
-        guard case .success(let event) = TrillCLI.parseSend(["--title", "build", "--progress", "30%"]) else {
-            return XCTFail("--progress should parse")
-        }
+        guard case .success(let event) = TrillCLI.parseSend(
+            ["--title", "build", "--progress", "30%", "--key", "haus"]
+        ) else { return XCTFail("--progress should parse") }
         XCTAssertEqual(event.kind, .pulse)
         XCTAssertEqual(event.progress, 0.3)
 
         guard case .success(let done) = TrillCLI.parseSend(
-            ["--title", "built", "--progress", "1", "--kind", "done"]
+            ["--title", "built", "--progress", "1", "--key", "haus", "--kind", "done"]
         ) else { return XCTFail("--kind should still win") }
         XCTAssertEqual(done.kind, .done)
 
-        guard case .failure = TrillCLI.parseSend(["--title", "build", "--progress", "42"]) else {
+        guard case .failure = TrillCLI.parseSend(
+            ["--title", "build", "--progress", "42", "--key", "haus"]
+        ) else {
             return XCTFail("a bare 42 is refused at the call site, not silently read as 4200%")
         }
+    }
+
+    func testABarNeedsAKeyOrItIsFiftyBannersInsteadOfOneCard() {
+        guard case .failure(let reason) = TrillCLI.parseSend(["--title", "build", "--progress", "30%"]) else {
+            return XCTFail("a keyless --progress leaves no trace anywhere: not one card, not the inbox")
+        }
+        XCTAssertTrue(reason.contains("--key"), "the refusal has to say what is missing")
+
+        guard case .success = TrillCLI.parseSend(
+            ["--title", "build", "--progress", "30%", "--key", "haus"]
+        ) else { return XCTFail("--progress with a key is the whole point") }
     }
 
     // MARK: - The queue rule
@@ -122,6 +135,107 @@ final class ProgressCardTests: XCTestCase {
         queue.enqueue(plain.normalized())
         queue.enqueue(NotificationEvent(source: "cli", key: "note", title: "hello again").normalized())
         XCTAssertEqual(queue.visible.count, 4)
+    }
+
+    @MainActor
+    func testABarNeverTakesAQuestionOffTheLedgeOrOffTheScreen() {
+        let queue = BannerQueue(capacity: 3, displayDuration: .seconds(3600))
+        var dropped: [NotificationEvent] = []
+        queue.onDropped = { dropped.append(contentsOf: $0) }
+
+        // A build and an unanswered question that happen to share a key.
+        queue.enqueue(NotificationEvent(
+            id: "ask", source: "lane", key: "haus", title: "rebuild this?", kind: .ask
+        ).normalized())
+        queue.expire(id: "ask")
+        XCTAssertEqual(queue.parked.map(\.id), ["ask"])
+
+        queue.enqueue(tick(key: "haus", 0.3))
+        XCTAssertEqual(
+            queue.parked.map(\.id), ["ask"],
+            "a bar may replace a bar; only an arrival may replace a question"
+        )
+        XCTAssertEqual(queue.visible.count, 1, "the bar still gets its own card")
+        XCTAssertTrue(dropped.isEmpty, "nothing left the compositor, so nobody's asker was unblocked")
+
+        // The same rule on screen: a visible ask is never overwritten in place.
+        let queue2 = BannerQueue(capacity: 3, displayDuration: .seconds(3600))
+        queue2.enqueue(NotificationEvent(
+            id: "ask2", source: "lane", key: "haus", title: "rebuild this?", kind: .ask
+        ).normalized())
+        queue2.enqueue(tick(key: "haus", 0.3))
+        XCTAssertEqual(queue2.visible.count, 2, "the question keeps its card, the bar lands beside it")
+        XCTAssertEqual(queue2.visible.first?.event.kind, .ask)
+    }
+
+    @MainActor
+    func testASwattedBarStaysGoneUntilItFinishes() {
+        let queue = BannerQueue(capacity: 3, displayDuration: .seconds(3600))
+        queue.enqueue(tick(key: "haus", 0.2, id: "first"))
+        queue.dismiss(id: "first")
+        XCTAssertEqual(queue.visible.count, 0)
+
+        queue.enqueue(tick(key: "haus", 0.5))
+        queue.enqueue(tick(key: "haus", 0.8))
+        XCTAssertEqual(
+            queue.visible.count, 0,
+            "a driver ticks every couple of seconds — the card you swatted must not come straight back"
+        )
+
+        queue.enqueue(NotificationEvent(
+            id: "done", source: "haus", key: "haus", title: "haus rebuilt", kind: .done
+        ).normalized())
+        XCTAssertEqual(
+            queue.visible.map(\.id), ["done"],
+            "you asked for the bar to go away, not to stop being told it finished"
+        )
+
+        // The hush is spent: the next build under that key draws again.
+        queue.dismiss(id: "done")
+        queue.enqueue(tick(key: "haus", 0.1, id: "second"))
+        XCTAssertEqual(queue.visible.map(\.id), ["second"], "dismissing the ending hushes nothing")
+    }
+
+    @MainActor
+    func testATickTakingOverACardDropsTheFoldThatCardWasWearing() {
+        let queue = BannerQueue(capacity: 3, displayDuration: .seconds(3600))
+        queue.enqueue(NotificationEvent(
+            id: "a", source: "haus", key: "haus", title: "step one", thread: "build"
+        ).normalized())
+        queue.enqueue(NotificationEvent(
+            id: "b", source: "haus", key: "haus", title: "step two", thread: "build"
+        ).normalized())
+        XCTAssertEqual(queue.visible.first?.coalescedCount, 1, "same thread, inside the window: folded")
+
+        queue.enqueue(tick(key: "haus", 0.6))
+        XCTAssertEqual(
+            queue.visible.first?.coalescedCount, 0,
+            "the fold belonged to the events that folded in, not to the job"
+        )
+        XCTAssertEqual(queue.visible.first?.folded, [], "a bar over \"+1 more in this thread\" lists a stranger")
+    }
+
+    @MainActor
+    func testAnEndingSentAsAFaultIsReRankedAndNotJustRewritten() {
+        // One slot, so everything after the first card waits.
+        let queue = BannerQueue(capacity: 1, displayDuration: .seconds(3600))
+        queue.enqueue(NotificationEvent(id: "held", source: "s", title: "occupies the slot").normalized())
+        queue.enqueue(tick(key: "haus", 0.4, id: "bar"))
+        queue.enqueue(NotificationEvent(id: "note1", source: "s", title: "chatter").normalized())
+        queue.enqueue(NotificationEvent(id: "note2", source: "s", title: "chatter").normalized())
+        XCTAssertEqual(queue.waitingCount, 3)
+
+        queue.enqueue(NotificationEvent(
+            id: "failed", source: "haus", key: "haus", title: "rebuild failed",
+            kind: .fault, urgency: .critical
+        ).normalized())
+        XCTAssertEqual(queue.waitingCount, 3, "the fault took over the bar's entry rather than landing beside it")
+
+        queue.dismiss(id: "held")
+        XCTAssertEqual(
+            queue.visible.first?.event.id, "failed",
+            "an ending that arrives critical takes a critical's place in line, not the pulse's"
+        )
     }
 
     // MARK: - What the bar costs

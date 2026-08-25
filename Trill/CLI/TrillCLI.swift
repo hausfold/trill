@@ -6,7 +6,7 @@ import Foundation
 ///   trill send --title "Deploy landed" [--body …] [--source deploy]
 ///              [--symbol checkmark.circle] [--thread deploys]
 ///              [--kind ask|fault|chat|pulse|done|note]
-///              [--progress 0.42|42%] [--key NAME]
+///              [--progress 0.42|42%] --key NAME
 ///              [--urgency low|normal|critical] [--redact] [--url https://…]
 ///              [--action "Label=https://…"] [--action "Label=lane:repo/name"]…
 ///   echo '{"title":"Backup complete"}' | trill send --json
@@ -191,6 +191,14 @@ enum TrillCLI {
 
         guard let title, !title.isEmpty else {
             return .failure("send requires --title (or --json on stdin)")
+        }
+        // A bar without a name is not one card getting truer, it is fifty
+        // banners: the key is what makes a tick *replace* rather than arrive,
+        // and ticks are not kept in the inbox either, so a keyless run leaves
+        // no trace of itself anywhere. Refused at the call site for the same
+        // reason a bare `--progress 42` is — don't guess at what was meant.
+        guard progress == nil || key != nil else {
+            return .failure("--progress needs --key: the key is what makes the next send replace this card instead of stacking a second one")
         }
         return .success(NotificationEvent(
             source: source, key: key, resolves: resolves, until: until,
@@ -662,12 +670,12 @@ enum TrillCLI {
     events render as fault. --urgency stays the loudness: low dims, critical
     bolds — still silent.
 
-    --progress draws a bar on the card and, with --key, makes every later
-    send under that key *replace* it instead of stacking a second banner —
-    one card for a whole build. Takes a fraction (0.42) or a percentage
-    (42%); a bare 42 is refused, because then 1 would be ambiguous. Ticks are
-    live, not history: only the ending reaches the inbox. --kind defaults to
-    pulse when a bar is present.
+    --progress draws a bar on the card and requires --key: the key is what
+    makes every later send *replace* that card instead of stacking a second
+    banner — one card for a whole build. Takes a fraction (0.42) or a
+    percentage (42%); a bare 42 is refused, because then 1 would be
+    ambiguous. Ticks are live, not history: only the ending reaches the
+    inbox. --kind defaults to pulse when a bar is present.
 
       trill send --key haus --progress 0.4 --title "haus rebuild" --body "12/30"
       trill send --key haus --progress 1 --kind done --title "haus rebuilt"

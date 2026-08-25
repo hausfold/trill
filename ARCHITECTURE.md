@@ -45,7 +45,14 @@
     fifty readings are one build, so only the ending reaches the inbox or a
     digest tally. Liveness is the *sender's* job: the card's clock is
     rearmed by each tick, so a driver that dies takes its card off screen
-    rather than pinning one there.
+    rather than pinning one there. Two guards keep "replace" from becoming a
+    way to lose things: a bar never takes over an **ask** however it was
+    keyed (that would drop a question with nobody told and its caller still
+    blocked), and a card the user **swatted away** hushes further ticks under
+    that key — a driver reporting every two seconds would otherwise put it
+    straight back. The ending is not a tick and still lands. Ticks are also
+    exempt from the dedupe window, which they would otherwise flush: a long
+    build spends more throwaway ids than the window holds.
 
 ## Boundaries
 
