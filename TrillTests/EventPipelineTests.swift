@@ -256,6 +256,20 @@ final class EventPipelineTests: XCTestCase {
             ).hasDefaultAction,
             "the silence helper always opens something, target or not"
         )
+        XCTAssertTrue(
+            NotificationEvent(
+                source: "claude", title: "click-banner-focus",
+                actions: [.init(id: "l", label: "Go to lane", kind: .focusLane, target: "trill/click-banner-focus")]
+            ).hasDefaultAction,
+            "a named lane is a click that goes somewhere"
+        )
+        XCTAssertFalse(
+            NotificationEvent(
+                source: "claude", title: "nameless",
+                actions: [.init(id: "l", label: "Go to lane", kind: .focusLane, target: nil)]
+            ).hasDefaultAction,
+            "focus_lane with nothing to focus is a dead button"
+        )
 
         // Only the *first* action is what a click runs, so only it decides.
         XCTAssertFalse(
@@ -268,6 +282,58 @@ final class EventPipelineTests: XCTestCase {
             ).hasDefaultAction,
             "a live second action doesn't rescue a dead first one — performDefault never reaches it"
         )
+    }
+
+    func testLaneTargetsAreWhitelistedNotEscaped() {
+        // The target goes straight into an argv for `holt focus`. There is no
+        // shell in that path, but the predicate is still the only thing
+        // standing between a sender's string and another process's arguments,
+        // so it refuses everything that isn't shaped like a lane name.
+        XCTAssertTrue(NotificationEvent.Action.focusesLane("click-banner-focus"))
+        XCTAssertTrue(NotificationEvent.Action.focusesLane("trill/click-banner-focus"))
+        XCTAssertTrue(NotificationEvent.Action.focusesLane("haus.2/lane_9"))
+
+        XCTAssertFalse(NotificationEvent.Action.focusesLane(nil))
+        XCTAssertFalse(NotificationEvent.Action.focusesLane(""))
+        XCTAssertFalse(
+            NotificationEvent.Action.focusesLane("--json"),
+            "a leading dash would read as a flag to holt, whatever followed it"
+        )
+        XCTAssertFalse(NotificationEvent.Action.focusesLane("lane; rm -rf ~"))
+        XCTAssertFalse(NotificationEvent.Action.focusesLane("lane $(whoami)"))
+        XCTAssertFalse(NotificationEvent.Action.focusesLane(String(repeating: "a", count: 101)))
+    }
+
+    func testCLIParsesALaneActionAndRefusesAMalformedOne() {
+        guard case .success(let event) = TrillCLI.parseSend([
+            "--title", "click-banner-focus",
+            "--source", "claude",
+            "--action", "Go to lane=lane:trill/click-banner-focus",
+        ]) else { return XCTFail("parse failed") }
+        XCTAssertEqual(event.actions.first?.kind, .focusLane)
+        XCTAssertEqual(event.actions.first?.target, "trill/click-banner-focus")
+        XCTAssertEqual(event.actions.first?.label, "Go to lane")
+
+        if case .success = TrillCLI.parseSend([
+            "--title", "x", "--action", "Go=lane:not a lane name",
+        ]) {
+            XCTFail("a malformed lane must fail at the call site, not silently on click")
+        }
+    }
+
+    func testAnUnknownActionKindCostsTheActionNotTheEvent() throws {
+        // holt and trill update independently — trill is deliberately not a
+        // flake input — so a newer sender naming a kind this build has never
+        // heard of is routine. The banner must still be drawn.
+        let wire = Data(#"""
+        {"title":"lane blocked","source":"claude",
+         "actions":[{"id":"x","label":"Teleport","kind":"teleport","target":"somewhere"}]}
+        """#.utf8)
+        let event = try JSONDecoder.trill.decode(NotificationEvent.self, from: wire)
+        XCTAssertEqual(event.title, "lane blocked")
+        XCTAssertEqual(event.actions.first?.kind, .unsupported)
+        XCTAssertFalse(event.hasDefaultAction, "an inert action must not draw a pressable row")
+        XCTAssertTrue(event.pillActions.isEmpty)
     }
 
     @MainActor
