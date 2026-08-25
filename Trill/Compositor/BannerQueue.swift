@@ -63,6 +63,13 @@ final class BannerQueue {
 
     /// Redraw callback; the window system owns the panels.
     var onVisibleChanged: (([Entry]) -> Void)?
+    /// Entries that left the compositor for good: dismissed by hand, cleared,
+    /// or evicted off the ledge by a newer ask. Deliberately *not* fired by
+    /// `expire`, which parks an ask rather than ending it — a parked question
+    /// is still being asked. The blocking half of `trill ask` listens here:
+    /// a question the user waved away has to unblock its asker rather than
+    /// leave it hanging on a banner that no longer exists.
+    var onDropped: (([NotificationEvent]) -> Void)?
     /// Ledge redraw callback — the parked bucket changed. Separate from
     /// `onVisibleChanged` because the two surfaces re-render independently:
     /// a fin appearing must not restack the banner column and vice versa.
@@ -183,14 +190,17 @@ final class BannerQueue {
     // MARK: - Lifecycle
 
     func dismiss(id: String) {
-        if parked.contains(where: { $0.id == id }) {
-            parked.removeAll { $0.id == id }
+        if let index = parked.firstIndex(where: { $0.id == id }) {
+            let gone = parked.remove(at: index)
             if parkedHoverID == id { parkedHoverID = nil }
+            notifyDropped([gone])
             notifyParked()
             return
         }
         dismissTimers.removeValue(forKey: id)?.cancel()
+        let dropped = visible.filter { $0.id == id }
         visible.removeAll { $0.id == id }
+        notifyDropped(dropped)
         if hoveredID == id {
             // The pointer's target just vanished. SwiftUI does not reliably
             // send the matching exit for a view that goes away under the
@@ -206,10 +216,12 @@ final class BannerQueue {
         dismissTimers.values.forEach { $0.cancel() }
         dismissTimers.removeAll()
         hoveredID = nil
+        notifyDropped(visible + waiting)
         visible.removeAll()
         waiting.removeAll()
         notify()
         guard !parked.isEmpty else { return }
+        notifyDropped(parked)
         parked.removeAll()
         parkedHoverID = nil
         notifyParked()
@@ -234,6 +246,7 @@ final class BannerQueue {
         }
 
         let waitingBefore = waiting.count
+        notifyDropped(waiting.filter(answers))
         waiting.removeAll(where: answers)
         var cleared = waitingBefore - waiting.count
 
@@ -274,6 +287,7 @@ final class BannerQueue {
         while parked.count > Self.parkedCapacity {
             let evicted = parked.removeFirst()
             if parkedHoverID == evicted.id { parkedHoverID = nil }
+            notifyDropped([evicted])
         }
         refill()
         notify()
@@ -294,7 +308,13 @@ final class BannerQueue {
         guard !restored.isEmpty else { return }
         let known = Set(parked.map(\.id))
         for item in restored where !known.contains(item.event.id) {
-            var entry = Entry(event: item.event)
+            // A `reply` pill can only be honored by the process that asked
+            // and the socket that carried the question — both died with the
+            // last daemon. The fin is still worth restoring (the question was
+            // real), but its buttons aren't, and trill draws no dead ones.
+            var event = item.event
+            event.actions.removeAll { $0.kind == .reply }
+            var entry = Entry(event: event)
             entry.coalescedCount = item.coalescedCount
             parked.append(entry)
         }
@@ -412,5 +432,12 @@ final class BannerQueue {
     private func notifyParked() {
         onParkedChanged?(parked)
         onParkedForResolution?(parked)
+    }
+
+    /// Every event an entry was carrying, face and fold alike — anything
+    /// waiting on one of them is waiting on all of them.
+    private func notifyDropped(_ entries: [Entry]) {
+        guard let onDropped, !entries.isEmpty else { return }
+        onDropped(entries.flatMap { [$0.event] + $0.folded })
     }
 }

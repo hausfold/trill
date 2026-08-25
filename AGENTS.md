@@ -91,6 +91,16 @@ never into a broken pipeline. Corollaries:
   Resolution is also one-way: nothing may put an answered question back on
   screen, and a poller that gives up leaves the fin — trill never invents an
   answer it didn't get.
+- **`trill ask` blocks the caller, never the compositor.** The one verb that
+  answers late: the daemon holds the socket open and replies when a pill is
+  pressed. `AskBroker` owns that — every ask resolves exactly once, first
+  resolution wins, because a pill click answers *and then* takes the banner
+  down. Nothing but a pressed pill is an answer: a timeout, a dismissal, a
+  hangup, a question a rule kept off screen and one another process resolved
+  all exit 75, never 0. `reply` actions are minted by the daemon, so no sender
+  can ship a banner whose Deny answers 0 — and a fin restored from the ledge
+  after a restart loses its pills, because the socket that could have carried
+  that answer died with the last daemon.
 - **The queue is the truth; panels are disposable.** Display topology
   rebuilds re-render from `BannerQueue` state. Never park event state in a
   panel or view.

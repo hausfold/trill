@@ -206,6 +206,18 @@ retry/logs — capability-advertised per provider, never generic promises.
     three fully readable. Keep sending: cards keep stacking until the screen
     is out of room, and only then does the queue hold events back — with a
     "⌄ N waiting" badge under the bottom card admitting it.
+17. Run `trill ask "Push to origin?" --pill Allow --pill Deny` in a terminal:
+    the command blocks and an `ask` banner appears with both pills. Click
+    **Deny** — the banner goes, the command exits **1** and prints `Deny`;
+    click **Allow** instead and it exits **0**. Clicking the card's *title*
+    presses nothing, because a question with two answers has no default one.
+    Let a second one time out unattended: it parks as a fin, the command is
+    still blocked, and answering from the hovered card ends it. Dismiss a
+    third with the ✕: exit **75**, not 0 — silence is never consent. Ctrl-C a
+    fourth: the banner disappears with the caller. Run one with `--timeout 5`
+    and walk away: exit 75 and the banner takes itself down. Run one with
+    `--key gate` and `trill resolve gate` from another terminal: the fin goes
+    and the blocked command exits 75 — resolution unblocks, it never answers.
 
 ## Non-goals (v1)
 

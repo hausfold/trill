@@ -76,6 +76,14 @@ struct NotificationEvent: Codable, Sendable, Identifiable, Equatable {
             /// trill never writes those settings itself — this only opens
             /// System Settings and stands beside it.
             case silenceNative = "silence_native"
+            /// Answer a blocking `trill ask`: `target` is the index of the
+            /// pill, and pressing it is what makes that CLI exit. The one
+            /// action kind whose effect is a line written back down the
+            /// socket the event arrived on — see `AskBroker`. Inert when
+            /// nobody is waiting any more, which is why a `reply` action is
+            /// only ever minted by the daemon (`SocketProvider.handle`) and
+            /// never by a sender.
+            case reply
             /// Bring the terminal lane the event came from to the front.
             /// `target` names it the way holt does — `<repo>/<lane>`, or a
             /// bare `<lane>` where that is unambiguous. trill knows nothing
@@ -127,6 +135,17 @@ struct NotificationEvent: Codable, Sendable, Identifiable, Equatable {
             charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-/"
         )
 
+        /// Which pill a `reply` action answers with, or nil if the target
+        /// isn't one. Bounded by `Limits.drawnActions` because that is how
+        /// many pills a card draws: an index past the last drawn one names a
+        /// button nobody can press.
+        static func replyChoice(_ target: String?) -> Int? {
+            guard let target, let index = Int(target),
+                  (0..<Limits.drawnActions).contains(index)
+            else { return nil }
+            return index
+        }
+
         /// Would a `focus_lane` action with this target name a lane?
         static func focusesLane(_ target: String?) -> Bool {
             guard let target, !target.isEmpty, target.count <= 100,
@@ -147,6 +166,7 @@ struct NotificationEvent: Codable, Sendable, Identifiable, Equatable {
             case .openURL: Self.opensAsURL(target)
             case .focusLane: Self.focusesLane(target)
             case .openInbox: InboxScope(actionTarget: target) != nil
+            case .reply: Self.replyChoice(target) != nil
             case .command, .unsupported: false
             }
         }
@@ -279,6 +299,10 @@ extension NotificationEvent {
     /// about what's installed.
     var hasDefaultAction: Bool {
         guard let action = actions.first else { return source.contains(".") }
+        // A question with more than one answer has no default one. The face
+        // of an ask must never be a hidden "yes": a stray click on the title
+        // of "Push to origin?" would otherwise press Allow.
+        if action.kind == .reply, !pillActions.isEmpty { return false }
         return action.isPerformable
     }
 
@@ -317,6 +341,10 @@ extension NotificationEvent {
         /// bug in a sender can't turn one delivery into a screen sweep.
         static let resolvedKeys = 16
         static let key = 200
+        /// A pill is a word, not a sentence — it has to fit on a card next
+        /// to two others. Enforced where `ask` pills are minted, so a long
+        /// `--pill` is trimmed once rather than clipped by every surface.
+        static let pillLabel = 24
     }
 
     /// Canonical form used for dedupe, persistence, and rendering.

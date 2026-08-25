@@ -2,6 +2,7 @@ import Foundation
 
 /// The scriptable face:
 ///
+///   trill ask "Push to origin?" --pill Allow --pill Deny
 ///   trill send --title "Deploy landed" [--body …] [--source deploy]
 ///              [--symbol checkmark.circle] [--thread deploys]
 ///              [--kind ask|fault|chat|pulse|done|note]
@@ -12,9 +13,14 @@ import Foundation
 ///
 /// One JSON line out, one JSON line back, exit code says what happened:
 /// 0 ok · 1 bad usage · 2 daemon unreachable · 3 daemon refused.
+///
+/// `ask` is the exception, and deliberately: it *blocks*, and its exit code is
+/// the index of the pill the user pressed — which is why its own failures
+/// live up at 64/69/70/75 (`AskExit`), where they can't be mistaken for an
+/// answer.
 enum TrillCLI {
     static let subcommands: Set<String> = [
-        "send", "ping", "doctor", "inbox", "resolve", "help", "--help", "-h",
+        "send", "ask", "ping", "doctor", "inbox", "resolve", "help", "--help", "-h",
     ]
 
     static func run(arguments: [String]) -> Int32 {
@@ -60,6 +66,16 @@ enum TrillCLI {
             case .failure(let message):
                 FileHandle.standardError.write(Data("trill: \(message)\n".utf8))
                 return 1
+            }
+        case "ask":
+            switch parseAsk(Array(arguments.dropFirst())) {
+            case .success(let invocation):
+                return roundTrip(invocation.request, codes: .ask) { response in
+                    renderAsk(response, json: invocation.json)
+                }
+            case .failure(let message):
+                FileHandle.standardError.write(Data("trill: \(message)\n".utf8))
+                return AskExit.usage
             }
         default:
             print(usage)
@@ -179,6 +195,175 @@ enum TrillCLI {
             urgency: urgency, privacy: privacy,
             actions: actions
         ))
+    }
+
+    // MARK: - ask
+
+    /// Exit codes for the one blocking verb. `ask` spends the low numbers on
+    /// answers — 0 is the first pill, so `trill ask … && git push` reads the
+    /// way a shell person expects — which means its own failures have to live
+    /// somewhere they can never be mistaken for one. These are sysexits
+    /// numbers, the closest thing Unix has to a convention for that.
+    enum AskExit {
+        /// Bad flags. `EX_USAGE`.
+        static let usage: Int32 = 64
+        /// No daemon on the socket. `EX_UNAVAILABLE`.
+        static let unreachable: Int32 = 69
+        /// The daemon refused the request. `EX_SOFTWARE`.
+        static let refused: Int32 = 70
+        /// Nobody answered: the clock ran out, the banner was dismissed, or a
+        /// rule kept the question off screen entirely. `EX_TEMPFAIL`.
+        ///
+        /// This is the safe-by-default half of the feature. Silence is never
+        /// an answer — a script that runs its risky half on exit 0 does
+        /// nothing when nobody was there.
+        static let unanswered: Int32 = 75
+    }
+
+    /// The request, plus the one flag that never leaves this process.
+    struct AskInvocation: Equatable {
+        var request: SocketProvider.Request
+        var json: Bool
+    }
+
+    enum AskParseResult: Equatable {
+        case success(AskInvocation)
+        case failure(String)
+    }
+
+    /// `trill ask "Push to origin?" [--pill Allow] [--pill Deny] …`
+    ///
+    /// The title is positional because that is how the question reads out
+    /// loud; `--title` works too, for callers that build argv in a loop.
+    /// There is no `--kind` (an ask is an ask) and no `--thread`: coalescing
+    /// two questions into one card would hide the pills of whichever lost the
+    /// face, with its caller still blocked.
+    ///
+    /// `--key` and `--until` mean here what they mean for `send`, and compose
+    /// with the block: whoever takes the question down — `trill resolve`, a
+    /// resolver that came good, an event that answers it — unblocks the caller
+    /// with "nobody answered" rather than leaving it holding the wire.
+    static func parseAsk(_ args: [String]) -> AskParseResult {
+        var title: String?
+        var body: String?
+        var subtitle: String?
+        var source = "cli"
+        var symbol: String?
+        var pills: [String] = []
+        var key: String?
+        var until: String?
+        var urgency = NotificationEvent.Urgency.normal
+        var privacy = NotificationEvent.Privacy.visible
+        var timeout: Double?
+        var json = false
+
+        var iterator = args.makeIterator()
+        while let flag = iterator.next() {
+            func value() -> String? { iterator.next() }
+            switch flag {
+            case "--title": title = value()
+            case "--body": body = value()
+            case "--subtitle": subtitle = value()
+            case "--source": source = value() ?? source
+            case "--symbol": symbol = value()
+            case "--redact": privacy = .redacted
+            case "--json": json = true
+            case "--key": key = value()
+            case "--until":
+                // Same resolver a `send`'s ask can name — the question stops
+                // being asked when the check says so, and the caller learns
+                // that as "nobody answered" rather than as a hang.
+                guard let raw = value() else {
+                    return .failure("--until wants a resolver name from rules.json (NAME or NAME:arg,arg)")
+                }
+                until = raw
+            case "--pill":
+                guard let label = value()?.trimmingCharacters(in: .whitespacesAndNewlines),
+                      !label.isEmpty
+                else { return .failure("--pill wants a label") }
+                pills.append(label)
+            case "--timeout":
+                guard let raw = value(), let seconds = Double(raw), seconds > 0 else {
+                    return .failure("--timeout wants a number of seconds")
+                }
+                timeout = seconds
+            case "--urgency":
+                guard let raw = value(), let parsed = NotificationEvent.Urgency(rawValue: raw) else {
+                    return .failure("--urgency wants low|normal|critical")
+                }
+                urgency = parsed
+            case let flag where flag.hasPrefix("--"):
+                return .failure("unknown flag '\(flag)' (see `trill help`)")
+            case let positional:
+                guard title == nil else {
+                    return .failure("ask takes one question — quote it")
+                }
+                title = positional
+            }
+        }
+
+        guard let title, !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return .failure("ask requires a question: trill ask \"Push to origin?\"")
+        }
+        // A question with no buttons is still a question, and Yes/No is what
+        // it means. Answering Yes is exit 0, which is what `&&` reads.
+        if pills.isEmpty { pills = ["Yes", "No"] }
+        guard pills.count <= NotificationEvent.Limits.drawnActions else {
+            return .failure("ask draws at most \(NotificationEvent.Limits.drawnActions) pills")
+        }
+
+        return .success(AskInvocation(
+            request: SocketProvider.Request(
+                v: 1, verb: "ask",
+                event: NotificationEvent(
+                    source: source, key: key, until: until,
+                    title: title, subtitle: subtitle, body: body,
+                    symbol: symbol, kind: .ask, urgency: urgency, privacy: privacy
+                ),
+                pills: pills,
+                timeout: timeout
+            ),
+            json: json
+        ))
+    }
+
+    /// The answer, as an exit code. Answered → the pill's index, and the
+    /// label on stdout so a script can read it instead of counting. Anything
+    /// else → 75 and one line on stderr saying which kind of silence it was.
+    static func renderAsk(_ response: SocketProvider.Response, json: Bool) -> Int32 {
+        let outcome = response.outcome ?? AskBroker.Outcome.dismissed.rawValue
+        if json {
+            struct Answered: Encodable {
+                let choice: Int?
+                let label: String?
+                let outcome: String
+            }
+            if let data = try? JSONEncoder.trill.encode(
+                Answered(choice: response.choice, label: response.label, outcome: outcome)
+            ), let line = String(data: data, encoding: .utf8) {
+                print(line)
+            }
+        }
+
+        guard outcome == AskBroker.Outcome.answered.rawValue, let choice = response.choice else {
+            if !json {
+                FileHandle.standardError.write(Data("trill ask: \(Self.silence(outcome))\n".utf8))
+            }
+            return AskExit.unanswered
+        }
+        if !json, let label = response.label { print(label) }
+        return Int32(choice)
+    }
+
+    /// Why nobody answered, in the words a person would use. Every one of
+    /// these exits 75 — the difference is what you do about it.
+    private static func silence(_ outcome: String) -> String {
+        switch AskBroker.Outcome(rawValue: outcome) {
+        case .timeout: "nobody answered before --timeout ran out"
+        case .dropped: "the question never reached the screen (a rule, or quiet hours)"
+        case .canceled: "the daemon cancelled the question"
+        default: "taken down without an answer"
+        }
     }
 
     // MARK: - inbox
@@ -335,18 +520,37 @@ enum TrillCLI {
     /// `render` turns a successful reply into an exit code and whatever
     /// output that verb wants. Default: print the event id, exit 0 — what
     /// `send` and `ping` have always done.
+    ///
+    /// `codes` is how the *failures* are reported. Every verb but one uses
+    /// the standard table; `ask` spends 0–2 on answers and moves its failures
+    /// out of the way. A shared table would make "the user pressed Deny"
+    /// indistinguishable from "there is no daemon".
+    struct ExitCodes {
+        var encode: Int32
+        var unreachable: Int32
+        var refused: Int32
+
+        static let standard = ExitCodes(encode: 1, unreachable: 2, refused: 3)
+        static let ask = ExitCodes(
+            encode: AskExit.usage,
+            unreachable: AskExit.unreachable,
+            refused: AskExit.refused
+        )
+    }
+
     private static func roundTrip(
         _ request: SocketProvider.Request,
+        codes: ExitCodes = .standard,
         render: (SocketProvider.Response) -> Int32 = { response in
             if let id = response.id { print(id) }
             return 0
         }
     ) -> Int32 {
         let path = SocketProvider.defaultSocketPath()
-        guard let payload = try? JSONEncoder.trill.encode(request) else { return 1 }
+        guard let payload = try? JSONEncoder.trill.encode(request) else { return codes.encode }
 
         let fd = socket(AF_UNIX, SOCK_STREAM, 0)
-        guard fd >= 0 else { return 2 }
+        guard fd >= 0 else { return codes.unreachable }
         defer { close(fd) }
 
         var addr = sockaddr_un()
@@ -357,7 +561,7 @@ enum TrillCLI {
             raw.copyBytes(from: bytes)
             return true
         }
-        guard fits else { return 2 }
+        guard fits else { return codes.unreachable }
 
         let size = socklen_t(MemoryLayout<sockaddr_un>.size)
         let connected = withUnsafePointer(to: &addr) {
@@ -365,7 +569,7 @@ enum TrillCLI {
         }
         guard connected == 0 else {
             FileHandle.standardError.write(Data("trill: daemon not running (no socket at \(path))\n".utf8))
-            return 2
+            return codes.unreachable
         }
 
         var out = payload
@@ -379,9 +583,12 @@ enum TrillCLI {
             }
             return true
         }
-        guard sent else { return 2 }
+        guard sent else { return codes.unreachable }
 
-        // Read one response line (the daemon answers promptly or not at all).
+        // Read one response line. Every verb but `ask` is answered at once;
+        // `ask` answers when the user does, so this read has no clock of its
+        // own — the *daemon* owns `--timeout`, because only it can also take
+        // the banner down when the clock runs out.
         var buffer = Data()
         var chunk = [UInt8](repeating: 0, count: 4096)
         while !buffer.contains(0x0A) {
@@ -394,13 +601,13 @@ enum TrillCLI {
               let response = try? JSONDecoder.trill.decode(
                   SocketProvider.Response.self, from: buffer.prefix(upTo: nl)
               )
-        else { return 2 }
+        else { return codes.unreachable }
 
         if response.ok {
             return render(response)
         }
         FileHandle.standardError.write(Data("trill: \(response.error ?? "refused")\n".utf8))
-        return 3
+        return codes.refused
     }
 
     static let usage = """
@@ -415,6 +622,10 @@ enum TrillCLI {
                  [--action "Label=lane:repo/name"]
                  [--key NAME] [--resolves KEY]… [--until RESOLVER[:args]]
       trill send --json          # full NotificationEvent JSON on stdin
+      trill ask QUESTION [--pill LABEL]… [--body TEXT] [--subtitle TEXT]
+                 [--source NAME] [--symbol SFNAME] [--urgency low|normal|critical]
+                 [--redact] [--key NAME] [--until NAME[:args]] [--timeout SECONDS]
+                 [--json]
       trill resolve KEY [KEY …]  # that question got answered — take it down
       trill ping                 # is the daemon up?
       trill doctor [--all] [--notify] [--json] [BUNDLE_ID …]
@@ -454,6 +665,29 @@ enum TrillCLI {
     A lane: target goes to the window running that holt lane — it runs
     `holt focus <name>` and nothing else, and does nothing where holt
     isn't installed.
+
+    ask is the two-way verb: it puts the question on screen and *blocks*
+    until someone presses a pill, then exits with that pill's index — 0 for
+    the first --pill, so `trill ask "Push?" --pill Yes --pill No && git push`
+    reads the way it looks. The label is printed on stdout. With no --pill at
+    all the buttons are Yes and No. At most 3.
+
+      trill ask "Push to origin?" --pill Allow --pill Deny
+      case $? in 0) git push ;; 1) echo skipped ;; *) echo nobody home ;; esac
+
+    An unanswered ask never exits 0 — silence is not consent. It parks on the
+    ledge like any other ask and waits as long as you do; --timeout SECONDS
+    puts a clock on it, and when the clock runs out the banner comes down.
+    So does killing the caller: Ctrl-C at the terminal retracts the question,
+    because a banner nobody is behind can't be answered. It takes --key and
+    --until like a sent ask, so a question that answers itself while you wait
+    ends the block too — as 75, never as a hang.
+
+      exit codes for ask: 0…2 the pill pressed · 64 bad usage
+                          69 daemon unreachable · 70 daemon refused
+                          75 nobody answered (timed out, taken down, resolved
+                             elsewhere, or kept off screen by a rule or quiet
+                             hours)
 
     doctor asks macOS which apps still draw their own banners or play their
     own sounds — the ones you'd otherwise see twice. With no arguments it
