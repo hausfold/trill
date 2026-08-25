@@ -444,6 +444,11 @@ final class AppDatabase: @unchecked Sendable {
         case .banner: "banner"
         case .inboxOnly: "inbox"
         case .digest(let name): "digest:\(name)"
+        // Its own label, not "banner": a fin is a question waiting on the
+        // edge of the screen, and the inbox has to be able to say so — and
+        // to leave it *unread*, because trill deliberately did not put it in
+        // front of anyone.
+        case .ledge: "ledge"
         case .drop: "drop"
         }
     }

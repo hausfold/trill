@@ -16,6 +16,14 @@ actor EventRepository {
     /// the inbox and the catch-up card both depend on that being recorded
     /// truthfully at ingest — there is no second chance to find out later.
     private let presence: @Sendable () -> Bool
+    /// Is macOS in a Focus as events land? Read per event and off the main
+    /// actor, like presence — and for the same reason it isn't cached on the
+    /// engine: the answer changes while trill runs, and a decision made
+    /// against a stale one is a chat that interrupted a meeting. The reader
+    /// behind it memoises for a second and applies the user's switch, so this
+    /// is a lock and a dictionary lookup on the ingest path, not a file read
+    /// (`FocusReader`). trill never *writes* a Focus; see `SystemFocus`.
+    private let focus: @Sendable () -> SystemFocus
 
     private var subscribers: [UUID: AsyncStream<DeliveredEvent>.Continuation] = [:]
     private var providerTasks: [String: Task<Void, Never>] = [:]
@@ -39,11 +47,13 @@ actor EventRepository {
     init(
         policy: @escaping @Sendable () -> PolicyEngine,
         database: AppDatabase?,
-        presence: @escaping @Sendable () -> Bool = { true }
+        presence: @escaping @Sendable () -> Bool = { true },
+        focus: @escaping @Sendable () -> SystemFocus = { .off }
     ) {
         self.policy = policy
         self.database = database
         self.presence = presence
+        self.focus = focus
         self.seenIDs = OrderedIDWindow(capacity: 2048)
     }
 
@@ -104,7 +114,7 @@ actor EventRepository {
             return
         }
 
-        let decision = policy().decide(event, now: .now)
+        let decision = policy().decide(event, now: .now, focus: focus())
         if decision == .drop { return }
 
         // Drawn, not stored: see `isProgressTick`. The ending (progress 1,

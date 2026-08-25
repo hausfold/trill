@@ -109,6 +109,16 @@ struct GeneralPane: View {
                 }
                 SettingsDivider()
                 SettingsRow(
+                    symbol: "moon.fill",
+                    title: "Follow the Mac’s Focus",
+                    subtitle: "While a Focus is on, chatter stops interrupting and goes to the Inbox, faults still land, and a question parks on the ledge instead of vanishing. trill reads the Focus — it never turns one on or off."
+                ) {
+                    Toggle("Follow the Mac’s Focus", isOn: $settings.focusAware)
+                        .labelsHidden()
+                        .toggleStyle(.switch)
+                }
+                SettingsDivider()
+                SettingsRow(
                     symbol: "newspaper",
                     title: "Catch me up when I come back",
                     subtitle: "One card on unlock, counting what landed while you were away — “2 asks, 1 fault, 14 notes”. Nothing arrived, no card."
@@ -133,6 +143,8 @@ struct GeneralPane: View {
             CLILinkNote(state: settings.cliLinkState)
 
             ScreenWatchNote()
+
+            FocusNote(followingFocus: settings.focusAware)
 
             SettingsWriteStatus(settings: settings)
 
@@ -220,6 +232,63 @@ struct ScreenWatchNote: View {
                 sentinel.setPolling(true, by: .settings)
             }
             .onDisappear { sentinel.setPolling(false, by: .settings) }
+    }
+}
+
+/// Which Focus macOS is in, said plainly — and the door to the only place
+/// it can be changed.
+///
+/// The same contract as `ScreenWatchNote`: shown whether or not the switch is
+/// on, because a switch has to be understandable before it is flipped, and
+/// naming the *signal* rather than the conclusion. It has three things to say
+/// and not two — the store is a file, and "trill can’t tell" is a verdict
+/// (see `SystemFocus`), never rendered as "no Focus".
+///
+/// The button opens System Settings → Focus and nothing else. trill holds no
+/// way to turn a Focus on or off and is not going to grow one: that dial is
+/// the desktop’s (haus’s "Hush" lane drives it here) and the user’s.
+struct FocusNote: View {
+    let followingFocus: Bool
+    @ObservedObject private var sentinel = FocusSentinel.shared
+
+    var body: some View {
+        let note = Group {
+            if let reason = sentinel.state.reason {
+                HStack(alignment: .top, spacing: 10) {
+                    SettingsNote(
+                        symbol: symbol,
+                        tint: tint,
+                        text: followingFocus || !sentinel.state.isOn
+                            ? reason
+                            : "\(reason) trill isn’t following it, so everything banners as usual."
+                    )
+                    Button("Focus…") { SystemIntegration.openFocusSettings() }
+                        .padding(.top, 6)
+                }
+            }
+        }
+        note
+            .onAppear {
+                sentinel.refresh()
+                sentinel.setPolling(true)
+            }
+            .onDisappear { sentinel.setPolling(false) }
+    }
+
+    private var symbol: String {
+        switch sentinel.state {
+        case .off: "moon"
+        case .on: followingFocus ? "moon.fill" : "moon"
+        case .unknown: "questionmark.circle"
+        }
+    }
+
+    private var tint: Color {
+        switch sentinel.state {
+        case .off: .secondary
+        case .on: followingFocus ? .accentColor : .secondary
+        case .unknown: .orange
+        }
     }
 }
 

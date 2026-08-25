@@ -179,6 +179,7 @@ struct InboxRowView: View {
     private var deliveryLabel: String? {
         switch row.face.decision {
         case "inbox": "quiet"
+        case "ledge": "parked during a Focus"
         case let decision where decision.hasPrefix("digest:"):
             "digest · \(decision.dropFirst("digest:".count))"
         default: nil
