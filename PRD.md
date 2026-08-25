@@ -144,6 +144,19 @@ per-source styling hooks, `trill history --source X --since 2h`, `trill watch
 takeover), opt-in command hooks for banner *actions* (a click running a
 declared command, the way `--until` already runs a declared check).
 
+### M2.1 — the progress card (shipped)
+
+`--progress 0.42|42%` draws a bar on a card, and with `--key` every later send
+under that key *replaces* it: one card for a whole build, however many times it
+reports. The unit is explicit (a bare `42` is refused) because `1` would
+otherwise be ambiguous between 1% and done. Ticks are live and not history —
+they never reach the database or a digest tally, so the inbox keeps the ending
+and not the fifty steps to it — and the compositor learns nothing about builds:
+a card survives because its sender keeps sending. `scripts/nix-progress.sh` is
+the reference driver, reading nix's `internal-json` counters (the set-level
+`resProgress`, never the per-path byte one) and beating every 3s so a long
+compile keeps its card.
+
 ### M3 — System Mirror feasibility spike (measure, then decide)
 
 Read `~/Library/Group Containers/group.com.apple.usernoted/db2/db` under

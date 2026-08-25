@@ -223,6 +223,18 @@ struct NotificationEvent: Codable, Sendable, Identifiable, Equatable {
     var body: String?
     /// SF Symbol name for the banner glyph.
     var symbol: String?
+    /// How far along a long-running thing is, `0…1`. Present means the card
+    /// draws a bar; absent — the overwhelming case — means it doesn't, and
+    /// there is deliberately no third state for "unknown": a bar that can't
+    /// say how far along it is says nothing a `pulse` glyph doesn't already.
+    ///
+    /// A progress event is the one kind of arrival that isn't one. Paired
+    /// with `key`, a tick *replaces* the card wearing that key rather than
+    /// stacking beside it or folding into it — see `BannerQueue.enqueue` —
+    /// so a build can report itself fifty times and own one card the whole
+    /// way. Ticks are also not history: `EventRepository` keeps the endings,
+    /// not the fifty steps to them.
+    var progress: Double?
 
     /// Events sharing a thread coalesce under burst pressure.
     var thread: String?
@@ -244,6 +256,7 @@ struct NotificationEvent: Codable, Sendable, Identifiable, Equatable {
         subtitle: String? = nil,
         body: String? = nil,
         symbol: String? = nil,
+        progress: Double? = nil,
         thread: String? = nil,
         kind: Kind = .note,
         urgency: Urgency = .normal,
@@ -261,6 +274,7 @@ struct NotificationEvent: Codable, Sendable, Identifiable, Equatable {
         self.subtitle = subtitle
         self.body = body
         self.symbol = symbol
+        self.progress = progress
         self.thread = thread
         self.kind = kind
         self.urgency = urgency
@@ -270,8 +284,8 @@ struct NotificationEvent: Codable, Sendable, Identifiable, Equatable {
     }
 
     enum CodingKeys: String, CodingKey {
-        case id, source, key, resolves, until, timestamp, title, subtitle, body, symbol, thread,
-             kind, urgency, privacy, actions, metadata
+        case id, source, key, resolves, until, timestamp, title, subtitle, body, symbol, progress,
+             thread, kind, urgency, privacy, actions, metadata
     }
 
     init(from decoder: Decoder) throws {
@@ -286,6 +300,7 @@ struct NotificationEvent: Codable, Sendable, Identifiable, Equatable {
         self.subtitle = try container.decodeIfPresent(String.self, forKey: .subtitle)
         self.body = try container.decodeIfPresent(String.self, forKey: .body)
         self.symbol = try container.decodeIfPresent(String.self, forKey: .symbol)
+        self.progress = try container.decodeIfPresent(Double.self, forKey: .progress)
         self.thread = try container.decodeIfPresent(String.self, forKey: .thread)
         self.urgency = try container.decodeIfPresent(Urgency.self, forKey: .urgency) ?? .normal
         // Events that predate `kind` (or senders that never learned it) keep
@@ -336,6 +351,18 @@ extension NotificationEvent {
         return Array(performable.prefix(Limits.drawnActions))
     }
 
+    /// A reading of something still running — a bar that hasn't reached the
+    /// end. True on screen, but *not history*: fifty ticks are one build, and
+    /// an inbox that listed each of them would bury the day's real events
+    /// under one rebuild. So a tick is drawn and never stored, and never
+    /// tallied into a digest either (a digest card whose click opened an
+    /// empty list would be the same lie told twice) — the ending is what
+    /// lands, because the ending is what you'd look for tomorrow.
+    var isProgressTick: Bool {
+        guard let progress else { return false }
+        return progress < 1
+    }
+
     /// What `trill resolve` and an incoming `resolves` list match against.
     /// The id is the fallback *and* the common case: an event needs no key
     /// to be resolvable, because `trill send` already printed one name for
@@ -383,6 +410,10 @@ extension NotificationEvent {
         event.subtitle = subtitle?.trimmed(cap: Limits.subtitle).nonEmpty
         event.body = body?.trimmed(cap: Limits.body).nonEmpty
         event.symbol = symbol?.trimmed(cap: 100).nonEmpty
+        // Clamped once, here, so no surface has to defend itself against a
+        // sender's 1.4 or a divide-by-zero NaN — a bar drawn from either is
+        // a lie about a real build.
+        event.progress = progress.flatMap { $0.isFinite ? min(max($0, 0), 1) : nil }
         event.thread = thread?.trimmed(cap: 100).nonEmpty
         if event.metadata.count > Limits.metadataPairs {
             event.metadata = Dictionary(

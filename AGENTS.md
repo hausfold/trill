@@ -156,6 +156,19 @@ never into a broken pipeline. Corollaries:
   `--redact` and shyness are rules for cards drawn *at* someone and this window
   only exists because the user asked for it. It draws every performable action
   as a pill except `reply`: history has no socket to answer down.
+- **A progress card is an update, not an arrival.** An event carrying
+  `progress` (0…1) and a `key` takes over the card already wearing that key —
+  it does not stack beside it and does not fold into it, because "+49" is a
+  useless thing to say about one build. It is the *only* exception to "a
+  re-send is a second arrival" besides the ledge's supersede. Ticks are drawn
+  and never stored: `isProgressTick` keeps them out of the database and out of
+  digest tallies, so the inbox holds the ending, not the fifty steps to it. It
+  never replaces an `ask`, whatever key it carries — a question taken off
+  screen with nobody told leaves its caller blocked forever — and a card the
+  user swatted away hushes its own ticks until the ending. And
+  nothing in the compositor knows what a build is — a card stays up because its
+  sender keeps sending, so a driver that dies loses its card on the normal
+  clock (`scripts/nix-progress.sh` is the reference driver, heartbeat included).
 - **The queue is the truth; panels are disposable.** Display topology
   rebuilds re-render from `BannerQueue` state. Never park event state in a
   panel or view.

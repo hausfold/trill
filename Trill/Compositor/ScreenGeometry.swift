@@ -185,6 +185,13 @@ enum BannerGeometry {
     /// it rides the meta row as an inline label.
     static let actionRowHeight: CGFloat = 30
 
+    /// Height a progress bar adds to a card carrying one: a 4pt track, the
+    /// percentage beside it, and the seam above. Its own row rather than a
+    /// line inside the face, for the same reason the pill row is one — the
+    /// face's height is fixed, so a bar drawn inside it would have to evict
+    /// the body of every event that has both.
+    static let progressRowHeight: CGFloat = 18
+
     /// Lateral step per card, each one deeper in the stack sitting this much
     /// further *left*. **Deliberately zero.** A fanned version went to a
     /// feel-test first and the drift read as misalignment rather than as
@@ -280,9 +287,12 @@ enum BannerGeometry {
         foldedCount: Int,
         expanded: Bool,
         maxRows: Int,
-        actionCount: Int = 0
+        actionCount: Int = 0,
+        hasProgress: Bool = false
     ) -> CGSize {
-        let base = size.height + (actionCount >= 2 ? actionRowHeight : 0)
+        let base = size.height
+            + (actionCount >= 2 ? actionRowHeight : 0)
+            + (hasProgress ? progressRowHeight : 0)
         let rows = expanded ? foldRowCount(folded: foldedCount, maxRows: maxRows) : 0
         guard rows > 0 else { return CGSize(width: size.width, height: base) }
         return CGSize(

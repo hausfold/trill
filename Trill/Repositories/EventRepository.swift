@@ -93,7 +93,13 @@ actor EventRepository {
     func ingest(_ raw: NotificationEvent, from providerName: String) {
         let event = raw.normalized()
 
-        guard seenIDs.insert(event.id) else {
+        // A progress tick is exempt from the dedupe window — not because it
+        // can't be duplicated, but because it would *flush* it: a twenty-minute
+        // build spends a thousand throwaway ids, and the window is 2048, so a
+        // webhook redelivery an hour later would no longer be recognised. The
+        // key makes ticks idempotent on screen anyway (the queue replaces the
+        // card), which is the protection the window was providing here.
+        if !event.isProgressTick, !seenIDs.insert(event.id) {
             Self.log.debug("dropped duplicate \(event.id, privacy: .public)")
             return
         }
@@ -101,7 +107,11 @@ actor EventRepository {
         let decision = policy().decide(event, now: .now)
         if decision == .drop { return }
 
-        database?.insert(event, decision: decision, seen: presence())
+        // Drawn, not stored: see `isProgressTick`. The ending (progress 1,
+        // or the `done` that replaces the card) persists like anything else.
+        if !event.isProgressTick {
+            database?.insert(event, decision: decision, seen: presence())
+        }
         Self.log.debug("ingested \(event.id, privacy: .public) from \(providerName, privacy: .public)")
 
         let delivered = DeliveredEvent(event: event, decision: decision)

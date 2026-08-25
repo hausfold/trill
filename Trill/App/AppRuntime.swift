@@ -180,7 +180,13 @@ final class AppRuntime {
                     // already persisted by the repository — the scheduler
                     // keeps a tally, never a copy.
                     askBroker.unshown(id: delivered.event.id)
-                    digests.accumulate(delivered.event, digest: name)
+                    // A tick was never persisted (`isProgressTick`), so
+                    // counting it would put a number on the digest card that
+                    // its own inbox scope can't show. One build is one line,
+                    // and it gets it when it ends.
+                    if !delivered.event.isProgressTick {
+                        digests.accumulate(delivered.event, digest: name)
+                    }
                 case .inboxOnly, .drop:
                     // A *question* held back this way is one nobody will ever
                     // see, so its caller is told now rather than left blocked

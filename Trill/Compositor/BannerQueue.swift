@@ -179,11 +179,35 @@ final class BannerQueue {
         // evict everything else. Only the *parked* copy yields: a visible
         // banner and a fresh arrival are two arrivals, which is what the
         // coalesce window is for.
-        if let key = event.key, let index = parked.firstIndex(where: { $0.event.key == key }) {
+        // …but a *progress* event never does it: a build ticking under a key
+        // an unanswered question happens to share would take that fin off the
+        // ledge silently, with nobody told and its asker still blocked. A bar
+        // may replace a bar; only an arrival may replace a question.
+        if event.progress == nil, let key = event.key,
+           let index = parked.firstIndex(where: { $0.event.key == key }) {
             let superseded = parked.remove(at: index)
             if parkedHoverID == superseded.id { parkedHoverID = nil }
             notifyParked()
         }
+
+        // Swatted away already: see `hushedKeys`. Only the ticks are dropped —
+        // the ending clears the hush and draws.
+        if let key = event.key, hushedKeys.contains(key) {
+            if event.isProgressTick { return }
+            hushedKeys.remove(key)
+        }
+
+        // A progress tick is not an arrival — it is the same card getting
+        // truer. An event carrying `progress` and a `key` takes over the card
+        // already wearing that key, keeping the entry's id (so its panel is
+        // updated, never torn down and rebuilt) and restarting its clock. A
+        // build that reports itself fifty times owns one card the whole way.
+        //
+        // Only progress does this. For everything else a re-send is a second
+        // arrival, which is what the coalesce window is for — the ledge's
+        // supersede just above is the other exception, and for the same
+        // reason: a question re-asked is one question.
+        if let key = event.key, supersede(key: key, with: event) { return }
 
         if let thread = event.thread,
            let last = lastThreadArrival[thread],
@@ -233,6 +257,60 @@ final class BannerQueue {
         waiting.count { $0.screenID == screen }
     }
 
+    /// Take over the card wearing `key` with a newer reading of the same
+    /// thing. Either side has to be carrying `progress` — that is what makes
+    /// the pair one running job rather than two events that happen to share a
+    /// name — so the *ending* replaces the bar too: a `done` sent under the
+    /// build's key lands on its card instead of beside it.
+    ///
+    /// Only the event changes: the entry keeps its id *and its screen*, on
+    /// the same rule arrivals already follow — the display is frozen onto the
+    /// entry when it lands, and a card that hopped screens mid-build because
+    /// a rule changed under it is a card you lose track of.
+    private func supersede(key: String, with event: NotificationEvent) -> Bool {
+        // The card being taken over must itself be a running job, and an `ask`
+        // is never one however it was keyed. Overwriting a question in place
+        // would take it off screen with nobody told — no `onDropped`, so its
+        // blocked caller waits forever — and leave a `pulse` where `expire`
+        // was going to find an ask to park. That is the exact failure the
+        // ledge exists to end, so the guard is on kind, not on hope.
+        func isTheSameJob(_ entry: Entry) -> Bool {
+            entry.event.key == key && entry.event.kind != .ask
+                && (entry.event.progress != nil || event.progress != nil)
+        }
+
+        if let i = visible.firstIndex(where: isTheSameJob) {
+            visible[i].event = event
+            // The fold belongs to the events that folded in, not to the job.
+            // Left alone, a card that had coalesced a thread-mate would draw a
+            // progress bar over "+1 more in this thread" and list a stranger.
+            visible[i].folded = []
+            visible[i].coalescedCount = 0
+            visible[i].expanded = false
+            // Fresh content, fresh clock — same rule a folded thread-mate
+            // gets. A job that keeps reporting keeps its card; one that goes
+            // quiet mid-build times out like anything else, because a bar
+            // frozen at 40% for an hour is worse than no bar.
+            armDismiss(for: visible[i].id)
+            notify()
+            return true
+        }
+        if let i = waiting.firstIndex(where: isTheSameJob) {
+            // Re-ranked, not just rewritten: an ending sent as a `critical`
+            // fault inherits the pulse's place in line otherwise, and waits
+            // behind the notes the ordered insert exists to keep it ahead of.
+            var entry = waiting.remove(at: i)
+            entry.event = event
+            entry.folded = []
+            entry.coalescedCount = 0
+            let index = waiting.firstIndex { $0.event.urgency < event.urgency } ?? waiting.endIndex
+            waiting.insert(entry, at: index)
+            notify()
+            return true
+        }
+        return false
+    }
+
     /// Fold `latest` into an existing banner/queued entry for its thread.
     /// The newest content wins the face of the banner; the events behind it
     /// are kept, not just counted — hovering the banner lists them.
@@ -253,7 +331,22 @@ final class BannerQueue {
 
     // MARK: - Lifecycle
 
+    /// Keys whose card the user swatted away mid-build. A progress *tick* for
+    /// one of these is dropped rather than drawn: a driver sends one every
+    /// couple of seconds, so without this the card the user just dismissed is
+    /// back before their hand leaves the trackpad, and again, for the length
+    /// of the build. The *ending* is not a tick and still lands — you asked
+    /// for the bar to go away, not to stop being told it finished.
+    private var hushedKeys: Set<String> = []
+    /// Bounded, because it is fed by anything that can write to the socket.
+    private static let hushedKeyLimit = 64
+
     func dismiss(id: String) {
+        if let entry = (visible + waiting + parked).first(where: { $0.id == id }),
+           entry.event.isProgressTick, let key = entry.event.key {
+            hushedKeys.insert(key)
+            if hushedKeys.count > Self.hushedKeyLimit { hushedKeys.removeFirst() }
+        }
         if let index = parked.firstIndex(where: { $0.id == id }) {
             let gone = parked.remove(at: index)
             if parkedHoverID == id { parkedHoverID = nil }
