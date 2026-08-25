@@ -62,7 +62,9 @@ EventKit ──push──► CalendarProvider   │
               ▼                       ▼                     │
       BannerWindowSystem          InboxView ◄───────────────┘
    NSPanel per banner · all Spaces ·  scoped: all · asks · one digest
-   fullscreen aux                     (the card's click is the query)
+   fullscreen aux                     live (InboxFeed) · search · threads
+                                      · pills · unread (the card's click
+                                      is the query)
               ▼
         ActionRouter ── open app · open URL · focus lane · open event ·
                         open inbox · silence native · reply (answers an ask) ·
@@ -474,6 +476,56 @@ the count silently; the first flush after the window says "23 quiet things"
 instead of nine. The ticker sleeps in ≤10-minute hops against a wall-clock
 deadline, so a Mac that slept through the hour flushes on the way back rather
 than an hour later.
+
+### The inbox is where the overflow goes
+
+Three surfaces deliberately drop things on the floor, and all three land here.
+The ledge holds five fins and a sixth ask evicts the oldest; a digest card is a
+count, not a list; quiet hours and an `inbox` rule route whole events past the
+screen. None of that is loss, because `AppDatabase` already has the rows — but
+it is only *not loss* if the window is one you would actually open.
+
+So the window is a view onto the store and holds no state of its own.
+`InboxList` does the work as pure functions — scope, search, thread folding —
+and `InboxView` draws what comes back. That is the same split as everywhere
+else in trill (`ScreenGeometry`, `PolicyEngine`, `CalendarEventMapper`), and
+it is why threads and search are tested without a display.
+
+**Live, and not by polling.** `InboxFeed` is one `@MainActor` observable owned
+by `AppRuntime`: a revision counter bumped once per delivered event, the set of
+ask ids currently on the ledge, and which database to read. The bump happens
+in the delivery loop *after* `EventRepository.ingest` enqueued its insert, and
+reads share that write's serial queue — so a window reloading on the signal is
+guaranteed to see the row without the feed ever carrying an event. The database
+is published rather than handed over at open time, because `persistHistory` is
+live: switching history off with the inbox up has to empty it, not leave it
+reading a handle nothing writes to.
+
+**Threads fold on the sender's key, never on a guess.** `InboxList.group`
+collapses a thread into its newest event exactly the way `BannerQueue` folds a
+coalesced banner, and a row sits where its latest message would have sat. An
+event with no `thread` is a row of one; nothing infers a thread from matching
+titles.
+
+**Unread means trill never put this in front of you.** `AppDatabase.insert`
+stamps `read_at` for a `banner` decision — it was drawn on a screen, the
+closest thing this app has to "seen" — and leaves it NULL for everything held
+back. That is what makes the count worth a title bar: it counts the digest
+tallies, the quiet-hours demotions and the `inbox` rules, rather than
+re-reporting every banner that already interrupted you. Opening a row marks it
+read; the context menu puts the dot back.
+
+**Every performable action draws, except `reply`.** A card is a glance and
+stops at `Limits.drawnActions`; the inbox is where the rest survive, which is
+what that limit's comment has always promised. The exception is the one action
+whose effect is a line written back down the socket the ask arrived on — history
+has no socket, and the caller is long gone. Same reason the ledge's restore
+path strips pills off a fin that outlived its daemon.
+
+**It does not redact.** Shyness is a rendering rule for cards drawn *at*
+someone, and `--redact` is documented as keeping a body off the banner. This
+window exists only because the user summoned it, and hiding what they came to
+read would break it in exactly the moment they opened it on purpose.
 
 ### A caller is blocked on the answer
 

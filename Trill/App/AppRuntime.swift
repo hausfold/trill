@@ -35,6 +35,10 @@ final class AppRuntime {
     /// by the app delegate, which owns the windows. The scope says which
     /// slice of history the window is for.
     var onOpenInbox: ((InboxScope) -> Void)?
+    /// The live signal behind every inbox window: which database to read,
+    /// when something landed, what is still on the ledge. Built here because
+    /// this is the only place that sees all three.
+    let inboxFeed: InboxFeed
 
     private static let log = Logger(subsystem: "com.hausfold.trill", category: "runtime")
 
@@ -42,7 +46,9 @@ final class AppRuntime {
         let settings = AppSettings()
         self.settings = settings
 
-        database = settings.persistHistory ? AppDatabase(url: AppPaths.databaseFile) : nil
+        let database = settings.persistHistory ? AppDatabase(url: AppPaths.databaseFile) : nil
+        self.database = database
+        inboxFeed = InboxFeed(database: database)
 
         // Rules hot-reload: the watcher owns the current RuleSet; the
         // repository asks for a fresh engine per event, so an edited
@@ -119,8 +125,15 @@ final class AppRuntime {
             Task { @MainActor in ScreenWatchSentinel.shared.refresh() }
         }
 
-        deliveryTask = Task { [repository, queue, digests, askBroker] in
+        deliveryTask = Task { [repository, queue, digests, askBroker, inboxFeed] in
             for await delivered in await repository.deliveries() {
+                // Every delivered event is already persisted (the repository
+                // writes before it fans out), so this is the moment an open
+                // inbox can see it — whatever the decision was. A `digest`
+                // event lands in the inbox an hour before its card does, and
+                // that is the point: the tally is the *banner's* schedule,
+                // not the history's.
+                inboxFeed.noteDelivery()
                 // Resolution first, and regardless of delivery: an event that
                 // answers a question answers it even when a rule sends the
                 // event itself to the inbox. "PR merged" may well be a quiet
@@ -193,6 +206,7 @@ final class AppRuntime {
         guard enabled != (database != nil) else { return }
         let database = enabled ? AppDatabase(url: AppPaths.databaseFile) : nil
         self.database = database
+        inboxFeed.database = database
         Task { [repository] in await repository.setDatabase(database) }
         Self.log.info("history persistence \(enabled ? "on" : "off", privacy: .public)")
     }
@@ -234,6 +248,11 @@ final class AppRuntime {
                 AppDatabase.StoredParked(event: $0.event, coalescedCount: $0.coalescedCount)
             })
             monitor.reconcile(entries)
+            // The inbox draws a fin beside the asks that are still on the
+            // ledge, so an eviction has to reach it: the ask that yielded is
+            // now only here, and looking identical to one still parked would
+            // be the inbox lying about where the question lives.
+            self?.inboxFeed.noteParked(Set(entries.map(\.event.id)))
         }
 
         guard let database else { return }
@@ -264,7 +283,11 @@ final class AppRuntime {
         }
     }
 
-    var inboxDatabase: AppDatabase? { database }
+    /// The one router in the app, lent to the inbox so a pill clicked there
+    /// goes exactly where the same pill on a banner would — including the
+    /// capability checks. The inbox draws no `reply` pills (see
+    /// `InboxList.pills`), so nothing here can answer a caller that has gone.
+    var inboxActionRouter: ActionRouter { actionRouter }
 
     /// The bundle ids the current rules name — what both `trill doctor` and
     /// the Settings audit mean by "a listed app". Read live, so an edited
