@@ -11,7 +11,30 @@ final class BannerPanelController {
     /// Held so updates can swap `rootView` instead of rebuilding the hosting
     /// view. A rebuild resets the view's `@State`, which would replay the
     /// arrival fade every time a banner grows, shrinks, or re-lays out.
-    private let host: NSHostingView<BannerView>
+    private let host: NSHostingView<PinnedCard>
+
+    /// How a panel leaves the screen. The window system knows *why* an entry
+    /// left the visible set; the exit motion is the reason made visible.
+    enum Departure {
+        /// Teardown (stop, topology rebuild) — re-presentation, not an event.
+        case instant
+        /// Dismissed or expired in place: rise the same 8pt the arrival fell.
+        case dismissed
+        /// An ask leaving for the ledge: drift toward the right screen edge
+        /// where its fin is about to emerge.
+        case parked
+    }
+
+    /// Pins the fixed-size card to the panel's top-left corner. Mid-slide the
+    /// hosting view is briefly a different size than the card, and without
+    /// the pin SwiftUI would center the card in it — the text would drift
+    /// while the frame settles.
+    struct PinnedCard: View {
+        let card: BannerView
+        var body: some View {
+            card.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        }
+    }
 
     init(
         entry: BannerQueue.Entry,
@@ -44,7 +67,7 @@ final class BannerPanelController {
         panel.isMovable = false
         panel.animationBehavior = .none // motion is the view's job, and it is small
 
-        host = NSHostingView(rootView: BannerView(
+        host = NSHostingView(rootView: PinnedCard(card: BannerView(
             entry: entry,
             maxFoldRows: maxFoldRows,
             onHover: onHover,
@@ -52,7 +75,7 @@ final class BannerPanelController {
             onActivate: onActivate,
             onAction: onAction,
             onActivateFolded: onActivateFolded
-        ))
+        )))
         panel.contentView = host
         panel.orderFrontRegardless()
 
@@ -76,7 +99,7 @@ final class BannerPanelController {
         onAction: @escaping (NotificationEvent.Action) -> Void,
         onActivateFolded: @escaping (NotificationEvent) -> Void
     ) {
-        host.rootView = BannerView(
+        host.rootView = PinnedCard(card: BannerView(
             entry: entry,
             maxFoldRows: maxFoldRows,
             onHover: onHover,
@@ -84,12 +107,19 @@ final class BannerPanelController {
             onActivate: onActivate,
             onAction: onAction,
             onActivateFolded: onActivateFolded
-        )
-        panel.setFrame(frame, display: true)
-        panel.invalidateShadow()
+        ))
+        // A restack, a fold opening, a neighbor's slot freeing up — all the
+        // same short slide. The shadow is re-shaped once the frame lands.
+        PanelMotion.move(panel, to: frame) { [weak panel] in
+            panel?.invalidateShadow()
+        }
     }
 
-    func close() {
-        panel.orderOut(nil)
+    func close(_ departure: Departure = .instant) {
+        switch departure {
+        case .instant: panel.orderOut(nil)
+        case .dismissed: PanelMotion.depart(panel, dy: 8)
+        case .parked: PanelMotion.depart(panel, dx: 24)
+        }
     }
 }

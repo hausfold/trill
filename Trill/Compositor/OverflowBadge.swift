@@ -40,8 +40,11 @@ final class OverflowBadgeController {
 
     func update(count: Int, under cardFrame: CGRect) {
         host.rootView = OverflowBadgeView(count: count)
-        panel.setFrame(Self.frame(count: count, under: cardFrame), display: true)
-        panel.invalidateShadow()
+        // Rides the same slide as the card it clings to, or it would snap to
+        // the bottom card's destination while the card is still en route.
+        PanelMotion.move(panel, to: Self.frame(count: count, under: cardFrame)) { [weak panel] in
+            panel?.invalidateShadow()
+        }
     }
 
     func close() {

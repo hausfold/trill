@@ -47,7 +47,18 @@ final class LedgePanelController {
             onAction: onAction
         ))
         panel.contentView = host
-        panel.orderFrontRegardless()
+        // A fresh fin emerges from behind the screen edge — it starts fully
+        // off-screen and slides its own width into view, the ledge-side echo
+        // of the banner drifting edgeward as it parked. No fade needed: the
+        // edge itself is the curtain. Topology rebuilds replay this, which
+        // reads as the ledge re-presenting itself.
+        if !PanelMotion.reduceMotion, !entry.expanded {
+            panel.setFrame(frame.offsetBy(dx: frame.width, dy: 0), display: false)
+            panel.orderFrontRegardless()
+            PanelMotion.move(panel, to: frame)
+        } else {
+            panel.orderFrontRegardless()
+        }
     }
 
     func update(
@@ -65,14 +76,24 @@ final class LedgePanelController {
             onActivate: onActivate,
             onAction: onAction
         )
-        panel.setFrame(frame, display: true)
         // A shadow under the 8pt fin reads as grime on the screen edge; the
         // slid-out card gets the same complete shadow every banner carries.
         panel.hasShadow = entry.expanded
-        panel.invalidateShadow()
+        // The fin↔card swap animates as a slide out of (and back into) the
+        // edge: the right edge of the frame never moves and the view aligns
+        // trailing, so the card appears to grow leftward from its fin.
+        PanelMotion.move(panel, to: frame) { [weak panel] in
+            panel?.invalidateShadow()
+        }
     }
 
-    func close() {
-        panel.orderOut(nil)
+    /// `animated` fades the fin back into the edge it came from — used when
+    /// its ask is answered or evicted. Teardown paths stay instant.
+    func close(animated: Bool = false) {
+        if animated {
+            PanelMotion.depart(panel, dx: 12)
+        } else {
+            panel.orderOut(nil)
+        }
     }
 }

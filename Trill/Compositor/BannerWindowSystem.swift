@@ -135,10 +135,14 @@ final class BannerWindowSystem {
             return
         }
 
-        // Close panels whose entries left the visible set.
+        // Close panels whose entries left the visible set. `expire` moves an
+        // ask into `parked` before notifying, so "is it on the ledge now"
+        // distinguishes a park (drift toward the edge, where its fin is about
+        // to emerge) from a dismissal (fade and rise, the arrival reversed).
         let liveIDs = Set(entries.map(\.id))
         for (id, panel) in panels where !liveIDs.contains(id) {
-            panel.close()
+            let parked = queue.parked.contains { $0.id == id }
+            panel.close(parked ? .parked : .dismissed)
             panels.removeValue(forKey: id)
         }
 
@@ -171,7 +175,7 @@ final class BannerWindowSystem {
                 // An expanded fold can push the tail of the stack off screen.
                 // Drop those panels — the entries stay in the queue, and the
                 // next render (unhover, dismissal) puts them back.
-                panels.removeValue(forKey: entry.id)?.close()
+                panels.removeValue(forKey: entry.id)?.close(.dismissed)
                 continue
             }
             let hover: (Bool) -> Void = { [weak self] hovering in
@@ -225,15 +229,17 @@ final class BannerWindowSystem {
     private var ledgePanels: [String: LedgePanelController] = [:]
 
     private func renderLedge(_ entries: [BannerQueue.Entry]) {
-        guard let screen = targetScreen, !entries.isEmpty else {
+        guard let screen = targetScreen else {
             ledgePanels.values.forEach { $0.close() }
             ledgePanels.removeAll()
             return
         }
 
+        // Answered or evicted asks fade back into the edge they came from;
+        // only losing the screen itself tears fins down without motion.
         let liveIDs = Set(entries.map(\.id))
         for (id, panel) in ledgePanels where !liveIDs.contains(id) {
-            panel.close()
+            panel.close(animated: true)
             ledgePanels.removeValue(forKey: id)
         }
 
