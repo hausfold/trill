@@ -131,8 +131,8 @@ quiet things · ci ×4, garden ×3") opening the inbox on exactly those.
 The app's own switches, and the truth for them — Settings reads and writes this
 same file, live. Every key at its default, each optional — `{"launchAtLogin":
 true, "persistHistory": true, "systemMirror": false, "githubBridge": false,
-"shyWhenWatched": true, "calendar": false, "calendarLeadMinutes": 10,
-"cliLink": true}`. Don't write it if it's a symlink into `/nix/store`:
+"shyWhenWatched": true, "catchUpCard": true, "calendar": false,
+"calendarLeadMinutes": 10, "cliLink": true}`. Don't write it if it's a symlink into `/nix/store`:
 the desktop generates it there and a rebuild reverts you.
 
 ## Traps
