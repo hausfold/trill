@@ -23,6 +23,11 @@ struct BannerView: View {
     /// not learn — it only has to draw exactly the rows its height was
     /// computed for.
     let maxFoldRows: Int
+    /// Screen-share shyness, decided by `ScreenWatchSentinel` and handed down
+    /// the same way `maxFoldRows` is: the card renders what it is told. When
+    /// it is on, every body on this card is held back — the face's and each
+    /// fold row's — exactly as if the sender had passed `--redact`.
+    let shy: Bool
     var onHover: (Bool) -> Void
     var onDismiss: () -> Void
     var onActivate: () -> Void
@@ -40,7 +45,7 @@ struct BannerView: View {
     @State private var hoveredRow: Int?
 
     private var event: NotificationEvent { entry.event }
-    private var redacted: Bool { event.privacy == .redacted }
+    private var redacted: Bool { shy || event.privacy == .redacted }
     private var kindColor: Color { BannerTheme.current().color(for: event.kind) }
     private var pills: [NotificationEvent.Action] { event.pillActions }
 
@@ -143,6 +148,18 @@ struct BannerView: View {
                             .padding(.horizontal, 6)
                             .padding(.vertical, 1)
                             .background(Capsule().fill(kindColor.opacity(0.14)))
+                    }
+                    // Why this card has no body. Only for shyness: an event
+                    // the sender marked `--redact` is redacted wherever it is
+                    // drawn and has nothing situational to explain, while a
+                    // card that went quiet *because the screen is being
+                    // watched* has to say so, or it just looks broken.
+                    if shy {
+                        Image(systemName: "eye.slash")
+                            .font(.caption)
+                            .foregroundStyle(.tertiary)
+                            .accessibilityHidden(true)
+                            .help("Hidden while the screen is being watched")
                     }
                     // The banner body is the click target (`performDefault`
                     // runs the first action), so a single-action event needs
@@ -320,8 +337,9 @@ struct BannerView: View {
                 .font(.footnote)
                 .lineLimit(1)
             // Privacy is per event, so a redacted thread-mate keeps
-            // its body to itself even when the face is visible.
-            if folded.privacy != .redacted, let body = folded.body ?? folded.subtitle {
+            // its body to itself even when the face is visible — and
+            // shyness covers the whole list at once.
+            if !shy, folded.privacy != .redacted, let body = folded.body ?? folded.subtitle {
                 Text(body)
                     .font(.footnote)
                     .foregroundStyle(.secondary)
@@ -369,7 +387,8 @@ struct BannerView: View {
     /// recite the list — it says how much is behind the face and leaves the
     /// rows to speak for themselves.
     private var faceAccessibilityText: String {
-        let head = "\(event.source): \(event.title)"
+        var head = "\(event.source): \(event.title)"
+        if shy { head += ", body hidden while the screen is being watched" }
         guard entry.coalescedCount > 0 else { return head }
         return "\(head), \(entry.coalescedCount) more in this thread"
     }

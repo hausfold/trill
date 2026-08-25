@@ -39,6 +39,7 @@ final class BannerPanelController {
     init(
         entry: BannerQueue.Entry,
         maxFoldRows: Int,
+        shy: Bool,
         frame: CGRect,
         onHover: @escaping (Bool) -> Void,
         onDismiss: @escaping () -> Void,
@@ -70,6 +71,7 @@ final class BannerPanelController {
         host = NSHostingView(rootView: PinnedCard(card: BannerView(
             entry: entry,
             maxFoldRows: maxFoldRows,
+            shy: shy,
             onHover: onHover,
             onDismiss: onDismiss,
             onActivate: onActivate,
@@ -92,6 +94,7 @@ final class BannerPanelController {
     func update(
         entry: BannerQueue.Entry,
         maxFoldRows: Int,
+        shy: Bool,
         frame: CGRect,
         onHover: @escaping (Bool) -> Void,
         onDismiss: @escaping () -> Void,
@@ -102,6 +105,7 @@ final class BannerPanelController {
         host.rootView = PinnedCard(card: BannerView(
             entry: entry,
             maxFoldRows: maxFoldRows,
+            shy: shy,
             onHover: onHover,
             onDismiss: onDismiss,
             onActivate: onActivate,

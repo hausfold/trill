@@ -81,8 +81,20 @@ struct GeneralPane: View {
                         .labelsHidden()
                         .toggleStyle(.switch)
                 }
+                SettingsDivider()
+                SettingsRow(
+                    symbol: "eye.slash",
+                    title: "Shy while the screen is watched",
+                    subtitle: "Every card drops its body — the same thing `--redact` does — while something is looking at this screen. Titles stay; the Inbox is untouched."
+                ) {
+                    Toggle("Shy while the screen is watched", isOn: $settings.shyWhenWatched)
+                        .labelsHidden()
+                        .toggleStyle(.switch)
+                }
             }
             .disabled(settings.isManagedExternally)
+
+            ScreenWatchNote()
 
             SettingsWriteStatus(settings: settings)
 
@@ -94,6 +106,41 @@ struct GeneralPane: View {
                 """
             )
         }
+    }
+}
+
+/// What trill can see about who is watching the screen, said plainly.
+///
+/// It is shown whether or not shyness is switched on, and it names the signal
+/// rather than the conclusion — macOS has no "is my screen being captured"
+/// API, only the one in-use indicator it draws for the screen, the camera and
+/// the mic alike (see `ScreenWatch`). A user whose banners went quiet has to
+/// be able to find out why in one glance, and a user whose camera is on has
+/// to be able to see that that is what trill is reacting to.
+struct ScreenWatchNote: View {
+    @ObservedObject private var sentinel = ScreenWatchSentinel.shared
+
+    var body: some View {
+        // The reading has to be live *here* too: with no banner on screen the
+        // compositor isn't polling, and a readout that only updates when a
+        // notification happens to arrive would be furniture.
+        let note = Group {
+            if let reason = sentinel.watch.reason {
+                SettingsNote(
+                    symbol: sentinel.isShy ? "eye.slash.fill" : "eye.fill",
+                    tint: sentinel.isShy ? .accentColor : .secondary,
+                    text: sentinel.isShy
+                        ? "Cards are redacted right now: \(reason)"
+                        : "\(reason) Shyness is off, so cards are showing their bodies anyway."
+                )
+            }
+        }
+        note
+            .onAppear {
+                sentinel.refresh()
+                sentinel.setPolling(true, by: .settings)
+            }
+            .onDisappear { sentinel.setPolling(false, by: .settings) }
     }
 }
 

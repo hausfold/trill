@@ -15,6 +15,7 @@ final class LedgePanelController {
 
     init(
         entry: BannerQueue.Entry,
+        shy: Bool,
         frame: CGRect,
         onHover: @escaping (Bool) -> Void,
         onDismiss: @escaping () -> Void,
@@ -41,6 +42,7 @@ final class LedgePanelController {
 
         host = NSHostingView(rootView: LedgeItemView(
             entry: entry,
+            shy: shy,
             onHover: onHover,
             onDismiss: onDismiss,
             onActivate: onActivate,
@@ -63,6 +65,7 @@ final class LedgePanelController {
 
     func update(
         entry: BannerQueue.Entry,
+        shy: Bool,
         frame: CGRect,
         onHover: @escaping (Bool) -> Void,
         onDismiss: @escaping () -> Void,
@@ -71,6 +74,7 @@ final class LedgePanelController {
     ) {
         host.rootView = LedgeItemView(
             entry: entry,
+            shy: shy,
             onHover: onHover,
             onDismiss: onDismiss,
             onActivate: onActivate,

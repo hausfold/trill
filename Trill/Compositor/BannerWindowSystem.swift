@@ -9,17 +9,31 @@ import AppKit
 final class BannerWindowSystem {
     private let queue: BannerQueue
     private let actionRouter: ActionRouter
+    /// Screen-share shyness. A change here is a *rendering* change and
+    /// nothing else — the queue never learns about it, and re-rendering from
+    /// queue state is the same move a display-topology change makes.
+    private let watch: ScreenWatchSentinel
     private var panels: [String: BannerPanelController] = [:]
     private var screenObserver: NSObjectProtocol?
 
-    init(queue: BannerQueue, actionRouter: ActionRouter) {
+    init(
+        queue: BannerQueue,
+        actionRouter: ActionRouter,
+        watch: ScreenWatchSentinel = .shared
+    ) {
         self.queue = queue
         self.actionRouter = actionRouter
+        self.watch = watch
         queue.onVisibleChanged = { [weak self] entries in
             self?.render(entries)
         }
         queue.onParkedChanged = { [weak self] entries in
             self?.renderLedge(entries)
+        }
+        watch.onShyChanged = { [weak self] _ in
+            guard let self else { return }
+            self.render(self.queue.visible)
+            self.renderLedge(self.queue.parked)
         }
     }
 
@@ -57,6 +71,8 @@ final class BannerWindowSystem {
         overflowBadge = nil
         queue.onVisibleChanged = nil
         queue.onParkedChanged = nil
+        watch.onShyChanged = nil
+        watch.setPolling(false)
     }
 
     /// Banners live on the screen with the menu bar (`NSScreen.screens
@@ -132,8 +148,17 @@ final class BannerWindowSystem {
             panels.removeAll()
             overflowBadge?.close()
             overflowBadge = nil
+            syncWatchPolling()
             return
         }
+
+        // A card about to appear gets a reading taken now — the poll is 2s
+        // and a banner must not out-run it onto a shared screen. Re-renders
+        // of cards already up (hover, restack) use what the poll last saw,
+        // which is what keeps a window-list call off the hover path.
+        let shy = entries.contains { panels[$0.id] == nil }
+            ? watch.refresh(notifying: false)
+            : watch.isShy
 
         // Close panels whose entries left the visible set. `expire` moves an
         // ask into `parked` before notifying, so "is it on the ledge now"
@@ -204,14 +229,14 @@ final class BannerWindowSystem {
             }
             if let existing = panels[entry.id] {
                 existing.update(
-                    entry: entry, maxFoldRows: rows[index], frame: frame,
+                    entry: entry, maxFoldRows: rows[index], shy: shy, frame: frame,
                     onHover: hover, onDismiss: dismiss,
                     onActivate: activate, onAction: action,
                     onActivateFolded: activateFolded
                 )
             } else {
                 panels[entry.id] = BannerPanelController(
-                    entry: entry, maxFoldRows: rows[index], frame: frame,
+                    entry: entry, maxFoldRows: rows[index], shy: shy, frame: frame,
                     onHover: hover, onDismiss: dismiss,
                     onActivate: activate, onAction: action,
                     onActivateFolded: activateFolded
@@ -220,6 +245,13 @@ final class BannerWindowSystem {
         }
 
         renderOverflowBadge(under: frames, on: screen)
+        syncWatchPolling()
+    }
+
+    /// Nobody to be shy in front of when the screen is empty: the poll runs
+    /// only while trill has something drawn.
+    private func syncWatchPolling() {
+        watch.setPolling(!panels.isEmpty || !ledgePanels.isEmpty)
     }
 
     /// The ledge: one fin panel per parked ask, hugging the right screen
@@ -232,8 +264,13 @@ final class BannerWindowSystem {
         guard let screen = targetScreen else {
             ledgePanels.values.forEach { $0.close() }
             ledgePanels.removeAll()
+            syncWatchPolling()
             return
         }
+
+        let shy = entries.contains { ledgePanels[$0.id] == nil }
+            ? watch.refresh(notifying: false)
+            : watch.isShy
 
         // Answered or evicted asks fade back into the edge they came from;
         // only losing the screen itself tears fins down without motion.
@@ -279,18 +316,19 @@ final class BannerWindowSystem {
             }
             if let existing = ledgePanels[entry.id] {
                 existing.update(
-                    entry: entry, frame: frame,
+                    entry: entry, shy: shy, frame: frame,
                     onHover: hover, onDismiss: dismiss,
                     onActivate: activate, onAction: action
                 )
             } else {
                 ledgePanels[entry.id] = LedgePanelController(
-                    entry: entry, frame: frame,
+                    entry: entry, shy: shy, frame: frame,
                     onHover: hover, onDismiss: dismiss,
                     onActivate: activate, onAction: action
                 )
             }
         }
+        syncWatchPolling()
     }
 
     /// The queue can hold more than the display fits, and until now that was

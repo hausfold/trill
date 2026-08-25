@@ -30,6 +30,10 @@
 11. `trill ask` blocks the **caller**, never the compositor: the daemon holds
     a socket open, not a thread. Every ask resolves exactly once — first
     resolution wins — and no outcome but a pressed pill is an answer.
+12. Screen-share shyness is a *rendering* rule, not a queue one: when macOS
+    says the screen is being watched, cards draw their redacted form, and the
+    events behind them are untouched — nothing is dropped, held back, or
+    written differently.
 
 ## Boundaries
 
@@ -206,6 +210,47 @@ Three more consequences worth knowing:
 - **Privacy is per event, in the list too.** A `redacted` thread-mate keeps
   its body to itself even when the face of the fold is visible — the fold is
   a rendering of many events, not an inheritance from one.
+
+### Someone is watching the screen
+
+**macOS has no API for "is my display being captured".** `NSScreen` has no
+`isCaptured` (that one is UIKit's), `CGDisplayIsCaptured` has been unavailable
+since 10.9, `CGSessionCopyCurrentDictionary` carries no such key, and nothing
+is posted on the Darwin or distributed notification centres when a capture
+starts or stops — all four measured against the macOS 26.5 SDK on 2026-08-25.
+
+What macOS *does* do is draw its own in-use indicator, and that window is
+readable without any permission: a 28×28 window at the cursor window level
+whose top-right corner sits 3pt inside the display's, at the end of the menu
+bar. `ScreenWatch.evaluate` is the whole decision, pure over one
+`ScreenWatchSnapshot` (windows at that level, display rects, mirroring), and
+`ScreenWatchSentinel` is the only part that talks to CoreGraphics.
+
+Three things follow from the signal being an *indicator* rather than a
+capture flag:
+
+- **It cannot tell screen capture from a live camera or mic** — measured
+  identical for `screencapture -V` and for an open microphone. trill treats
+  all three as an audience and says so in Settings rather than claiming to
+  know which. For a compositor that is the right side to be wrong on: those
+  are the same minutes.
+- **The window name is never read.** `kCGWindowName` needs Screen Recording
+  permission; an app that asked for the screen in order to be shy about the
+  screen would be a joke. Level, bounds and on-screen-ness come back
+  ungranted, and they are enough.
+- **It is polled, because nothing notifies** — 2s while cards are on screen
+  or the Settings readout is open, nothing at all otherwise, plus a
+  synchronous reading whenever a card is about to be drawn, so a banner can
+  never out-run the poll onto a shared screen. The window-list call measured
+  3–5ms warm.
+
+Mirroring rides the same verdict (`CGDisplayIsInMirrorSet`, hardware mirrors
+excluded): a projector is an audience too, and that one *is* documented.
+
+The compositor treats a change in shyness exactly like a display-topology
+change — re-render every panel from queue state. `BannerView` is handed a
+`shy` flag the same way it is handed `maxFoldRows`: it renders what it is
+told and cannot ask.
 
 ### A stack of distinct banners
 

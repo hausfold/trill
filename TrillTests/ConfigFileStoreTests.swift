@@ -47,7 +47,15 @@ final class ConfigFileStoreTests: XCTestCase {
         XCTAssertNil(store.update { $0.githubBridgeEnabled = true })
         let json = try contents()
         XCTAssertEqual(json[AppConfig.Key.githubBridge] as? Bool, true)
-        XCTAssertEqual(json.keys.count, 4, "all four switches are written, not just the changed one")
+        XCTAssertEqual(json.keys.count, AppConfig().json.keys.count,
+                       "every switch is written, not just the changed one")
+    }
+
+    func testShynessIsOnUnlessTheFileSaysOtherwise() throws {
+        XCTAssertTrue(ConfigFileStore(file: file).current().shyWhenWatched,
+                      "a privacy default that has to be switched on is a default nobody has on")
+        try write(#"{ "shyWhenWatched": false }"#)
+        XCTAssertFalse(ConfigFileStore(file: file).current().shyWhenWatched)
     }
 
     func testAWriteKeepsKeysTrillDoesNotKnow() throws {

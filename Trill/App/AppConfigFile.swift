@@ -28,6 +28,10 @@ struct AppConfig: Equatable, Sendable {
     /// Needs `github.json` and a tunnel, so the switch alone promises
     /// nothing: opt-in.
     var githubBridgeEnabled = false
+    /// On by default: cards drop their bodies while macOS says something is
+    /// watching the screen. A privacy default that has to be switched on is a
+    /// privacy default nobody has on when it matters.
+    var shyWhenWatched = true
 
     /// The JSON key for each field. Spelled the way someone typing the file by
     /// hand would spell it — these names are user-facing surface, so renaming
@@ -37,6 +41,7 @@ struct AppConfig: Equatable, Sendable {
         static let persistHistory = "persistHistory"
         static let systemMirror = "systemMirror"
         static let githubBridge = "githubBridge"
+        static let shyWhenWatched = "shyWhenWatched"
     }
 
     init() {}
@@ -50,6 +55,7 @@ struct AppConfig: Equatable, Sendable {
         if let value = json[Key.persistHistory] as? Bool { persistHistory = value }
         if let value = json[Key.systemMirror] as? Bool { systemMirrorEnabled = value }
         if let value = json[Key.githubBridge] as? Bool { githubBridgeEnabled = value }
+        if let value = json[Key.shyWhenWatched] as? Bool { shyWhenWatched = value }
     }
 
     /// Every key, at its current value — what gets merged back into the file
@@ -61,6 +67,7 @@ struct AppConfig: Equatable, Sendable {
             Key.persistHistory: persistHistory,
             Key.systemMirror: systemMirrorEnabled,
             Key.githubBridge: githubBridgeEnabled,
+            Key.shyWhenWatched: shyWhenWatched,
         ]
     }
 }
