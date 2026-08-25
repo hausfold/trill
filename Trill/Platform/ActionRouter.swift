@@ -85,6 +85,8 @@ final class ActionRouter {
             if askBroker?.answer(id: event.id, choice: choice) != true {
                 Self.log.info("no ask waiting for \(event.id, privacy: .public)")
             }
+        case .openEvent:
+            openCalendarEvent(action.target, for: event)
         case .command:
             // User-declared hooks arrive with the rules engine work
             // (PRD milestone 2); until then the action is inert.
@@ -144,6 +146,39 @@ final class ActionRouter {
             }
         }
     }
+
+    /// Show one occurrence in Calendar.app.
+    ///
+    /// `ical://ekevent/<external-id>?method=show&options=more` is the URL
+    /// Calendar itself hands out, and it is the whole reason this is a named
+    /// capability rather than an `open_url`: the identifier arrives on the
+    /// wire, the *scheme* never does, so no sender can talk trill into opening
+    /// an arbitrary `ical://` — or anything else — through this door.
+    ///
+    /// `NSWorkspace.open` reports whether anything *claimed the scheme*, which
+    /// is the case this fallback is for: a Mac with no Calendar, or a macOS
+    /// that stops registering `ical://`. It does not report a stale
+    /// identifier — Calendar opens either way and simply shows nothing in
+    /// particular — and that is the honest ceiling here. Either way the click
+    /// lands somewhere the user expects, which is the promise that matters.
+    private func openCalendarEvent(_ target: String?, for event: NotificationEvent) {
+        if NotificationEvent.Action.namesCalendarEvent(target), let identifier = target,
+           let encoded = identifier.addingPercentEncoding(withAllowedCharacters: Self.unreserved),
+           let url = URL(string: "ical://ekevent/\(encoded)?method=show&options=more"),
+           NSWorkspace.shared.open(url) {
+            return
+        }
+        // Not an error: a CalDAV UID outlives the local occurrence, so this is
+        // the ordinary end of a stale deep link, not a fault worth a banner.
+        Self.log.info("calendar deep link didn't open for \(event.id, privacy: .public) — showing Calendar")
+        openApp(bundleID: CalendarEventMapper.calendarBundleID)
+    }
+
+    /// RFC 3986's unreserved set. Wider than `.alphanumerics` on purpose: a
+    /// CalDAV UID is usually a plain UUID, and escaping its hyphens would hand
+    /// Calendar a string that no longer matches anything it stores.
+    private static let unreserved = CharacterSet.alphanumerics
+        .union(CharacterSet(charactersIn: "-._~"))
 
     /// Bring a holt lane's window to the front.
     ///

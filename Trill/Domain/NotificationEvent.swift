@@ -94,6 +94,13 @@ struct NotificationEvent: Codable, Sendable, Identifiable, Equatable {
             /// none for the plain window. What a digest card's click does:
             /// the card is a count, and this is the list behind it.
             case openInbox = "open_inbox"
+            /// Show one calendar occurrence in Calendar.app. `target` is the
+            /// occurrence's EventKit *external* identifier; the router builds
+            /// the `ical://` URL itself, so the wire never carries a URL for
+            /// this — same narrowness as `focus_lane`, and the reason it isn't
+            /// just an `open_url`: a named capability keeps the list of things
+            /// a banner click can reach short enough to say out loud.
+            case openEvent = "open_event"
             /// An action kind this build has never heard of — a newer sender
             /// talking to an older trill. Inert by construction, and the
             /// reason an unknown kind costs the *action* rather than the
@@ -154,6 +161,17 @@ struct NotificationEvent: Codable, Sendable, Identifiable, Equatable {
             return target.unicodeScalars.allSatisfy(laneCharacters.contains)
         }
 
+        /// Would an `open_event` action with this target name an occurrence?
+        /// EventKit's external identifiers are opaque and provider-shaped
+        /// (a CalDAV UID, an Exchange blob), so this can't be a whitelist the
+        /// way lane names are — it only refuses what would break the URL the
+        /// router builds. Everything else is percent-encoded into a path
+        /// component there, never concatenated raw.
+        static func namesCalendarEvent(_ target: String?) -> Bool {
+            guard let target, !target.isEmpty, target.count <= 512 else { return false }
+            return !target.unicodeScalars.contains { CharacterSet.controlCharacters.contains($0) }
+        }
+
         /// Would `ActionRouter.perform` do something for this action? Every
         /// surface that draws an action asks *this* before drawing it as
         /// pressable — trill draws no dead buttons, so the pill row, the fold
@@ -167,6 +185,7 @@ struct NotificationEvent: Codable, Sendable, Identifiable, Equatable {
             case .focusLane: Self.focusesLane(target)
             case .openInbox: InboxScope(actionTarget: target) != nil
             case .reply: Self.replyChoice(target) != nil
+            case .openEvent: Self.namesCalendarEvent(target)
             case .command, .unsupported: false
             }
         }

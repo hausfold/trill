@@ -62,6 +62,13 @@ enum SystemIntegration {
         open("x-apple.systempreferences:com.apple.Focus-Settings.extension")
     }
 
+    /// System Settings → Privacy & Security → Calendars, where a refused or
+    /// write-only calendar grant is fixed. macOS only presents its own sheet
+    /// once, so after a "Don't Allow" this pane is the only road back.
+    static func openCalendarPrivacySettings() {
+        open("x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?Privacy_Calendars")
+    }
+
     /// System Settings → Privacy & Security → Full Disk Access.
     static func openFullDiskAccessSettings() {
         open("x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?Privacy_AllFiles")
