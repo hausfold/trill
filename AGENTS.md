@@ -22,7 +22,7 @@ it's launched, themed at the source, or packaged.
 | the trill app (compositor, providers, rules, CLI, inbox) | **you are here** |
 | which calendars sync to this Mac at all | Apple's Calendar / Internet Accounts — trill only *reads* what EventKit already has |
 | how trill is *installed* on the system (flake wiring, launchd) | `haus` (the layer) |
-| whether `trill` resolves on PATH | **shared, by install source** — `nix/package.nix` ships `bin/trill`, `scripts/dev-install.sh` links `~/.local/bin/trill`, haus links the copy it places, and the app itself covers a dragged-out ZIP (`SystemIntegration.ensureCLILink`). Change the one that matches the source you're fixing, and keep the README's table honest |
+| whether `trill` resolves on PATH | **shared, by install source** — `nix/package.nix` ships `bin/trill`; `scripts/dev-install.sh` links into a directory on the real login PATH; the app itself covers an install that runs no script (`SystemIntegration.ensureCLILink`), and defers to anything already answering the name. Change the one that matches the source you're fixing, and keep the README's table honest. ⚠️ A desktop that copies the bundle to a fixed path should link THERE (grants are per app path) — **haus has no trill room yet**, so today that row is a plan, not a shipped path |
 | the palette trill is themed with (source hex) | `nebelung` |
 | DND / Focus toggling ("Hush") | `haus` (the layer) — trill only deep-links there |
 | the tunnel fronting the GitHub bridge (cloudflared, DNS, the org webhook) | `haus` (the layer) — trill only listens on localhost |

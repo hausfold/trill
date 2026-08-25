@@ -101,8 +101,8 @@ final class AppSettings: ObservableObject {
             // Turning it off deliberately does NOT remove a link already
             // placed: the switch decides whether trill *installs* the shim,
             // and silently breaking a `trill` that other scripts already call
-            // is a bigger surprise than leaving a symlink behind. Settings
-            // says so, and the path is right there to delete.
+            // is a bigger surprise than leaving a symlink behind. `command -v
+            // trill` finds it; deleting it is the user's.
             Task { await refreshCLILink() }
         }
     }
@@ -196,12 +196,14 @@ final class AppSettings: ObservableObject {
         catchUpCard = config.catchUpCard
         calendarEnabled = config.calendarEnabled
         calendarLeadMinutes = config.calendarLeadMinutes
-        let cliLinkTurnedOn = config.cliLink && !cliLink
+        let cliLinkChanged = config.cliLink != cliLink
         cliLink = config.cliLink
         writeError = nil
-        // The file is the truth here too: typing `"cliLink": true` has to
-        // place the shim, exactly as clicking the switch does.
-        if cliLinkTurnedOn { Task { await refreshCLILink() } }
+        // The file is the truth here too, in BOTH directions: typing
+        // `"cliLink": true` has to place the shim exactly as clicking the
+        // switch does, and typing `false` has to stop Settings claiming
+        // `trill` still resolves through a link trill is no longer minding.
+        if cliLinkChanged { Task { await refreshCLILink() } }
         if calendarTurnedOn, CalendarProvider.authorization == .notDetermined {
             Task { await CalendarProvider.requestAccess() }
         }

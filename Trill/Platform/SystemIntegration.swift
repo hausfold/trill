@@ -109,13 +109,24 @@ enum SystemIntegration {
     /// Only directories **under the user's home** are eligible, and never
     /// nix-managed ones. `/usr/local/bin` wants admin, and an app that raises
     /// an authorization prompt at launch to install a convenience is an app
-    /// people quit; a nix profile bin (`/etc/profiles/per-user/…`,
-    /// `/run/current-system/sw/bin`, anything in the store) is generated, so a
-    /// link written there is gone at the next rebuild and misleading until then.
+    /// people quit.
+    ///
+    /// The nix exclusions are the subtle half, and the obvious spelling of
+    /// them is dead code: `/nix/store`, `/etc/profiles/…` and
+    /// `/run/current-system/…` are already excluded by the home check, since
+    /// nothing under `$HOME` can start with them. The profile bins that
+    /// actually reach a user's PATH live INSIDE home —
+    /// `~/.nix-profile/bin`, `~/.local/state/nix/profile/bin` — and every one
+    /// of them is a symlink chain into the read-only store: a link written
+    /// there fails outright, and would be gone at the next rebuild if it
+    /// didn't. Those are the names worth filtering.
     static func cliLinkDirectory(loginPath: [String], home: String) -> URL {
         let fallback = URL(fileURLWithPath: home).appendingPathComponent(".local/bin")
         let homePrefix = home.hasSuffix("/") ? home : home + "/"
-        let managed = ["/nix/store", "/etc/profiles", "/run/current-system"]
+        let managed = [
+            homePrefix + ".nix-profile",
+            homePrefix + ".local/state/nix/profile",
+        ]
 
         let eligible = loginPath.filter { entry in
             entry.hasPrefix(homePrefix) && !managed.contains(where: entry.hasPrefix)
@@ -137,9 +148,13 @@ enum SystemIntegration {
         case other
     }
 
-    /// What to do about the shim, decided from three facts and nothing else.
+    /// What to do about the shim, decided from four facts and nothing else.
     enum CLILinkPlan: Equatable, Sendable {
         case place
+        /// Something on PATH already runs THIS bundle — trill's own link from
+        /// a launch when the chosen directory was a different one. Nothing to
+        /// do, and emphatically not "someone else installed it".
+        case alreadyOurs(String)
         case leaveAlone(String)
         case refuse(String)
     }
@@ -158,10 +173,16 @@ enum SystemIntegration {
     static func cliLinkPlan(
         resolved: String?,
         linkPath: String,
-        occupant: CLILinkOccupant
+        occupant: CLILinkOccupant,
+        resolvedRunsThisBundle: Bool
     ) -> CLILinkPlan {
         if let resolved, resolved != linkPath {
-            return .leaveAlone(resolved)
+            // A `trill` at some other path that nonetheless runs this very
+            // bundle is one trill placed itself, earlier, when the login PATH
+            // looked different — the user has since added a directory this
+            // code now prefers. Reporting that as another installer's work
+            // would name trill's own file as a stranger's.
+            return resolvedRunsThisBundle ? .alreadyOurs(resolved) : .leaveAlone(resolved)
         }
         switch occupant {
         case .other:
@@ -234,7 +255,17 @@ enum SystemIntegration {
             occupant = .nothing
         }
 
-        switch cliLinkPlan(resolved: resolved, linkPath: link.path, occupant: occupant) {
+        // Whether what already answers `trill` is in fact this bundle under
+        // another name. Compared after resolving symlinks on both sides,
+        // because the thing on PATH is a symlink by construction.
+        let resolvedRunsThisBundle = resolved
+            .map { URL(fileURLWithPath: $0).resolvingSymlinksInPath().path == target.path } ?? false
+
+        switch cliLinkPlan(
+            resolved: resolved, linkPath: link.path,
+            occupant: occupant, resolvedRunsThisBundle: resolvedRunsThisBundle
+        ) {
+        case .alreadyOurs(let path): return .linked(path)
         case .leaveAlone(let path): return .managed(path)
         case .refuse(let reason): return .blocked(reason)
         case .place: break
@@ -271,42 +302,88 @@ enum SystemIntegration {
     /// facts come from ONE spawn: two would cost a second rc-file evaluation
     /// at launch and could disagree.
     ///
-    /// Best-effort throughout: a shell that fails, hangs on an rc file, or
-    /// isn't there at all yields "nothing resolves, no PATH", and the caller
-    /// degrades to reporting rather than to failing.
+    /// Everything about how it asks is defence against the rc file. A login
+    /// shell sources `.zshenv`/`.zprofile`/`.zlogin` (or `.bash_profile`), and
+    /// those routinely PRINT — a version-manager banner, a greeting, somebody's
+    /// `echo`. So the answers are fenced with sentinels rather than read off
+    /// fixed line numbers: one line of banner would otherwise shift the whole
+    /// reading down and hand `resolved` a greeting, which the caller would
+    /// dutifully treat as another installer owning the name.
+    ///
+    /// stdin is `/dev/null` so an rc file that reads it can't steal the
+    /// terminal a development build was launched from, and the whole thing is
+    /// on a deadline so an rc file that BLOCKS costs a delayed answer rather
+    /// than a wedged probe and a stuck `zsh` for the life of the app.
+    ///
+    /// Best-effort throughout: a shell that fails, hangs, or isn't there at
+    /// all yields "nothing resolves, no PATH", and the caller degrades to
+    /// reporting rather than to failing.
+    private static let shellProbeTimeout: TimeInterval = 10
+
     private static func loginShellReading() async -> (resolved: String?, path: [String]) {
         let shell = ProcessInfo.processInfo.environment["SHELL"] ?? "/bin/zsh"
+        let timeout = shellProbeTimeout
         return await Task.detached(priority: .utility) { () -> (String?, [String]) in
             let task = Process()
             task.executableURL = URL(fileURLWithPath: shell)
-            // Two lines out, in a fixed order, so an empty first line means
-            // "nothing resolves" rather than shifting the PATH up into it.
-            task.arguments = ["-l", "-c", "command -v trill; echo; echo \"$PATH\""]
+            task.arguments = [
+                "-l", "-c",
+                """
+                printf '%s\\n' '\(commandSentinel)'
+                command -v trill
+                printf '%s\\n' '\(pathSentinel)'
+                printf '%s\\n' "$PATH"
+                """,
+            ]
             let pipe = Pipe()
             task.standardOutput = pipe
             task.standardError = FileHandle.nullDevice
+            task.standardInput = FileHandle.nullDevice
             do { try task.run() } catch { return (nil, []) }
+
+            // The deadline has to kill the PROCESS, not cancel a Task:
+            // `readToEnd()` blocks on a pipe that stays open for as long as
+            // the shell lives, so nothing short of terminating it unblocks
+            // this. SIGTERM closes the write end, the read returns whatever
+            // was printed before the hang, and the parse below simply finds
+            // no sentinels.
+            let deadline = DispatchWorkItem { if task.isRunning { task.terminate() } }
+            DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + timeout, execute: deadline)
 
             // Read before waiting: a shell that fills the pipe buffer while we
             // wait for it to exit deadlocks both sides.
             let data = (try? pipe.fileHandleForReading.readToEnd()) ?? Data()
             task.waitUntilExit()
+            deadline.cancel()
             return parseShellReading(String(decoding: data, as: UTF8.self))
         }.value
     }
 
-    /// Split what the login shell printed. Separate and `internal` so the
-    /// parsing is testable without a shell — the empty-first-line case is the
-    /// one that would silently mis-report a whole PATH as a resolved binary.
+    /// Fences around the two answers, so rc-file chatter can't be mistaken for
+    /// either. Distinctive enough that a shell printing one by coincidence is
+    /// not a thing that happens.
+    nonisolated private static let commandSentinel = "__trill_cli__"
+    nonisolated private static let pathSentinel = "__trill_path__"
+
+    /// Split what the login shell printed. Separate and `nonisolated` so the
+    /// parsing is testable without a shell — the rc-file-noise case is the one
+    /// that would silently mis-report a greeting as an installed binary.
     nonisolated static func parseShellReading(_ output: String) -> (resolved: String?, path: [String]) {
         let lines = output.components(separatedBy: "\n")
-        let first = lines.first?.trimmingCharacters(in: .whitespaces) ?? ""
-        // Everything after the deliberate blank line is the PATH; a shell that
-        // printed nothing at all leaves both empty.
-        let rest = lines.dropFirst(2).joined(separator: "\n")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        let entries = rest.split(separator: ":").map(String.init).filter { !$0.isEmpty }
-        return (first.isEmpty ? nil : first, entries)
+        // Last occurrence, not first: an rc file that echoed our own sentinel
+        // back (a shell tracing every command, say) must not win over the real
+        // one, and the real one is always the later.
+        func lineAfter(_ sentinel: String) -> String? {
+            guard let index = lines.lastIndex(of: sentinel), index + 1 < lines.count else { return nil }
+            return lines[index + 1].trimmingCharacters(in: .whitespaces)
+        }
+        // `command -v` printing nothing leaves the next sentinel on that line,
+        // which is exactly how "nothing resolves" is told from a real answer.
+        let command = lineAfter(commandSentinel)
+        let resolved = (command == pathSentinel || command?.isEmpty != false) ? nil : command
+        let entries = (lineAfter(pathSentinel) ?? "")
+            .split(separator: ":").map(String.init).filter { !$0.isEmpty }
+        return (resolved, entries)
     }
 
     // MARK: - Relaunch watchdog (finishing Apple's "Quit & Reopen")

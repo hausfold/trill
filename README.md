@@ -113,9 +113,12 @@ find. Whoever installs the bundle places it:
 | install | who puts `trill` on PATH |
 |---|---|
 | Nix (`pkgs.trill`, this flake's overlay) | the package's own `bin/trill` |
-| a desktop that copies the bundle to a fixed path | its own link at that copy (haus's trill room) |
 | `scripts/dev-install.sh` (building from this checkout) | a link in a directory of yours already on PATH |
 | the release ZIP, dragged to /Applications | **the app itself**, at first launch |
+
+(A desktop that copies the bundle to a fixed path should link *there* instead —
+permission grants are keyed per app path. Nothing ships that yet; trill is not
+a haus flake input.)
 
 The last two pick the directory from your login shell's own `PATH` rather than
 assuming one: `~/.local/bin` is the conventional answer and is on nobody's PATH

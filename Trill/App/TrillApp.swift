@@ -9,11 +9,11 @@ import SwiftUI
 ///
 /// The `trill` command on PATH is a symlink to
 /// `Trill.app/Contents/MacOS/Trill`. Whoever installed the bundle places it:
-/// `pkgs.trill` ships a `bin/trill`, a desktop links the copy it put at a
-/// fixed path, `scripts/dev-install.sh` links `~/.local/bin/trill` — and for
-/// the sources that run no script at all (a release ZIP dragged to
-/// /Applications), the app places it itself at launch, but only when nothing
-/// else already answers the name. See `SystemIntegration.ensureCLILink`.
+/// `pkgs.trill` ships a `bin/trill`, and `scripts/dev-install.sh` links into a
+/// directory already on the login shell's PATH. For an install that runs no
+/// script at all — a release ZIP dragged to /Applications — the app places it
+/// itself at launch, but only when nothing else already answers the name.
+/// See `SystemIntegration.ensureCLILink`.
 @main
 enum TrillMain {
     static func main() {

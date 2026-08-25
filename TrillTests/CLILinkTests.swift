@@ -21,7 +21,8 @@ final class CLILinkTests: XCTestCase {
             SystemIntegration.cliLinkPlan(
                 resolved: "/run/current-system/sw/bin/trill",
                 linkPath: link,
-                occupant: .nothing
+                occupant: .nothing,
+                resolvedRunsThisBundle: false
             ),
             .leaveAlone("/run/current-system/sw/bin/trill")
         )
@@ -32,14 +33,32 @@ final class CLILinkTests: XCTestCase {
         // we still own it — reading that as "someone else got here" would make
         // trill stop refreshing a link whose target may have moved.
         XCTAssertEqual(
-            SystemIntegration.cliLinkPlan(resolved: link, linkPath: link, occupant: .symlink),
+            SystemIntegration.cliLinkPlan(
+                resolved: link, linkPath: link, occupant: .symlink, resolvedRunsThisBundle: true
+            ),
             .place
+        )
+    }
+
+    func testOurOwnLinkUnderAnotherNameIsNotAStranger() {
+        // trill linked ~/bin/trill last launch; the user has since put
+        // ~/.local/bin on PATH, so the directory this code prefers moved. What
+        // resolves is still trill's own file pointing at this very bundle, and
+        // calling that "installed by something else" names our file a stranger's.
+        XCTAssertEqual(
+            SystemIntegration.cliLinkPlan(
+                resolved: "/Users/x/bin/trill", linkPath: link,
+                occupant: .nothing, resolvedRunsThisBundle: true
+            ),
+            .alreadyOurs("/Users/x/bin/trill")
         )
     }
 
     func testNothingResolvesAndNothingIsThere() {
         XCTAssertEqual(
-            SystemIntegration.cliLinkPlan(resolved: nil, linkPath: link, occupant: .nothing),
+            SystemIntegration.cliLinkPlan(
+                resolved: nil, linkPath: link, occupant: .nothing, resolvedRunsThisBundle: false
+            ),
             .place
         )
     }
@@ -49,7 +68,9 @@ final class CLILinkTests: XCTestCase {
         // there. `command -v trill` succeeds and every call fails — strictly
         // worse than no link at all — so this must be the case that replaces it.
         XCTAssertEqual(
-            SystemIntegration.cliLinkPlan(resolved: nil, linkPath: link, occupant: .symlink),
+            SystemIntegration.cliLinkPlan(
+                resolved: nil, linkPath: link, occupant: .symlink, resolvedRunsThisBundle: false
+            ),
             .place
         )
     }
@@ -58,7 +79,7 @@ final class CLILinkTests: XCTestCase {
         // Somebody else's tool, or a script the user wrote. trill declines and
         // says so rather than deleting it.
         guard case .refuse(let reason) = SystemIntegration.cliLinkPlan(
-            resolved: nil, linkPath: link, occupant: .other
+            resolved: nil, linkPath: link, occupant: .other, resolvedRunsThisBundle: false
         ) else { return XCTFail("a regular file on the path must not be replaced") }
         XCTAssertTrue(reason.contains(link), "the refusal has to name the path the user must clear")
     }
@@ -68,7 +89,8 @@ final class CLILinkTests: XCTestCase {
         // fact that matters, and it is not ours to touch either way.
         XCTAssertEqual(
             SystemIntegration.cliLinkPlan(
-                resolved: "/opt/homebrew/bin/trill", linkPath: link, occupant: .other
+                resolved: "/opt/homebrew/bin/trill", linkPath: link,
+                occupant: .other, resolvedRunsThisBundle: false
             ),
             .leaveAlone("/opt/homebrew/bin/trill")
         )
@@ -112,15 +134,37 @@ final class CLILinkTests: XCTestCase {
         )
     }
 
-    func testNixManagedDirectoriesAreSkippedEvenOnPath() {
-        // Generated: a link written into a profile bin is gone at the next
-        // rebuild, and misleading until then.
+    func testNixProfileBinsUnderHomeAreSkipped() {
+        // The exclusion that does real work. ~/.nix-profile/bin passes the
+        // home test and is a symlink chain into the read-only store, so a link
+        // written there fails outright — and would be gone at the next rebuild
+        // if it didn't. (/etc/profiles/… and /nix/store never reach this test:
+        // the home check already excludes them, which is why spelling THOSE
+        // out would be dead code.)
         XCTAssertEqual(
             SystemIntegration.cliLinkDirectory(
-                loginPath: ["/etc/profiles/per-user/x/bin", "/Users/x/tools"], home: home
+                loginPath: ["/Users/x/.nix-profile/bin", "/Users/x/tools"], home: home
             ).path,
-            "/Users/x/tools",
-            "a nix profile bin on PATH is not a place to write a link"
+            "/Users/x/tools"
+        )
+        XCTAssertEqual(
+            SystemIntegration.cliLinkDirectory(
+                loginPath: ["/Users/x/.local/state/nix/profile/bin"], home: home
+            ).path,
+            "/Users/x/.local/bin",
+            "a PATH made only of profile bins offers nothing writable"
+        )
+    }
+
+    func testAProfileBinIsNotConfusedWithTheConventionalDirectory() {
+        // ~/.local/state/nix/profile/bin and ~/.local/bin share a prefix; the
+        // filter must not take the second for the first.
+        XCTAssertEqual(
+            SystemIntegration.cliLinkDirectory(
+                loginPath: ["/Users/x/.local/state/nix/profile/bin", "/Users/x/.local/bin"],
+                home: home
+            ).path,
+            "/Users/x/.local/bin"
         )
     }
 
@@ -135,27 +179,54 @@ final class CLILinkTests: XCTestCase {
 
     // MARK: - Reading the login shell
 
-    func testNothingResolvingDoesNotShiftThePathUpIntoIt() {
-        // The blank line is why the shell prints three lines for two answers:
-        // without it an empty `command -v` would leave PATH on line one and
-        // trill would report the whole PATH as the resolved binary.
-        let (resolved, path) = SystemIntegration.parseShellReading("\n\n/usr/bin:/bin\n")
+    /// The shell prints:  __trill_cli__ / <answer or nothing> / __trill_path__ / <PATH>
+    private func reading(command: String, path: String, noise: String = "") -> String {
+        noise + "__trill_cli__\n" + command + "__trill_path__\n" + path + "\n"
+    }
+
+    func testAnRcFileBannerIsNotMistakenForAnInstalledBinary() {
+        // The bug the sentinels exist for. A login shell sources .zprofile /
+        // .zlogin, and those routinely print — a version-manager banner, a
+        // greeting. Read off fixed line numbers, one line of that becomes
+        // `resolved`, the caller sees a path that isn't ours, and trill
+        // silently decides someone else owns the name — telling the user
+        // "`trill` is already installed by something else — Welcome back!".
+        let (resolved, path) = SystemIntegration.parseShellReading(
+            reading(command: "", path: "/usr/bin:/bin", noise: "Welcome back!\nnvm: v20\n")
+        )
         XCTAssertNil(resolved)
         XCTAssertEqual(path, ["/usr/bin", "/bin"])
     }
 
+    func testNothingResolvingIsToldFromARealAnswer() {
+        let (resolved, path) = SystemIntegration.parseShellReading(
+            reading(command: "", path: "/usr/bin")
+        )
+        XCTAssertNil(resolved)
+        XCTAssertEqual(path, ["/usr/bin"])
+    }
+
     func testBothAnswersComeBackFromTheOneSpawn() {
         let (resolved, path) = SystemIntegration.parseShellReading(
-            "/opt/homebrew/bin/trill\n\n/opt/homebrew/bin:/usr/bin\n"
+            reading(command: "/opt/homebrew/bin/trill\n", path: "/opt/homebrew/bin:/usr/bin")
         )
         XCTAssertEqual(resolved, "/opt/homebrew/bin/trill")
         XCTAssertEqual(path, ["/opt/homebrew/bin", "/usr/bin"])
     }
 
     func testAShellThatSaidNothingIsNotAnEmptyPath() {
+        // What a killed probe leaves behind: the deadline terminated the shell
+        // before it printed anything, so there are no sentinels to find.
         let (resolved, path) = SystemIntegration.parseShellReading("")
         XCTAssertNil(resolved)
         XCTAssertEqual(path, [], "no reading at all degrades to reporting, never to a wrong claim")
+    }
+
+    func testATruncatedReadingDoesNotInventAPath() {
+        // Killed after the first sentinel: an answer started and never came.
+        let (resolved, path) = SystemIntegration.parseShellReading("__trill_cli__\n")
+        XCTAssertNil(resolved)
+        XCTAssertEqual(path, [])
     }
 
     func testConfigRoundTripsTheSwitch() {

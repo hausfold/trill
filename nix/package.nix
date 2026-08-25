@@ -72,10 +72,12 @@ stdenvNoCC.mkDerivation {
   # `Contents/MacOS/Trill` differ in directory, not just in case.)
   #
   # This is what makes `trill` resolve for a profile install. A desktop that
-  # copies the bundle to a fixed /Applications path wants a link pointing THERE
-  # instead — permission grants are keyed per app path, and the CLI's own
-  # fallback for finding its daemon is the bundle it sits in — so haus's trill
-  # room ships its own link rather than putting this package on a profile.
+  # copies the bundle to a fixed /Applications path will want a link pointing
+  # THERE instead — permission grants are keyed per app path, and the CLI's own
+  # fallback for finding its daemon is the bundle it sits in — the way haus's
+  # shelf room does it for perch (`perch-cli-link`). No such room exists for
+  # trill yet: trill is deliberately not a haus flake input, so this package's
+  # own bin/ is the only nix answer today.
   installPhase = ''
     runHook preInstall
     mkdir -p $out/Applications

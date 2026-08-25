@@ -238,7 +238,21 @@ CLI_TARGET="$INSTALL_PATH/Contents/MacOS/Trill"
 
 # Ask the LOGIN shell, not this one: this script may itself have been run from
 # somewhere with a fuller PATH, and the profile is where PATH is assembled.
-LOGIN_PATH="$("${SHELL:-/bin/zsh}" -l -c 'echo $PATH' 2>/dev/null || true)"
+# `printf '%s\n' "$PATH"` and not `echo $PATH`: unquoted, the shell would
+# re-split and glob a PATH entry containing whitespace.
+LOGIN_PATH="$("${SHELL:-/bin/zsh}" -l -c 'printf "%s\n" "$PATH"' </dev/null 2>/dev/null | tail -1 || true)"
+
+# The nix bins to skip are the ones UNDER $HOME — /nix/store and
+# /etc/profiles/… can't pass the "$HOME/"* test in the first place. These can,
+# and every one of them is a symlink chain into the read-only store, so a link
+# written there fails outright and would be gone at the next rebuild if it
+# didn't.
+is_nix_bin() {
+  case "$1" in
+    "$HOME"/.nix-profile/*|"$HOME"/.local/state/nix/profile/*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
 
 CLI_DIR=""
 for candidate in "$HOME/.local/bin" "$HOME/bin"; do
@@ -246,11 +260,15 @@ for candidate in "$HOME/.local/bin" "$HOME/bin"; do
 done
 if [[ -z "$CLI_DIR" ]]; then
   # First home-owned, non-nix entry on the real PATH, whatever it is called.
+  # The trailing newline on the here-string is what keeps `read` from dropping
+  # the LAST field — without it the final PATH entry is read but never acted
+  # on, and the script reports "not on your PATH" about a directory that was.
   while IFS= read -r entry; do
+    [[ -n "$entry" ]] || continue
     [[ "$entry" == "$HOME/"* ]] || continue
-    case "$entry" in /nix/store/*|/etc/profiles/*|/run/current-system/*) continue ;; esac
+    is_nix_bin "$entry" && continue
     CLI_DIR="$entry"; break
-  done < <(printf '%s' "$LOGIN_PATH" | tr ':' '\n')
+  done <<< "$(printf '%s' "$LOGIN_PATH" | tr ':' '\n')"
 fi
 ON_PATH=1
 if [[ -z "$CLI_DIR" ]]; then
@@ -259,17 +277,22 @@ if [[ -z "$CLI_DIR" ]]; then
 fi
 CLI_LINK="$CLI_DIR/trill"
 
+# Every failure here is non-fatal on purpose. `set -e` is on, the app is
+# already installed by this point, and steps 5 and 6 still have to run — an
+# unwritable directory must cost a warning, not an install that stops halfway
+# with no summary and no relaunch.
 if [[ -e "$CLI_LINK" && ! -L "$CLI_LINK" ]]; then
   say "leaving $CLI_LINK alone — it is a real file, not our symlink"
-else
-  mkdir -p "$CLI_DIR"
-  ln -sfn "$CLI_TARGET" "$CLI_LINK"
+elif mkdir -p "$CLI_DIR" 2>/dev/null && ln -sfn "$CLI_TARGET" "$CLI_LINK" 2>/dev/null; then
   say "linked $CLI_LINK → $CLI_TARGET"
+else
+  printf '\033[1;33mnote:\033[0m %s\n' "couldn't write $CLI_LINK — \`trill\` won't be on PATH. The app is its own CLI: $CLI_TARGET"
+  ON_PATH=0
 fi
 
 RESOLVED=""
 if (( ON_PATH )); then
-  RESOLVED="$("${SHELL:-/bin/zsh}" -l -c 'command -v trill' 2>/dev/null || true)"
+  RESOLVED="$("${SHELL:-/bin/zsh}" -l -c 'command -v trill' </dev/null 2>/dev/null | tail -1 || true)"
 else
   printf '\033[1;33mnote:\033[0m %s\n' "$CLI_DIR is not on your login shell's PATH, so \`trill\` still won't resolve.
       Add it:  export PATH=\"$CLI_DIR:\$PATH\""
