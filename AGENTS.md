@@ -161,6 +161,21 @@ over — after which the installed Developer-ID app is denied silently, because
 isn't. Debug also gets its own `Application Support/Trill (debug)` so a test run
 can't bind the installed daemon's socket or write its database.
 
+**No build ships coverage instrumentation — `ENABLE_CODE_COVERAGE = NO` in
+both project-level configurations, and CI fails if a Release binary comes out
+with `__llvm_prf_cnts` in it.** This project ships no *shared* scheme, so
+`-scheme Trill` resolves whatever Xcode autocreated in `xcuserdata/`, whose
+coverage default is YES — and that leaks past the test action into a plain
+`build`. The consequence is not a slower binary: the app binary **is** the
+`trill` CLI, `holt notify` execs it from every agent-pane hook, and LLVM's
+profile runtime writes `default.profraw` into whatever cwd the process exits
+in. That is one untracked file per agent worktree, and `holt reap` refuses to
+reap a checkout with uncommitted work in it — so lanes pile up until someone
+deletes files by hand. Want coverage for a run? Ask for it explicitly:
+`xcodebuild test -enableCodeCoverage YES` overrides the setting. Don't turn it
+back on in the project, and don't re-add `*.profraw` to `.gitignore` — a stray
+one showing up in `git status` is the signal, not the noise.
+
 **Feel-test with `scripts/dev-install.sh`, not a bare `xcodebuild`.** A
 `CODE_SIGNING_ALLOWED=NO` build is ad-hoc signed, and macOS pins a TCC grant
 (Full Disk Access) to an ad-hoc bundle's **cdhash** — so the switch in System
