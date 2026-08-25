@@ -12,7 +12,10 @@ final class AppRuntime {
     private var database: AppDatabase?
     private let repository: EventRepository
     private let queue: BannerQueue
+    private let actionRouter: ActionRouter
     private let windowSystem: BannerWindowSystem
+    /// Drains `delivery: digest` into one card an hour — see DigestScheduler.
+    private let digests: DigestScheduler
     private var deliveryTask: Task<Void, Never>?
     private var rulesWatcher: RulesWatcher
     /// Follows `persistHistory` — see `applyPersistence`.
@@ -21,9 +24,10 @@ final class AppRuntime {
     /// here so `stop()` can cancel them — a resolver outliving the daemon
     /// would be a process trill can no longer report on.
     private var resolutionMonitor: ResolutionMonitor?
-    /// The daemon side of `trill inbox` — set by the app delegate, which
-    /// owns the windows. The Bool is "asks only".
-    var onOpenInbox: ((Bool) -> Void)?
+    /// The daemon side of `trill inbox` and of a digest card's click — set
+    /// by the app delegate, which owns the windows. The scope says which
+    /// slice of history the window is for.
+    var onOpenInbox: ((InboxScope) -> Void)?
 
     private static let log = Logger(subsystem: "com.hausfold.trill", category: "runtime")
 
@@ -44,21 +48,29 @@ final class AppRuntime {
         )
 
         queue = BannerQueue()
+        // Quiet hours are read live for the same reason every other rules
+        // question is: an edit to rules.json moves the next flush, not the
+        // next launch.
+        digests = DigestScheduler(quietHours: { watcher.current().quietHours })
         // The router needs the listed apps for the same reason `trill doctor`
         // does: a "Silence Native Banners" click that can't tell which apps it
         // was about must fall back to the ones the rules name, not the Mac.
-        windowSystem = BannerWindowSystem(
-            queue: queue,
-            actionRouter: ActionRouter(listedApps: {
-                NotificationSettingsAudit.listedBundleIDs(in: watcher.current())
-            })
-        )
+        actionRouter = ActionRouter(listedApps: {
+            NotificationSettingsAudit.listedBundleIDs(in: watcher.current())
+        })
+        windowSystem = BannerWindowSystem(queue: queue, actionRouter: actionRouter)
     }
 
     func start() {
         windowSystem.start()
         rulesWatcher.start()
         wireLedge()
+        // Both inbox doors — `trill inbox` over the socket, a digest card's
+        // click — land on the same delegate. Set here rather than in `init`
+        // because a closure over `self` needs a fully-initialized one.
+        actionRouter.openInbox = { [weak self] scope in self?.onOpenInbox?(scope) }
+        digests.onCard = { [queue] card in queue.enqueue(card) }
+        digests.start()
 
         // The file is the truth for this one too, and it is the setting where
         // that matters most: switching history off — in Settings or by typing
@@ -70,18 +82,24 @@ final class AppRuntime {
             Task { @MainActor in self?.applyPersistence(enabled) }
         }
 
-        deliveryTask = Task { [repository, queue] in
+        deliveryTask = Task { [repository, queue, digests] in
             for await delivered in await repository.deliveries() {
                 // Resolution first, and regardless of delivery: an event that
                 // answers a question answers it even when a rule sends the
                 // event itself to the inbox. "PR merged" may well be a quiet
                 // event in someone's rules; the fin it clears is not.
                 queue.resolve(keys: delivered.event.resolves)
-                if case .banner = delivered.decision {
+                switch delivered.decision {
+                case .banner:
                     queue.enqueue(delivered.event)
+                case .digest(let name):
+                    // Counted now, drawn on the hour. The event itself was
+                    // already persisted by the repository — the scheduler
+                    // keeps a tally, never a copy.
+                    digests.accumulate(delivered.event, digest: name)
+                case .inboxOnly, .drop:
+                    break
                 }
-                // inboxOnly / digest events were already persisted by the
-                // repository; digest flushing is milestone 2.
             }
         }
 
@@ -94,7 +112,7 @@ final class AppRuntime {
                     NotificationSettingsAudit.listedBundleIDs(in: rulesWatcher.current())
                 },
                 openInbox: { [weak self] asksOnly in
-                    Task { @MainActor in self?.onOpenInbox?(asksOnly) }
+                    Task { @MainActor in self?.onOpenInbox?(asksOnly ? .asks : .all) }
                 },
                 resolve: { [weak self] keys, done in
                     Task { @MainActor in
@@ -132,6 +150,7 @@ final class AppRuntime {
     func stop() {
         deliveryTask?.cancel()
         resolutionMonitor?.stop()
+        digests.stop()
         windowSystem.stop()
         Task { [repository] in await repository.shutdown() }
     }

@@ -10,10 +10,9 @@ Center: its own daemon, its own rules file, and never a sound. Anything that
 can run a command can put a banner on screen — which is what makes it the
 right answer to *"tell me when this is done"*.
 
-You reach it with the `trill` command; the daemon must be running (`trill
-ping` exits 0 when it is, printing nothing; everything else exits **2** when
-it isn't). Banners never steal focus, so sending one is safe mid-work. There
-is no sound, ever — don't promise one.
+You reach it with the `trill` command; the daemon must be running (`trill ping`
+exits 0 silently when it is, everything else exits **2**). Banners never steal
+focus, so sending one is safe mid-work. No sound, ever — don't promise one.
 
 ## Verbs
 
@@ -65,9 +64,9 @@ the first is also what clicking the banner body does.
 | 5 | `doctor`: can't read macOS's settings | needs Full Disk Access — **not** "all quiet" |
 
 **Exit 0 means the daemon took the event, not that a banner appeared.** The
-rules run afterwards: a `drop` or `digest` rule, coalescing, or quiet hours can
-route it to the inbox instead, and none of them change the exit code. Say
-"sent", not "you'll see it on screen".
+rules run afterwards: a `drop` rule, coalescing or quiet hours can route it to
+the inbox instead, and a `digest` rule holds it for the hourly card — none of
+them change the exit code. Say "sent", not "you'll see it on screen".
 
 **Exit 5 means *can't tell*, not "nothing to fix".** Three verdicts, not two;
 reporting the third as clean is a bug this app already shipped once.
@@ -118,9 +117,11 @@ adding one means editing this file, which is the user's call.
 
 `match` takes `source` (exact, case-insensitive), `titleContains` and
 `urgencyAtMost`. `delivery` is `banner`, `inbox`, `digest` (with a sibling
-`digest` name) or `drop`, written **flat beside** `match`, not nested in it.
+`digest` name) or `drop`, written **flat beside** `match`, not nested in it. A
+`digest` rule banners nothing then: it tallies and draws one card on the hour
+("9 quiet things · ci ×4, garden ×3") that opens the inbox on exactly those.
 `quietHours` is minutes since local midnight and may cross it (`1320`/`420` is
-22:00–07:00); inside it every non-critical event is demoted to inbox-only.
+22:00–07:00); inside it non-critical events are demoted, digest cards held.
 
 ## Settings file — `~/.config/trill/config.json`
 
@@ -146,5 +147,4 @@ disk writes from that moment on. Don't write the file if it's a symlink into
 - **`--until` is a promise about the user's config, not yours.** It names a
   resolver in *their* `rules.json`; an undeclared name is logged and the fin
   simply stays. Read the file before you promise a banner will clear itself.
-- **`trill doctor` needs Full Disk Access** and says so by exiting 5. Treat that
-  as "unknown", never as "clean".
+- **`trill doctor` exits 5 when it can't read** — "unknown", never "clean".

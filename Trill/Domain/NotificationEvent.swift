@@ -81,6 +81,11 @@ struct NotificationEvent: Codable, Sendable, Identifiable, Equatable {
             /// bare `<lane>` where that is unambiguous. trill knows nothing
             /// about windows or tilers; see `ActionRouter.focusLane`.
             case focusLane = "focus_lane"
+            /// Open trill's own inbox, scoped by `target` — an `InboxScope`
+            /// action target (`all`, `asks`, `digest:<name>@<epoch>`), or
+            /// none for the plain window. What a digest card's click does:
+            /// the card is a count, and this is the list behind it.
+            case openInbox = "open_inbox"
             /// An action kind this build has never heard of — a newer sender
             /// talking to an older trill. Inert by construction, and the
             /// reason an unknown kind costs the *action* rather than the
@@ -141,6 +146,7 @@ struct NotificationEvent: Codable, Sendable, Identifiable, Equatable {
             case .openApp, .silenceNative: true
             case .openURL: Self.opensAsURL(target)
             case .focusLane: Self.focusesLane(target)
+            case .openInbox: InboxScope(actionTarget: target) != nil
             case .command, .unsupported: false
             }
         }

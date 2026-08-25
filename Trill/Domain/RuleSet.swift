@@ -64,6 +64,14 @@ struct RuleSet: Codable, Sendable, Equatable {
             }
             return minute >= startMinute || minute < endMinute
         }
+
+        /// The same question against a real instant. Two callers ask it — the
+        /// policy engine demoting a banner, the digest scheduler holding a
+        /// flush — and they must never disagree about where the window is.
+        func contains(_ date: Date, calendar: Calendar = .current) -> Bool {
+            let comps = calendar.dateComponents([.hour, .minute], from: date)
+            return contains(minuteOfDay: (comps.hour ?? 0) * 60 + (comps.minute ?? 0))
+        }
     }
 
     var rules: [Rule]

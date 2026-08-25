@@ -31,8 +31,6 @@ struct PolicyEngine: Sendable {
               event.urgency < .critical
         else { return decision }
 
-        let comps = calendar.dateComponents([.hour, .minute], from: now)
-        let minute = (comps.hour ?? 0) * 60 + (comps.minute ?? 0)
-        return quiet.contains(minuteOfDay: minute) ? .inboxOnly : decision
+        return quiet.contains(now, calendar: calendar) ? .inboxOnly : decision
     }
 }

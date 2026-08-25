@@ -5,21 +5,19 @@ import SwiftUI
 /// keyboard-first pounce hand-off are milestone 2.
 struct InboxView: View {
     let database: AppDatabase?
-    /// `trill inbox --asks`: show only `ask` events — the kind the ledge
-    /// parks. The database has no answered/unanswered state (answering a
-    /// banner is not a write), so this is a kind filter, honestly named.
-    var asksOnly: Bool = false
+    /// Which slice of history this window is for — the plain list, the asks
+    /// the ledge parks (`trill inbox --asks`), or the events behind one
+    /// digest card. The scope arrives from the click; the query is below.
+    var scope: InboxScope = .all
     @State private var items: [AppDatabase.StoredEvent] = []
 
     var body: some View {
         Group {
             if items.isEmpty {
                 ContentUnavailableView(
-                    asksOnly ? "No asks" : "Nothing yet",
-                    systemImage: "tray",
-                    description: asksOnly
-                        ? Text("Nothing has asked for you — events sent with `--kind ask` land here.")
-                        : Text("Events arrive here as sources send them — try `trill send --title hello`.")
+                    emptyTitle,
+                    systemImage: scope == .all ? "tray" : "tray.full",
+                    description: Text(emptyMessage)
                 )
             } else {
                 List(items) { stored in
@@ -49,15 +47,53 @@ struct InboxView: View {
         }
         .frame(minWidth: 420, minHeight: 320)
         .onAppear(perform: reload)
-        .navigationTitle(asksOnly ? "Trill — Asks" : "Trill")
+        .navigationTitle(windowTitle)
         .toolbar {
             Button("Refresh", systemImage: "arrow.clockwise", action: reload)
         }
         .toolbarBackground(.visible, for: .windowToolbar)
     }
 
+    private var windowTitle: String {
+        switch scope {
+        case .all: "Trill"
+        case .asks: "Trill — Asks"
+        case .digest(let name, _):
+            name == DigestCard.defaultName ? "Trill — Digest" : "Trill — \(name)"
+        }
+    }
+
+    private var emptyTitle: String {
+        switch scope {
+        case .all: "Nothing yet"
+        case .asks: "No asks"
+        case .digest: "Nothing in this digest"
+        }
+    }
+
+    private var emptyMessage: String {
+        switch scope {
+        case .all:
+            "Events arrive here as sources send them — try `trill send --title hello`."
+        case .asks:
+            "Nothing has asked for you — events sent with `--kind ask` land here."
+        case .digest:
+            // The one honest reason a *counted* digest reads empty: the count
+            // is kept in memory, the list is kept on disk, and history is off.
+            "The events behind that card weren't kept — history is off in Settings."
+        }
+    }
+
     private func reload() {
-        let recent = database?.recent(limit: 200) ?? []
-        items = asksOnly ? recent.filter { $0.event.kind == .ask } : recent
+        switch scope {
+        case .all:
+            items = database?.recent(limit: 200) ?? []
+        case .asks:
+            // The database has no answered/unanswered state (answering a
+            // banner is not a write), so this is a kind filter, honestly named.
+            items = (database?.recent(limit: 200) ?? []).filter { $0.event.kind == .ask }
+        case .digest(let name, let since):
+            items = database?.digest(named: name, since: since) ?? []
+        }
     }
 }
