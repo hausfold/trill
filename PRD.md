@@ -90,12 +90,42 @@ Notification Center with perfect compatibility."
   pipeline. Payload content never reaches logs; delivery ids, event names,
   and repo slugs only.
 
+### M1.8 — resolution (asks that answer themselves)
+
+- A parked ask can leave the ledge without a human: `trill resolve KEY`
+  from anywhere, an event carrying `resolves` (the GitHub bridge takes its
+  own review-request fin down the moment the PR merges or closes, and a
+  finished run answers the one that was gated on approval), or a poller the
+  daemon runs for the ask while it sits there.
+- **The wire may name a resolver, never describe one.** `--until NAME[:args]`
+  picks one out of a `resolvers` map in `~/.config/trill/rules.json`; the
+  argv or URL behind that name lives in the user's own file. Anything local
+  can write to trill's socket, so a command string on the wire would make
+  the daemon a run-this-on-a-timer service for every process on the Mac.
+  argv is argv — there is no shell anywhere in the path — arguments fill
+  numbered holes (`$1`…`$9`) and may not start with `-`.
+- Bounded and one-way: `every`/`timeout`/`giveUpAfter` are clamped on
+  decode, `giveUpAfter` counts from when the question was *asked* so a
+  relaunch can't extend it, five consecutive failures stop the poller, and
+  nothing in the path can put a resolved question back on screen. A poller
+  that gives up leaves the fin — trill never invents an answer it didn't
+  get.
+- `--key` names an ask so something *else* can resolve it later; the id
+  `trill send` printed already works, so a key is only needed when the
+  resolver is a different process. Re-sending an ask with the same key
+  replaces its fin rather than growing a second one.
+- The ledge itself survives a daemon restart (its own table in trill's
+  sqlite, rewritten wholesale on every change, pruned at a week). A
+  question that can evaporate on a crash is the failure the Ledge exists to
+  end.
+
 ### M2 — rules that earn the name
 
 Digest flushing on schedule, per-source styling hooks, `trill history
 --source X --since 2h`, `trill watch --json`, pounce integration, Hush
-handshake (enable Focus profile ↔ trill takeover), opt-in command hooks
-with redacted environment.
+handshake (enable Focus profile ↔ trill takeover), opt-in command hooks for
+banner *actions* (a click running a declared command, the way `--until`
+already runs a declared check).
 
 ### M3 — System Mirror feasibility spike (measure, then decide)
 

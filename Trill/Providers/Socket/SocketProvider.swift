@@ -11,9 +11,11 @@ struct SocketProvider: NotificationProvider {
     /// One JSON object per line. `v` is the wire version.
     struct Request: Codable, Equatable {
         var v: Int?
-        /// "send" | "ping" | "doctor" | "inbox"
+        /// "send" | "ping" | "doctor" | "inbox" | "resolve"
         var verb: String
         var event: NotificationEvent?
+        /// resolve: the ids or keys whose banners and fins are answered.
+        var keys: [String]?
         /// doctor: audit exactly these bundle ids.
         var apps: [String]?
         /// doctor: audit every app macOS holds preferences for.
@@ -32,6 +34,11 @@ struct SocketProvider: NotificationProvider {
         /// doctor only. Optional, so a `send`/`ping` reply is byte-identical
         /// to what older CLIs already parse.
         var findings: [NativeNotificationSettings]?
+        /// resolve only: how many banners/fins the keys actually took down.
+        /// Zero is a success, not an error — resolving a question nobody is
+        /// still asking is the normal ending for a `--until` poller that
+        /// finished after the user had already answered by hand.
+        var cleared: Int?
         /// doctor only. Set when the audit couldn't read macOS's settings at
         /// all — the reply then means "can't tell", and `findings` being empty
         /// says nothing. Optional so older CLIs keep parsing.
@@ -51,15 +58,23 @@ struct SocketProvider: NotificationProvider {
     /// reason: the provider knows nothing about windows, and the CLI
     /// personality has none to open. The Bool is "asks only".
     private let openInbox: @Sendable (Bool) -> Void
+    /// Takes down whatever answers to these keys and reports how many. Same
+    /// injection reason again: the provider knows nothing about the queue,
+    /// and the CLI personality has no queue to know about. Asynchronous
+    /// because the answer lives on the main actor and the reply can wait —
+    /// the socket writes back whenever the count arrives.
+    private let resolve: @Sendable ([String], @escaping @Sendable (Int) -> Void) -> Void
 
     init(
         path: String = SocketProvider.defaultSocketPath(),
         listedApps: @escaping @Sendable () -> [String] = { [] },
-        openInbox: @escaping @Sendable (Bool) -> Void = { _ in }
+        openInbox: @escaping @Sendable (Bool) -> Void = { _ in },
+        resolve: @escaping @Sendable ([String], @escaping @Sendable (Int) -> Void) -> Void = { _, done in done(0) }
     ) {
         self.path = path
         self.listedApps = listedApps
         self.openInbox = openInbox
+        self.resolve = resolve
     }
 
     func probe() async -> ProviderHealth {
@@ -79,6 +94,7 @@ struct SocketProvider: NotificationProvider {
             let encoder = JSONEncoder.trill
             let listedApps = self.listedApps
             let openInbox = self.openInbox
+            let resolve = self.resolve
 
             let server = SocketServer(path: path) { line, reply in
                 let response: Response
@@ -117,6 +133,21 @@ struct SocketProvider: NotificationProvider {
                     // one doesn't break the never-steal-focus rule.
                     openInbox(asksOnly)
                     response = Response(ok: true, id: nil, error: nil)
+                case .resolve(let keys):
+                    // The one verb that answers out of band: the queue lives
+                    // on the main actor, so the count comes back later.
+                    // `SocketServer` holds the connection until the peer
+                    // closes it, so a deferred reply is exactly as safe as an
+                    // inline one — and a `resolve` that replied before it
+                    // resolved would be a lie a script could race.
+                    resolve(keys) { cleared in
+                        let answer = Response(ok: true, id: nil, error: nil, cleared: cleared)
+                        // A fresh encoder rather than the captured one: this
+                        // closure runs on whatever thread the main actor
+                        // hands it back to, and JSONEncoder isn't Sendable.
+                        reply((try? JSONEncoder.trill.encode(answer)) ?? Data(#"{"ok":false}"#.utf8))
+                    }
+                    return
                 case .failure(let message):
                     response = Response(ok: false, id: nil, error: message)
                 }
@@ -140,6 +171,7 @@ struct SocketProvider: NotificationProvider {
         case ping
         case doctor(DoctorRequest)
         case inbox(asksOnly: Bool)
+        case resolve([String])
         case failure(String)
     }
 
@@ -187,6 +219,11 @@ struct SocketProvider: NotificationProvider {
             return .doctor(DoctorRequest(scope: scope, notify: request.notify == true))
         case "inbox":
             return .inbox(asksOnly: request.asks == true)
+        case "resolve":
+            let keys = (request.keys ?? []).map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { !$0.isEmpty }
+            guard !keys.isEmpty else { return .failure("resolve requires at least one key") }
+            return .resolve(Array(keys.prefix(NotificationEvent.Limits.resolvedKeys)))
         case let other:
             return .failure("unknown verb '\(other)'")
         }

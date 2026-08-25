@@ -55,12 +55,26 @@ final class BannerQueue {
     /// it evicts already survives in the inbox like every delivered event.
     static let parkedCapacity = 5
 
+    /// How long a parked ask may survive daemon restarts. A question still
+    /// on the edge of the screen a week after it was asked has outlived its
+    /// subject; keeping it there teaches you to stop looking at the ledge,
+    /// which costs more than the one ask it loses (it stays in the inbox).
+    static let parkedLifetime: TimeInterval = 7 * 24 * 3600
+
     /// Redraw callback; the window system owns the panels.
     var onVisibleChanged: (([Entry]) -> Void)?
     /// Ledge redraw callback — the parked bucket changed. Separate from
     /// `onVisibleChanged` because the two surfaces re-render independently:
     /// a fin appearing must not restack the banner column and vice versa.
     var onParkedChanged: (([Entry]) -> Void)?
+    /// The same change, for everything that isn't the compositor: the ledge
+    /// store (which mirrors the bucket to disk so fins survive a relaunch)
+    /// and the resolution monitor (which arms a poller per parked ask and
+    /// disarms it the moment the fin goes). A second property rather than a
+    /// list of observers because there is exactly one of each and their
+    /// lifetimes differ — the compositor's callback is torn down with the
+    /// window system, these outlive it.
+    var onParkedForResolution: (([Entry]) -> Void)?
 
     private(set) var visible: [Entry] = []
     /// Held back until a slot frees. Kept ordered by urgency (critical
@@ -99,6 +113,18 @@ final class BannerQueue {
     // MARK: - Intake
 
     func enqueue(_ event: NotificationEvent, now: Date = .now) {
+        // A re-sent ask supersedes its own fin. Without this, a lane that
+        // says "still blocked" every ten minutes grows a column of fins for
+        // one question — and the ledge holds five, so three such lanes would
+        // evict everything else. Only the *parked* copy yields: a visible
+        // banner and a fresh arrival are two arrivals, which is what the
+        // coalesce window is for.
+        if let key = event.key, let index = parked.firstIndex(where: { $0.event.key == key }) {
+            let superseded = parked.remove(at: index)
+            if parkedHoverID == superseded.id { parkedHoverID = nil }
+            notifyParked()
+        }
+
         if let thread = event.thread,
            let last = lastThreadArrival[thread],
            now.timeIntervalSince(last.at) < coalesceWindow,
@@ -189,6 +215,41 @@ final class BannerQueue {
         notifyParked()
     }
 
+    /// A question got answered somewhere else — `trill resolve`, a webhook
+    /// that carried `resolves`, or a poller that finally saw what it was
+    /// waiting for. Clears every entry answering to one of these names,
+    /// wherever it sits, and reports how many went so the caller can say
+    /// what it did.
+    ///
+    /// Deliberately one-way: nothing here can *un*-resolve. A check that
+    /// flips back to "not done" must not conjure a fin the user already
+    /// watched leave — the event is in the inbox, and a screen that
+    /// re-opens questions behind your back stops being one you can trust.
+    @discardableResult
+    func resolve(keys: [String]) -> Int {
+        let names = Set(keys)
+        guard !names.isEmpty else { return 0 }
+        func answers(_ entry: Entry) -> Bool {
+            !entry.event.resolutionNames.isDisjoint(with: names)
+        }
+
+        let waitingBefore = waiting.count
+        waiting.removeAll(where: answers)
+        var cleared = waitingBefore - waiting.count
+
+        // Through `dismiss`, one at a time: it owns the timer teardown, the
+        // stranded-hover rule and the refill, and resolving a banner is a
+        // dismissal in every respect except who did it.
+        for id in visible.filter(answers).map(\.id) + parked.filter(answers).map(\.id) {
+            dismiss(id: id)
+            cleared += 1
+        }
+        // A waiting entry leaving changes the overflow badge's count and
+        // nothing else on screen, so it needs its own redraw.
+        if waitingBefore != waiting.count { notify() }
+        return cleared
+    }
+
     /// The dismiss clock ran out with nobody there. Most kinds are simply
     /// done (they survive in the inbox); an `ask` is a question nobody has
     /// answered yet, and quietly dropping the one event that is *blocked on
@@ -216,6 +277,31 @@ final class BannerQueue {
         }
         refill()
         notify()
+        notifyParked()
+    }
+
+    /// Put fins back after a relaunch. The ledge is the one surface whose
+    /// emptiness lies: a banner that vanished when the daemon restarted was
+    /// already gone from the user's attention, but a *question* that vanished
+    /// is one nobody will answer, silently — and an ask that can evaporate on
+    /// a crash is exactly the failure the ledge was built to end.
+    ///
+    /// Restored entries arrive collapsed and unhovered whatever they were
+    /// doing when the daemon went down, and never displace something the
+    /// running session already parked — this runs at launch, so in practice
+    /// there is nothing to displace, and if there is, live beats remembered.
+    func restoreParked(_ restored: [(event: NotificationEvent, coalescedCount: Int)]) {
+        guard !restored.isEmpty else { return }
+        let known = Set(parked.map(\.id))
+        for item in restored where !known.contains(item.event.id) {
+            var entry = Entry(event: item.event)
+            entry.coalescedCount = item.coalescedCount
+            parked.append(entry)
+        }
+        while parked.count > Self.parkedCapacity {
+            let evicted = parked.removeFirst()
+            if parkedHoverID == evicted.id { parkedHoverID = nil }
+        }
         notifyParked()
     }
 
@@ -325,5 +411,6 @@ final class BannerQueue {
 
     private func notifyParked() {
         onParkedChanged?(parked)
+        onParkedForResolution?(parked)
     }
 }

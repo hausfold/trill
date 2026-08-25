@@ -283,4 +283,71 @@ final class GitHubBridgeTests: XCTestCase {
         XCTAssertEqual(GitHubWebhookProvider.handle(signedIgnored, config: config) { ignored.append($0) }, 200)
         XCTAssertTrue(ignored.isEmpty)
     }
+
+    // MARK: - Resolution (the bridge answering its own asks)
+
+    func testMergingAPRTakesItsReviewRequestFinDown() throws {
+        let ask = try XCTUnwrap(GitHubWebhookMapper.event(
+            name: "pull_request", deliveryID: "r1",
+            payload: reviewRequest(reviewer: "julienmartel"), login: "julienmartel"
+        ))
+        XCTAssertEqual(
+            ask.key, "gh:hausfold/trill#12",
+            "the ask claims the PR's name so a later delivery can answer it"
+        )
+        XCTAssertTrue(ask.resolves.isEmpty, "a question answers nothing")
+
+        let merged = try XCTUnwrap(GitHubWebhookMapper.event(
+            name: "pull_request", deliveryID: "r2",
+            payload: prLifecycle(action: "closed", merged: true), login: "julienmartel"
+        ))
+        XCTAssertEqual(merged.resolves, ["gh:hausfold/trill#13"])
+        XCTAssertNil(merged.key, "an ending doesn't claim the name, it answers it")
+
+        // Closed without merging is just as final for the reviewer.
+        XCTAssertEqual(try XCTUnwrap(GitHubWebhookMapper.event(
+            name: "pull_request", deliveryID: "r3",
+            payload: prLifecycle(action: "closed", merged: false), login: "julienmartel"
+        )).resolves, ["gh:hausfold/trill#13"])
+    }
+
+    func testOpeningAPROrMentioningYouResolvesNothing() throws {
+        let opened = try XCTUnwrap(GitHubWebhookMapper.event(
+            name: "pull_request", deliveryID: "r4",
+            payload: prLifecycle(action: "opened"), login: "julienmartel"
+        ))
+        XCTAssertNil(opened.key)
+        XCTAssertTrue(opened.resolves.isEmpty)
+
+        // A mention shares the PR's *thread* and means something else
+        // entirely. If it claimed the key it would supersede the fin for a
+        // review nobody did.
+        let mention = try XCTUnwrap(GitHubWebhookMapper.event(
+            name: "issue_comment", deliveryID: "r5",
+            payload: comment(body: "@julienmartel look", author: "someone"), login: "julienmartel"
+        ))
+        XCTAssertNil(mention.key)
+        XCTAssertTrue(mention.resolves.isEmpty)
+    }
+
+    func testAFinishedRunAnswersTheRunThatWasWaitingForApproval() throws {
+        let gate = try XCTUnwrap(GitHubWebhookMapper.event(
+            name: "workflow_run", deliveryID: "r6",
+            payload: workflowRun(conclusion: "action_required"), login: "x"
+        ))
+        XCTAssertEqual(gate.kind, .ask)
+        XCTAssertEqual(gate.key, "gh-ci:hausfold/trill:CI")
+
+        for conclusion in ["success", "failure"] {
+            let done = try XCTUnwrap(GitHubWebhookMapper.event(
+                name: "workflow_run", deliveryID: "r7-\(conclusion)",
+                payload: workflowRun(conclusion: conclusion), login: "x"
+            ))
+            XCTAssertEqual(
+                done.resolves, ["gh-ci:hausfold/trill:CI"],
+                "however it ended, it is no longer waiting on a human"
+            )
+            XCTAssertNil(done.key)
+        }
+    }
 }

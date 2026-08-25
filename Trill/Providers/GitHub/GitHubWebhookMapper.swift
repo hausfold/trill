@@ -114,13 +114,20 @@ enum GitHubWebhookMapper {
             return nil
         }
 
+        // One run, one name. A run waiting on a human parks under it; the
+        // conclusion that follows resolves that fin without anyone clicking
+        // — the whole point of the bridge knowing both halves.
+        let runKey = "gh-ci:\(p.repository.fullName):\(runName)"
+
         return NotificationEvent(
             id: id(deliveryID),
             source: "github",
+            key: kind == .ask ? runKey : nil,
+            resolves: kind == .ask ? [] : [runKey],
             title: "\(runName) \(verdict)",
             subtitle: [p.repository.fullName, p.workflowRun.headBranch].compactMap(\.self).joined(separator: " · "),
             body: p.workflowRun.displayTitle,
-            thread: "gh-ci:\(p.repository.fullName):\(runName)",
+            thread: runKey,
             kind: kind,
             actions: [openAction(label: "Open run", url: p.workflowRun.htmlUrl)],
             metadata: metadata(event: "workflow_run", repo: p.repository.fullName)
@@ -154,12 +161,27 @@ enum GitHubWebhookMapper {
             return nil
         }
 
+        // The PR's name on the ledge. A review request parks under it; the
+        // merge or close that follows arrives as its *own* delivery with its
+        // own id, so a shared name is the only thing that can connect them —
+        // and connecting them is what takes the fin down the second the PR
+        // lands, instead of leaving a question about a merged PR on screen.
+        //
+        // Only the ask claims the name, and only the ending answers it: an
+        // `opened` note that superseded the fin would clear a question
+        // nobody answered, and a mention (same thread, different meaning)
+        // must never touch it at all.
+        let prKey = "gh:\(p.repository.fullName)#\(p.pullRequest.number)"
+        let ending = p.action == "closed"
+
         return NotificationEvent(
             id: id(deliveryID),
             source: "github",
+            key: kind == .ask ? prKey : nil,
+            resolves: ending ? [prKey] : [],
             title: p.pullRequest.title,
             subtitle: "\(verdict) · \(p.repository.fullName)#\(p.pullRequest.number)",
-            thread: "gh:\(p.repository.fullName)#\(p.pullRequest.number)",
+            thread: prKey,
             kind: kind,
             actions: [openAction(label: "Open PR", url: p.pullRequest.htmlUrl)],
             metadata: metadata(event: "pull_request", repo: p.repository.fullName)

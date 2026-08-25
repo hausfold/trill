@@ -17,6 +17,10 @@ final class AppRuntime {
     private var rulesWatcher: RulesWatcher
     /// Follows `persistHistory` — see `applyPersistence`.
     private var persistenceObserver: AnyCancellable?
+    /// Armed pollers for parked asks that named a `--until` resolver. Held
+    /// here so `stop()` can cancel them — a resolver outliving the daemon
+    /// would be a process trill can no longer report on.
+    private var resolutionMonitor: ResolutionMonitor?
     /// The daemon side of `trill inbox` — set by the app delegate, which
     /// owns the windows. The Bool is "asks only".
     var onOpenInbox: ((Bool) -> Void)?
@@ -54,6 +58,7 @@ final class AppRuntime {
     func start() {
         windowSystem.start()
         rulesWatcher.start()
+        wireLedge()
 
         // The file is the truth for this one too, and it is the setting where
         // that matters most: switching history off — in Settings or by typing
@@ -67,6 +72,11 @@ final class AppRuntime {
 
         deliveryTask = Task { [repository, queue] in
             for await delivered in await repository.deliveries() {
+                // Resolution first, and regardless of delivery: an event that
+                // answers a question answers it even when a rule sends the
+                // event itself to the inbox. "PR merged" may well be a quiet
+                // event in someone's rules; the fin it clears is not.
+                queue.resolve(keys: delivered.event.resolves)
                 if case .banner = delivered.decision {
                     queue.enqueue(delivered.event)
                 }
@@ -85,6 +95,11 @@ final class AppRuntime {
                 },
                 openInbox: { [weak self] asksOnly in
                     Task { @MainActor in self?.onOpenInbox?(asksOnly) }
+                },
+                resolve: { [weak self] keys, done in
+                    Task { @MainActor in
+                        done(self?.queue.resolve(keys: keys) ?? 0)
+                    }
                 }
             ))
             // Always probed, regardless of the toggle: Settings gates the
@@ -116,8 +131,47 @@ final class AppRuntime {
 
     func stop() {
         deliveryTask?.cancel()
+        resolutionMonitor?.stop()
         windowSystem.stop()
         Task { [repository] in await repository.shutdown() }
+    }
+
+    /// Everything that happens to the ledge besides drawing it: mirror it to
+    /// disk, keep the resolvers armed, and hang last session's fins back up.
+    ///
+    /// All three ride the one non-compositor callback, and it is set *before*
+    /// the restore, so the first list — already pruned of anything stale —
+    /// is written straight back and its resolvers armed immediately.
+    ///
+    /// No database means no ledge across restarts: with history off nothing
+    /// in this app writes to disk, and quietly making an exception for asks
+    /// would be trill keeping notification content the user switched off.
+    /// That setting is live (`applyPersistence`), so the mirror asks for the
+    /// database each time rather than holding one. Resolvers still run either
+    /// way — they need no history, only a fin.
+    private func wireLedge() {
+        let monitor = ResolutionMonitor(
+            rules: { [rulesWatcher] in rulesWatcher.current() },
+            resolve: { [weak self] key in _ = self?.queue.resolve(keys: [key]) }
+        )
+        resolutionMonitor = monitor
+
+        // `self.database`, read at call time rather than captured: history
+        // can be switched off (or back on) while trill runs, and a captured
+        // handle would keep mirroring the ledge into a database the user just
+        // turned off.
+        queue.onParkedForResolution = { [weak self] entries in
+            self?.database?.saveLedge(entries.map {
+                AppDatabase.StoredParked(event: $0.event, coalescedCount: $0.coalescedCount)
+            })
+            monitor.reconcile(entries)
+        }
+
+        guard let database else { return }
+        queue.restoreParked(
+            database.parkedLedge(maxAge: BannerQueue.parkedLifetime)
+                .map { ($0.event, $0.coalescedCount) }
+        )
     }
 
     /// macOS revokes a Full Disk Access grant on its own when it can no

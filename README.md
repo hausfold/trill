@@ -41,6 +41,12 @@ notifications experimentally tomorrow.
   count; hover it and the card opens into the list of what folded in — as
   many lines as the screen has room for, each one a button for its own
   event.
+- **a question waits, and can answer itself** — an `ask` banner nobody
+  catches parks as a slim fin on the right screen edge instead of vanishing,
+  and stays there across restarts. It leaves when you answer it, when
+  something else says it's answered (`trill resolve`, or a merged PR the
+  GitHub bridge recognizes), or when a check *you declared in your rules
+  file* finally says yes.
 - **rules, not settings mazes** — `~/.config/trill/rules.json`: route a
   source to banner / inbox / digest / drop; quiet hours; critical punches
   through. Hot-reloaded on save. The app's own switches are a file too
@@ -82,6 +88,10 @@ echo '{"title":"Backup complete","body":"3.8 GB copied","source":"backups","urge
 
 trill ping   # is the daemon up?
 
+trill send --title "review me" --kind ask --key pr-142 \
+           --until pr-merged:142,hausfold/trill   # clears itself when it merges
+trill resolve pr-142    # …or say so yourself, from anywhere, any time later
+
 trill doctor            # which listed apps does macOS still notify for itself?
 trill doctor --all      # …check every app on the Mac, not just the listed ones
 trill doctor --notify   # …and put the findings on screen, click to be walked through
@@ -95,7 +105,19 @@ trill doctor --notify   # …and put the findings on screen, click to be walked 
     { "match": { "source": "slack" }, "delivery": "digest", "digest": "work" },
     { "match": { "source": "ads" }, "delivery": "drop" }
   ],
-  "quietHours": { "startMinute": 1320, "endMinute": 420 }
+  "quietHours": { "startMinute": 1320, "endMinute": 420 },
+
+  // What `--until NAME` may name. The command lives here, in your file —
+  // never on the wire, because anything local can talk to trill's socket.
+  // argv, not a command line: there is no shell in this path.
+  "resolvers": {
+    "pr-merged": {
+      "run": ["gh", "pr", "view", "$1", "--repo", "$2", "--json", "state", "-q", ".state"],
+      "resolveWhen": { "stdout": "MERGED" },
+      "every": "2m", "timeout": "10s", "giveUpAfter": "12h"
+    },
+    "endpoint-up": { "get": "https://$1/healthz", "resolveWhen": { "status": 200 } }
+  }
 }
 ```
 
