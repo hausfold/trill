@@ -92,6 +92,12 @@ struct FocusMode: Equatable, Sendable {
 /// **not** a TCC-protected group container like the notification-settings
 /// store. If that ever changes, the read fails and this reports `unknown`,
 /// which is the whole reason that case exists.
+///
+/// Measured on macOS 26.6, 2026-08-25, in both states: with nothing asserted
+/// the `storeAssertionRecords` key is *absent* rather than empty (hence the
+/// optional walk below, and hence "no records" being a fact and not a
+/// failure), and with Do Not Disturb on it carries one record identifying
+/// `com.apple.donotdisturb.mode.default`, within a second of the toggle.
 enum FocusStore {
     static var directory: URL {
         FileManager.default.homeDirectoryForCurrentUser

@@ -27,8 +27,9 @@ final class FocusRulesTests: XCTestCase {
 
     // MARK: - Reading the store
 
-    /// The everyday reading, in the shape this Mac's file actually has: no
-    /// `storeAssertionRecords` key at all, and a long history of
+    /// The everyday reading, in the shape the file actually has with nothing
+    /// asserted (measured, same session): the `storeAssertionRecords` key is
+    /// **absent** rather than empty, plus a long history of
     /// `storeInvalidationRecords` from every Focus ever ended. A reader that
     /// walked the second list would report a Focus from March.
     func testNoActiveAssertionIsOffAndNotUnknown() {
@@ -43,6 +44,10 @@ final class FocusRulesTests: XCTestCase {
         XCTAssertEqual(FocusStore.evaluate(assertions: json, modeConfigurations: nil), .off)
     }
 
+    /// The shape a live Focus actually writes, measured on macOS 26.6 on
+    /// 2026-08-25 with Do Not Disturb on: one record under
+    /// `storeAssertionRecords`, identified by
+    /// `assertionDetails.assertionDetailsModeIdentifier`.
     func testAnActiveAssertionIsTheFocusThatIsOn() {
         let json = Data("""
         {"data":[{"storeAssertionRecords":[

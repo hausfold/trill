@@ -484,9 +484,15 @@ Focus at all is `focusAware` in `config.json`, beside shyness.
 
 **Where the state lives.** `~/Library/DoNotDisturb/DB/Assertions.json`, plain
 JSON in the user's own home — not a TCC-protected container like the
-notification-settings store, and confirmed live on macOS 26.6 (the file takes
-a Control Center toggle within a second). Two things about its shape are
-load-bearing:
+notification-settings store. Measured on macOS 26.6, 2026-08-25, both ways:
+with nothing asserted the `storeAssertionRecords` key is *absent* (not empty),
+and with Do Not Disturb on it holds one record whose
+`assertionDetails.assertionDetailsModeIdentifier` is
+`com.apple.donotdisturb.mode.default`, written within a second of the Control
+Center toggle. `ModeConfigurations.json` names the same four identifiers this
+Mac has — Do Not Disturb, Work, Personal, Reduce Interruptions — so the label
+path is real and not a fallback nobody exercises. Two things about the shape
+are load-bearing:
 
 - **Only `storeAssertionRecords` says a Focus is on.** Ending one does not
   delete its record so much as move it to `storeInvalidationRecords`, which
