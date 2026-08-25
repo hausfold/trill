@@ -47,7 +47,18 @@ final class LedgePanelController {
             onAction: onAction
         ))
         panel.contentView = host
-        panel.orderFrontRegardless()
+        // A fresh fin emerges from behind the screen edge — it starts fully
+        // off-screen and slides its own width into view, the ledge-side echo
+        // of the banner drifting edgeward as it parked. No fade needed: the
+        // edge itself is the curtain. Topology rebuilds replay this, which
+        // reads as the ledge re-presenting itself.
+        if !PanelMotion.reduceMotion, !entry.expanded {
+            panel.setFrame(frame.offsetBy(dx: frame.width, dy: 0), display: false)
+            panel.orderFrontRegardless()
+            PanelMotion.move(panel, to: frame)
+        } else {
+            panel.orderFrontRegardless()
+        }
     }
 
     func update(
@@ -65,14 +76,39 @@ final class LedgePanelController {
             onActivate: onActivate,
             onAction: onAction
         )
-        panel.setFrame(frame, display: true)
         // A shadow under the 8pt fin reads as grime on the screen edge; the
         // slid-out card gets the same complete shadow every banner carries.
         panel.hasShadow = entry.expanded
-        panel.invalidateShadow()
+        // The fin↔card swap (a size change) lands the window instantly:
+        // animating the frame under the pointer rebuilds the tracking area
+        // every tick, which fires enter/exit pairs — the queue expands and
+        // collapses in a loop and the fin flickers instead of opening. The
+        // slide out of the edge is the *view's* job (`LedgeItemView`'s
+        // trailing transition), inside a panel already at its final frame.
+        // Only same-size slot moves — which no pointer is riding — animate
+        // at the window layer.
+        if frame.size == panel.frame.size {
+            PanelMotion.move(panel, to: frame) { [weak panel] in
+                panel?.invalidateShadow()
+            }
+        } else {
+            panel.setFrame(frame, display: true)
+            panel.invalidateShadow()
+            // Reshape the shadow again once the card's slide has landed.
+            Task { [weak panel] in
+                try? await Task.sleep(for: .milliseconds(250))
+                panel?.invalidateShadow()
+            }
+        }
     }
 
-    func close() {
-        panel.orderOut(nil)
+    /// `animated` fades the fin back into the edge it came from — used when
+    /// its ask is answered or evicted. Teardown paths stay instant.
+    func close(animated: Bool = false) {
+        if animated {
+            PanelMotion.depart(panel, dx: 12)
+        } else {
+            panel.orderOut(nil)
+        }
     }
 }

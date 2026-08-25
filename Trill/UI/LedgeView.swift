@@ -23,6 +23,14 @@ struct LedgeItemView: View {
                 // maxFoldRows 0: the slid-out card is the face and its
                 // pills. A parked ask's folded thread-mates keep their
                 // count pill; reading the list is the inbox's job.
+                //
+                // No transition here on purpose: the reveal the fin↔card
+                // swap plays is `BannerView`'s own arrival fade (a fresh
+                // card fades in with its 8pt settle), inside a panel that
+                // jumped to its final frame. Both window-frame animation and
+                // a trailing-edge slide were tried and felt worse — the
+                // first thrashes hover tracking, the second stutters against
+                // the rootView swaps hovering produces.
                 BannerView(
                     entry: entry,
                     maxFoldRows: 0,
