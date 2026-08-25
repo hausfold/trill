@@ -56,8 +56,9 @@ enum GitHubWebhookMapper {
     }
 
     /// The event→kind heart of the bridge: a review request is an `ask` (it
-    /// parks on the Ledge), a red run is a `fault`, a green one is `done`, a
-    /// mention is `chat`. Everything else is nil — the bridge banners what the
+    /// parks on the Ledge), so is a review asking for changes; a red run is a
+    /// `fault`, a green one — or an approval — is `done`, a mention is `chat`.
+    /// Everything else is nil — the bridge banners what the
     /// kinds can say honestly and stays silent otherwise.
     static func event(name: String, deliveryID: String, payload: Data, login: String) -> NotificationEvent? {
         switch name {
@@ -67,6 +68,8 @@ enum GitHubWebhookMapper {
             return workflowRunEvent(deliveryID: deliveryID, payload: payload)
         case "pull_request":
             return pullRequestEvent(deliveryID: deliveryID, payload: payload, login: login)
+        case "pull_request_review":
+            return pullRequestReviewEvent(deliveryID: deliveryID, payload: payload)
         case "issue_comment", "pull_request_review_comment":
             return mentionEvent(deliveryID: deliveryID, payload: payload, login: login)
         default:
@@ -166,6 +169,45 @@ enum GitHubWebhookMapper {
         )
     }
 
+    /// A submitted review is the answer to the `ask` that started it: approved
+    /// is `done`, changes requested is a fresh `ask`, a comment-only review is
+    /// `chat`. Like the PR lifecycle above, deliberately NOT filtered by actor
+    /// — the PRs here are opened by agent lanes running as the user, so a
+    /// review landing on "your own" PR is precisely the news worth a banner.
+    private static func pullRequestReviewEvent(deliveryID: String, payload: Data) -> NotificationEvent? {
+        guard let p = try? decoder.decode(PullRequestReviewPayload.self, from: payload),
+              // edited/dismissed are bookkeeping on a review you already heard.
+              p.action == "submitted" else { return nil }
+
+        let kind: NotificationEvent.Kind
+        let verdict: String
+        switch p.review.state?.lowercased() {
+        case "approved":
+            (kind, verdict) = (.done, "Approved")
+        case "changes_requested":
+            (kind, verdict) = (.ask, "Changes requested")
+        case "commented":
+            (kind, verdict) = (.chat, "Reviewed")
+        default:
+            // pending never ships over the wire, and a state we don't know is
+            // a guess — the bridge stays silent rather than mislabel a verdict.
+            return nil
+        }
+
+        let by = p.review.user.map { " by \($0.login)" } ?? ""
+        return NotificationEvent(
+            id: id(deliveryID),
+            source: "github",
+            title: p.pullRequest.title,
+            subtitle: "\(verdict)\(by) · \(p.repository.fullName)#\(p.pullRequest.number)",
+            body: p.review.body,
+            thread: "gh:\(p.repository.fullName)#\(p.pullRequest.number)",
+            kind: kind,
+            actions: [openAction(label: "Open review", url: p.review.htmlUrl ?? p.pullRequest.htmlUrl)],
+            metadata: metadata(event: "pull_request_review", repo: p.repository.fullName)
+        )
+    }
+
     private static func mentionEvent(deliveryID: String, payload: Data, login: String) -> NotificationEvent? {
         guard let p = try? decoder.decode(CommentPayload.self, from: payload),
               p.action == "created",
@@ -257,6 +299,28 @@ private struct PullRequestPayload: Decodable {
     var action: String?
     var pullRequest: PR
     var requestedReviewer: User?
+    var repository: Repository
+}
+
+private struct PullRequestReviewPayload: Decodable {
+    struct Review: Decodable {
+        /// "approved" / "changes_requested" / "commented" — lowercase on the
+        /// webhook, unlike the REST API's shouting variant.
+        var state: String?
+        var body: String?
+        var htmlUrl: String?
+        var user: User?
+    }
+    struct PR: Decodable {
+        var number: Int
+        var title: String
+        var htmlUrl: String
+    }
+    struct User: Decodable { var login: String }
+    struct Repository: Decodable { var fullName: String }
+    var action: String?
+    var review: Review
+    var pullRequest: PR
     var repository: Repository
 }
 

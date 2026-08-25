@@ -184,6 +184,71 @@ final class GitHubBridgeTests: XCTestCase {
         ), "every push to a PR branch fires synchronize — churn, not news")
     }
 
+    // MARK: - pull_request_review mapping
+
+    private func review(state: String, action: String = "submitted", reviewer: String? = "collaborator") -> Data {
+        let userJSON = reviewer.map { #","user":{"login":"\#($0)"}"# } ?? ""
+        return Data("""
+        {"action":"\(action)",
+         "review":{"state":"\(state)","body":"ship it","html_url":"https://github.com/hausfold/trill/pull/14#pullrequestreview-1"\(userJSON)},
+         "pull_request":{"number":14,"title":"github: map reviews","html_url":"https://github.com/hausfold/trill/pull/14"},
+         "repository":{"full_name":"hausfold/trill"}}
+        """.utf8)
+    }
+
+    func testApprovalIsDoneEvenOnYourOwnPR() throws {
+        let event = try XCTUnwrap(GitHubWebhookMapper.event(
+            name: "pull_request_review", deliveryID: "d21",
+            payload: review(state: "approved"), login: "julienmartel"
+        ))
+        XCTAssertEqual(event.kind, .done)
+        XCTAssertEqual(event.title, "github: map reviews")
+        XCTAssertEqual(event.subtitle, "Approved by collaborator · hausfold/trill#14")
+        XCTAssertEqual(event.thread, "gh:hausfold/trill#14", "reviews stack on the PR's own thread")
+        XCTAssertEqual(event.actions.first?.target, "https://github.com/hausfold/trill/pull/14#pullrequestreview-1")
+    }
+
+    func testOwnReviewStillBanners() throws {
+        let event = try XCTUnwrap(GitHubWebhookMapper.event(
+            name: "pull_request_review", deliveryID: "d22",
+            payload: review(state: "approved", reviewer: "JulienMartel"), login: "julienmartel"
+        ))
+        XCTAssertEqual(event.kind, .done, "agent lanes run as me — a review on \"my own\" PR is the news, not noise")
+        XCTAssertEqual(event.subtitle, "Approved by JulienMartel · hausfold/trill#14")
+    }
+
+    func testChangesRequestedIsAnAskAndCommentOnlyIsAChat() throws {
+        let changes = try XCTUnwrap(GitHubWebhookMapper.event(
+            name: "pull_request_review", deliveryID: "d23",
+            payload: review(state: "changes_requested"), login: "julienmartel"
+        ))
+        XCTAssertEqual(changes.kind, .ask, "changes requested parks on the Ledge — it's a fresh ask")
+        XCTAssertEqual(changes.subtitle, "Changes requested by collaborator · hausfold/trill#14")
+        XCTAssertEqual(changes.body, "ship it")
+
+        let commented = try XCTUnwrap(GitHubWebhookMapper.event(
+            name: "pull_request_review", deliveryID: "d24",
+            payload: review(state: "commented"), login: "julienmartel"
+        ))
+        XCTAssertEqual(commented.kind, .chat)
+        XCTAssertEqual(commented.subtitle, "Reviewed by collaborator · hausfold/trill#14")
+    }
+
+    func testEditedDismissedAndUnknownReviewStatesStaySilent() {
+        XCTAssertNil(GitHubWebhookMapper.event(
+            name: "pull_request_review", deliveryID: "d25",
+            payload: review(state: "approved", action: "edited"), login: "julienmartel"
+        ), "editing a review you already heard is bookkeeping")
+        XCTAssertNil(GitHubWebhookMapper.event(
+            name: "pull_request_review", deliveryID: "d26",
+            payload: review(state: "approved", action: "dismissed"), login: "julienmartel"
+        ))
+        XCTAssertNil(GitHubWebhookMapper.event(
+            name: "pull_request_review", deliveryID: "d27",
+            payload: review(state: "pending"), login: "julienmartel"
+        ), "a state we don't know is a guess — stay silent rather than mislabel a verdict")
+    }
+
     // MARK: - mention mapping
 
     private func comment(body: String, author: String) -> Data {

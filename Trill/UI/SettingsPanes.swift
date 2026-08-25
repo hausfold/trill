@@ -144,7 +144,7 @@ struct ProvidersPane: View {
                     symbol: "point.3.connected.trianglepath.dotted",
                     tint: .blue,
                     title: "GitHub Bridge",
-                    subtitle: "Webhook deliveries become banners: a review request parks as an ask, a red run is a fault, a mention is a chat. trill listens on localhost behind your tunnel and never writes GitHub state."
+                    subtitle: "Webhook deliveries become banners: a review request parks as an ask, an approval is done, a red run is a fault, a mention is a chat. trill listens on localhost behind your tunnel and never writes GitHub state."
                 ) {
                     Toggle("GitHub Bridge", isOn: $settings.githubBridgeEnabled)
                         .labelsHidden()
