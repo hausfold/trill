@@ -6,7 +6,7 @@ import Foundation
 ///              [--symbol checkmark.circle] [--thread deploys]
 ///              [--kind ask|fault|chat|pulse|done|note]
 ///              [--urgency low|normal|critical] [--redact] [--url https://…]
-///              [--action "Label=https://…"]…
+///              [--action "Label=https://…"] [--action "Label=lane:repo/name"]…
 ///   echo '{"title":"Backup complete"}' | trill send --json
 ///   trill ping
 ///
@@ -104,23 +104,33 @@ enum TrillCLI {
                 guard let raw = value() else { return .failure("--url wants a value") }
                 actions.append(.init(id: "url", label: "Open", kind: .openURL, target: raw))
             case "--action":
-                // "Label=target": a web/file URL, or app:BUNDLE.ID to
-                // activate an app. The label is what the pill says, so the
-                // `=` split takes the *first* one — labels keep their own.
+                // "Label=target": a web/file URL, app:BUNDLE.ID to activate
+                // an app, or lane:REPO/LANE to go to a holt lane's window.
+                // The label is what the pill says, so the `=` split takes the
+                // *first* one — labels keep their own.
                 guard let raw = value(), let eq = raw.firstIndex(of: "="),
                       eq != raw.startIndex, raw.index(after: eq) != raw.endIndex
                 else {
-                    return .failure("--action wants \"Label=https://…\" or \"Label=app:bundle.id\"")
+                    return .failure("--action wants \"Label=https://…\", \"Label=app:bundle.id\" or \"Label=lane:repo/name\"")
                 }
                 let label = String(raw[..<eq])
                 let target = String(raw[raw.index(after: eq)...])
                 let action: NotificationEvent.Action
                 if target.hasPrefix("app:") {
                     action = .init(id: "action-\(actions.count)", label: label, kind: .openApp, target: String(target.dropFirst(4)))
+                } else if target.hasPrefix("lane:") {
+                    let lane = String(target.dropFirst(5))
+                    // Refused here as well as in the router, so a typo is a
+                    // non-zero exit at the call site rather than a banner
+                    // whose button silently does nothing.
+                    guard NotificationEvent.Action.focusesLane(lane) else {
+                        return .failure("--action lane: wants a lane name (letters, digits, . _ - /)")
+                    }
+                    action = .init(id: "action-\(actions.count)", label: label, kind: .focusLane, target: lane)
                 } else if NotificationEvent.Action.opensAsURL(target) {
                     action = .init(id: "action-\(actions.count)", label: label, kind: .openURL, target: target)
                 } else {
-                    return .failure("--action target must be an http(s)/file URL or app:bundle.id")
+                    return .failure("--action target must be an http(s)/file URL, app:bundle.id or lane:repo/name")
                 }
                 actions.append(action)
             default:
@@ -346,6 +356,7 @@ enum TrillCLI {
                  [--kind ask|fault|chat|pulse|done|note]
                  [--urgency low|normal|critical] [--redact] [--url URL]
                  [--action "Label=https://…"] [--action "Label=app:bundle.id"]
+                 [--action "Label=lane:repo/name"]
       trill send --json          # full NotificationEvent JSON on stdin
       trill ping                 # is the daemon up?
       trill doctor [--all] [--notify] [--json] [BUNDLE_ID …]
@@ -365,6 +376,9 @@ enum TrillCLI {
 
     --action adds a button (up to 3 drawn; the first is also what clicking
     the banner body does). --url is shorthand for --action "Open=URL".
+    A lane: target goes to the window running that holt lane — it runs
+    `holt focus <name>` and nothing else, and does nothing where holt
+    isn't installed.
 
     doctor asks macOS which apps still draw their own banners or play their
     own sounds — the ones you'd otherwise see twice. With no arguments it

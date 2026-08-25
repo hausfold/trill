@@ -48,8 +48,9 @@ nothing else does. `--urgency` is the loudness —
 be low, a note can be critical. `--thread <name>` groups related banners.
 `--source <slug>` is what the user's rules file matches on — give a
 long-running job its own source so they can route it later. `--action
-"Label=https://…"` (or `Label=app:bundle.id`, repeatable) adds buttons; the
-first one is also what clicking the banner body does.
+"Label=https://…"` (or `Label=app:bundle.id`, or `Label=lane:repo/name` to go
+to that holt lane's terminal window, repeatable) adds buttons; the first one
+is also what clicking the banner body does.
 
 ## Exit codes — check these, they mean different recoveries
 

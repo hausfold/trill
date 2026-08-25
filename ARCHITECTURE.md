@@ -46,7 +46,7 @@ GitHub ──webhook──► tunnel ──► GitHubWebhookProvider
       BannerWindowSystem          InboxView
    NSPanel per banner · all Spaces · fullscreen aux
               ▼
-        ActionRouter ── open app · open URL · (hooks, M2)
+        ActionRouter ── open app · open URL · focus lane · (hooks, M2)
 ```
 
 ## The hard cases
