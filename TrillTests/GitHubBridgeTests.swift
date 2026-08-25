@@ -141,6 +141,49 @@ final class GitHubBridgeTests: XCTestCase {
         ), "a team review request names no reviewer — not mine to banner")
     }
 
+    // MARK: - PR lifecycle mapping
+
+    private func prLifecycle(action: String, merged: Bool = false) -> Data {
+        Data("""
+        {"action":"\(action)",
+         "pull_request":{"number":13,"title":"github: more lifecycle","html_url":"https://github.com/hausfold/trill/pull/13","merged":\(merged)},
+         "repository":{"full_name":"hausfold/trill"}}
+        """.utf8)
+    }
+
+    func testPROpenedIsANote() throws {
+        let event = try XCTUnwrap(GitHubWebhookMapper.event(
+            name: "pull_request", deliveryID: "d17",
+            payload: prLifecycle(action: "opened"), login: "julienmartel"
+        ))
+        XCTAssertEqual(event.kind, .note)
+        XCTAssertEqual(event.subtitle, "PR opened · hausfold/trill#13")
+        XCTAssertEqual(event.thread, "gh:hausfold/trill#13")
+    }
+
+    func testMergedPRIsDoneAndUnmergedCloseIsANote() throws {
+        let merged = try XCTUnwrap(GitHubWebhookMapper.event(
+            name: "pull_request", deliveryID: "d18",
+            payload: prLifecycle(action: "closed", merged: true), login: "julienmartel"
+        ))
+        XCTAssertEqual(merged.kind, .done)
+        XCTAssertEqual(merged.subtitle, "Merged · hausfold/trill#13")
+
+        let closed = try XCTUnwrap(GitHubWebhookMapper.event(
+            name: "pull_request", deliveryID: "d19",
+            payload: prLifecycle(action: "closed", merged: false), login: "julienmartel"
+        ))
+        XCTAssertEqual(closed.kind, .note)
+        XCTAssertEqual(closed.subtitle, "Closed without merging · hausfold/trill#13")
+    }
+
+    func testPRChurnStaysSilent() {
+        XCTAssertNil(GitHubWebhookMapper.event(
+            name: "pull_request", deliveryID: "d20",
+            payload: prLifecycle(action: "synchronize"), login: "julienmartel"
+        ), "every push to a PR branch fires synchronize — churn, not news")
+    }
+
     // MARK: - mention mapping
 
     private func comment(body: String, author: String) -> Data {

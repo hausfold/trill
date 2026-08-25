@@ -73,9 +73,12 @@ Notification Center with perfect compatibility."
   polling because latency is the point.
 - Mapping is the product: `review_requested` for the configured login →
   `ask` (parks on the Ledge), a red `workflow_run` → `fault`, green →
-  `done`, a run gated on approval → `ask`, an `@login` mention → `chat`.
-  Everything else maps to nothing — the bridge banners only what the kinds
-  can say honestly.
+  `done`, a run gated on approval → `ask`, an `@login` mention → `chat`,
+  and the PR lifecycle — opened/reopened → `note`, merged → `done`, closed
+  unmerged → `note` — unfiltered by actor, because agent lanes open PRs as
+  the user and that's the signal. Everything else (synchronize, labels,
+  edits) maps to nothing — the bridge banners only what the kinds can say
+  honestly.
 - Auth is the webhook's HMAC secret and nothing else: trill holds no GitHub
   token, **never writes GitHub state**, and 401s any delivery that doesn't
   verify. Config is one owner-read file, `~/.config/trill/github.json`

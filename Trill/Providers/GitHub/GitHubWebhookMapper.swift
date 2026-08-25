@@ -66,7 +66,7 @@ enum GitHubWebhookMapper {
         case "workflow_run":
             return workflowRunEvent(deliveryID: deliveryID, payload: payload)
         case "pull_request":
-            return reviewRequestEvent(deliveryID: deliveryID, payload: payload, login: login)
+            return pullRequestEvent(deliveryID: deliveryID, payload: payload, login: login)
         case "issue_comment", "pull_request_review_comment":
             return mentionEvent(deliveryID: deliveryID, payload: payload, login: login)
         default:
@@ -127,20 +127,40 @@ enum GitHubWebhookMapper {
         )
     }
 
-    private static func reviewRequestEvent(deliveryID: String, payload: Data, login: String) -> NotificationEvent? {
-        guard let p = try? decoder.decode(PullRequestPayload.self, from: payload),
-              p.action == "review_requested",
-              // Requests aimed at a teammate (or a team) are theirs to hear.
-              p.requestedReviewer?.login.caseInsensitiveCompare(login) == .orderedSame
-        else { return nil }
+    /// The PR lifecycle. Opened/reopened/closed are deliberately NOT filtered
+    /// by actor: in this house PRs are opened by agent lanes running as the
+    /// user, so "your own" PR opening is exactly the signal worth a banner.
+    private static func pullRequestEvent(deliveryID: String, payload: Data, login: String) -> NotificationEvent? {
+        guard let p = try? decoder.decode(PullRequestPayload.self, from: payload) else { return nil }
+
+        let kind: NotificationEvent.Kind
+        let verdict: String
+        switch p.action {
+        case "review_requested":
+            // Requests aimed at a teammate (or a team) are theirs to hear.
+            guard p.requestedReviewer?.login.caseInsensitiveCompare(login) == .orderedSame
+            else { return nil }
+            (kind, verdict) = (.ask, "Review requested")
+        case "opened":
+            (kind, verdict) = (.note, "PR opened")
+        case "reopened":
+            (kind, verdict) = (.note, "PR reopened")
+        case "closed" where p.pullRequest.merged == true:
+            (kind, verdict) = (.done, "Merged")
+        case "closed":
+            (kind, verdict) = (.note, "Closed without merging")
+        default:
+            // synchronize / labeled / edited / assigned …: churn, not news.
+            return nil
+        }
 
         return NotificationEvent(
             id: id(deliveryID),
             source: "github",
             title: p.pullRequest.title,
-            subtitle: "Review requested · \(p.repository.fullName)#\(p.pullRequest.number)",
+            subtitle: "\(verdict) · \(p.repository.fullName)#\(p.pullRequest.number)",
             thread: "gh:\(p.repository.fullName)#\(p.pullRequest.number)",
-            kind: .ask,
+            kind: kind,
             actions: [openAction(label: "Open PR", url: p.pullRequest.htmlUrl)],
             metadata: metadata(event: "pull_request", repo: p.repository.fullName)
         )
@@ -229,6 +249,8 @@ private struct PullRequestPayload: Decodable {
         var number: Int
         var title: String
         var htmlUrl: String
+        /// Only present-and-true on a `closed` action that merged.
+        var merged: Bool?
     }
     struct User: Decodable { var login: String }
     struct Repository: Decodable { var fullName: String }
