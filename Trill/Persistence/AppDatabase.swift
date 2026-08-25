@@ -46,7 +46,8 @@ final class AppDatabase: @unchecked Sendable {
                 timestamp REAL NOT NULL,
                 decision  TEXT NOT NULL,
                 payload   TEXT NOT NULL,
-                read_at   REAL
+                read_at   REAL,
+                kind      TEXT
             )
             """)
         // Databases written before the inbox grew unread state have every
@@ -54,6 +55,13 @@ final class AppDatabase: @unchecked Sendable {
         // rows are the user's history, and NULL is exactly the right answer
         // for a row nobody could have marked read yet.
         addColumn("read_at REAL", to: "events", ifMissing: "read_at")
+        // The kind, lifted out of the payload so a catch-up card can be one
+        // `GROUP BY` instead of a JSON decode per row. That matters at
+        // exactly the moment it runs: someone just unlocked their Mac after a
+        // night of traffic, and the count has to be there before the card is.
+        // Old rows have no kind and are counted as notes — which is what an
+        // event that never named one decodes as anyway.
+        addColumn("kind TEXT", to: "events", ifMissing: "kind")
         exec("CREATE INDEX IF NOT EXISTS events_by_time ON events (timestamp DESC)")
         exec("CREATE INDEX IF NOT EXISTS events_by_source ON events (source, timestamp DESC)")
         // The ledge, mirrored. Its own table and not a column on `events`
@@ -94,11 +102,25 @@ final class AppDatabase: @unchecked Sendable {
     /// unread. That is what makes the inbox's unread count worth reading: it
     /// counts exactly the things you would otherwise never learn about,
     /// rather than re-reporting every banner that already interrupted you.
-    func insert(_ event: NotificationEvent, decision: DeliveryDecision, now: Date = .now) {
+    ///
+    /// `seen` is the other half of that sentence, and the reason it takes a
+    /// parameter rather than reading the decision alone: **a banner drawn at
+    /// a locked screen was never put in front of anybody.** It played to an
+    /// empty room, and calling it read is how a night's worth of traffic
+    /// disappears from both the unread count and the catch-up card. The
+    /// caller answers "was anyone here" (`PresenceFlag`); this only records
+    /// it.
+    func insert(
+        _ event: NotificationEvent,
+        decision: DeliveryDecision,
+        seen: Bool = true,
+        now: Date = .now
+    ) {
         guard let payload = try? String(data: JSONEncoder.trill.encode(event), encoding: .utf8) ?? ""
         else { return }
         let decisionLabel = Self.label(for: decision)
-        let readAt: Double? = decision == .banner ? now.timeIntervalSince1970 : nil
+        let readAt: Double? = decision.isBanner && seen ? now.timeIntervalSince1970 : nil
+        let kind = event.kind.rawValue
 
         queue.async { [self] in
             guard let db else { return }
@@ -107,8 +129,8 @@ final class AppDatabase: @unchecked Sendable {
             guard sqlite3_prepare_v2(
                 db,
                 """
-                INSERT OR IGNORE INTO events (id, source, timestamp, decision, payload, read_at)
-                VALUES (?,?,?,?,?,?)
+                INSERT OR IGNORE INTO events (id, source, timestamp, decision, payload, read_at, kind)
+                VALUES (?,?,?,?,?,?,?)
                 """,
                 -1, &statement, nil
             ) == SQLITE_OK else { return }
@@ -122,6 +144,7 @@ final class AppDatabase: @unchecked Sendable {
             } else {
                 sqlite3_bind_null(statement, 6)
             }
+            sqlite3_bind_text(statement, 7, kind, -1, SQLITE_TRANSIENT)
             if sqlite3_step(statement) != SQLITE_DONE {
                 Self.log.error("insert failed for \(event.id, privacy: .public)")
             }
@@ -275,6 +298,75 @@ final class AppDatabase: @unchecked Sendable {
             sqlite3_bind_text(statement, 1, "digest:\(name)", -1, SQLITE_TRANSIENT)
             sqlite3_bind_double(statement, 2, since.timeIntervalSince1970)
             sqlite3_bind_int(statement, 3, Int32(max(1, limit)))
+            return Self.rows(from: statement)
+        }
+    }
+
+    /// What landed since `since` and never made it in front of the user,
+    /// counted by kind — the whole of a catch-up card's arithmetic.
+    ///
+    /// A `GROUP BY` over a column rather than a fetch-and-decode, because
+    /// this is the one query in the app whose input size is "however much
+    /// arrived overnight". It returns six numbers at most however loud the
+    /// night was, so the card is a constant-cost read of an unbounded window
+    /// — and it can never quietly truncate the way a `LIMIT`ed fetch would,
+    /// which for a card whose entire content is a count would be a wrong
+    /// number rather than a short list.
+    ///
+    /// Unread is the filter, not the timestamp alone: a banner drawn while
+    /// somebody was sitting here is not something they missed, even if it
+    /// landed inside the window (see `insert`).
+    func missedCounts(since: Date) -> [NotificationEvent.Kind: Int] {
+        queue.sync { [self] in
+            guard let db else { return [:] }
+            var statement: OpaquePointer?
+            defer { sqlite3_finalize(statement) }
+            guard sqlite3_prepare_v2(
+                db,
+                """
+                SELECT kind, COUNT(*) FROM events
+                WHERE timestamp >= ? AND read_at IS NULL
+                GROUP BY kind
+                """,
+                -1, &statement, nil
+            ) == SQLITE_OK else { return [:] }
+            sqlite3_bind_double(statement, 1, since.timeIntervalSince1970)
+
+            var counts: [NotificationEvent.Kind: Int] = [:]
+            while sqlite3_step(statement) == SQLITE_ROW {
+                // A row with no kind predates the column; a row with a kind
+                // this build has never heard of came from a newer one. Both
+                // count as notes, which is what `NotificationEvent` decodes
+                // an unnamed kind as — the card would rather say "14 notes"
+                // than drop fourteen things out of its own total.
+                let raw = sqlite3_column_text(statement, 0).map { String(cString: $0) }
+                let kind = raw.flatMap(NotificationEvent.Kind.init(rawValue:)) ?? .note
+                counts[kind, default: 0] += Int(sqlite3_column_int(statement, 1))
+            }
+            return counts
+        }
+    }
+
+    /// Everything stored since an instant — what a catch-up card's click
+    /// opens. Same shape as `digest(named:since:)`: the card is a summary of
+    /// rows that are already here, so its click is a query and not a second
+    /// store.
+    func events(since: Date, limit: Int = 500) -> [InboxEntry] {
+        queue.sync { [self] in
+            guard let db else { return [] }
+            var statement: OpaquePointer?
+            defer { sqlite3_finalize(statement) }
+            guard sqlite3_prepare_v2(
+                db,
+                """
+                SELECT payload, decision, read_at FROM events
+                WHERE timestamp >= ?
+                ORDER BY timestamp DESC LIMIT ?
+                """,
+                -1, &statement, nil
+            ) == SQLITE_OK else { return [] }
+            sqlite3_bind_double(statement, 1, since.timeIntervalSince1970)
+            sqlite3_bind_int(statement, 2, Int32(max(1, limit)))
             return Self.rows(from: statement)
         }
     }

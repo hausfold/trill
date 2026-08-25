@@ -60,6 +60,16 @@ final class AppSettings: ObservableObject {
         }
     }
 
+    /// One card on the way back in, counting what landed while nobody was
+    /// here. The counting is `CatchUpReporter`'s; this is only whether it
+    /// draws.
+    @Published var catchUpCard: Bool {
+        didSet {
+            guard !isApplyingFileChange, catchUpCard != oldValue else { return }
+            commit(\.catchUpCard, catchUpCard, revert: { self.catchUpCard = oldValue })
+        }
+    }
+
     @Published var calendarEnabled: Bool {
         didSet {
             guard !isApplyingFileChange, calendarEnabled != oldValue else { return }
@@ -135,6 +145,7 @@ final class AppSettings: ObservableObject {
         systemMirrorEnabled = config.systemMirrorEnabled
         githubBridgeEnabled = config.githubBridgeEnabled
         shyWhenWatched = config.shyWhenWatched
+        catchUpCard = config.catchUpCard
         calendarEnabled = config.calendarEnabled
         calendarLeadMinutes = config.calendarLeadMinutes
         reopenSettingsOnLaunch = defaults.bool(forKey: Keys.reopenSettingsOnLaunch)
@@ -161,6 +172,7 @@ final class AppSettings: ObservableObject {
         systemMirrorEnabled = config.systemMirrorEnabled
         githubBridgeEnabled = config.githubBridgeEnabled
         shyWhenWatched = config.shyWhenWatched
+        catchUpCard = config.catchUpCard
         calendarEnabled = config.calendarEnabled
         calendarLeadMinutes = config.calendarLeadMinutes
         writeError = nil

@@ -125,14 +125,33 @@ never into a broken pipeline. Corollaries:
   `kCGWindowName` needs Screen Recording permission, and trill will not ask
   for the screen in order to be shy about the screen. The queue never learns
   any of this — no event is dropped, delayed, or stored differently.
+- **The catch-up card fires on the way back in, and only then.** One low
+  card on unlock — *while you were away — 2 asks, 1 fault, 14 notes* — counted
+  by kind (asks lead; the digest ranks by size, this one by what you have to
+  deal with), capped at a day back, and **not drawn at all when nothing
+  landed**. Presence is *pushed*, unlike shyness: lock, unlock, sleep, wake
+  and session switching are all posted, so `PresenceSentinel` listens and
+  never reads the system. Two rules keep it honest. It **ignores quiet
+  hours** — the one card that cannot interrupt anybody, because it only fires
+  as somebody sits down — and it is a **tally, never a replay**: it re-draws
+  no event, composes like `DigestCard` straight into the queue without
+  re-entering the repository, and the click is a query (`InboxScope.since`)
+  against rows that are already there.
+- **A banner drawn at a locked screen was never seen.** `AppDatabase.insert`
+  takes presence as well as the decision, so a card that played to an empty
+  room is stored unread. Getting this wrong is how a whole night disappears
+  from both the inbox's unread count and the catch-up card — and it can only
+  be recorded at ingest, because nothing can work out afterwards who was
+  sitting there.
 - **The inbox is where the overflow goes, so it holds no state of its own.**
   The ledge evicts a sixth ask, a digest card is a count and quiet hours route
   events past the screen — all three land in `AppDatabase`, and the window is a
   view onto it through `InboxList` (scope, search, thread folding: pure, and
   tested without a display). It updates live off `InboxFeed`, never a poll or a
   Refresh button. Two things it must keep saying: **unread means trill never
-  put this in front of you** — a `banner` decision is stamped read on the way
-  in, everything held back is not — and **it never redacts**, because
+  put this in front of you** — a banner drawn at somebody is stamped read on
+  the way in; one drawn at a locked screen is not, and nor is anything held
+  back — and **it never redacts**, because
   `--redact` and shyness are rules for cards drawn *at* someone and this window
   only exists because the user asked for it. It draws every performable action
   as a pill except `reply`: history has no socket to answer down.
@@ -178,16 +197,18 @@ moving a switch that won't stick.
 Trill/
   App/           entry, composition root, settings (config.json-backed)
   CLI/           `trill send/ping` — same binary, CLI personality
-  Domain/        NotificationEvent, RuleSet, PolicyEngine, InboxList (pure)
+  Domain/        NotificationEvent, RuleSet, PolicyEngine, InboxList,
+                 Digest, CatchUp (all pure)
   Providers/     protocol + Socket · GitHub webhook · Calendar (EventKit)
                  + SystemMirror (quarantined)
   Repositories/  EventRepository actor: supervise, normalize, dedupe, fan out
+                 + the two composed-card consumers (digest · catch-up)
   Persistence/   AppDatabase — trill's OWN sqlite; the only writer in the app
   Compositor/    ScreenGeometry (pure), BannerQueue, panels, window system
   Platform/      ActionRouter, SystemIntegration (all Apple hooks, one file)
   UI/            BannerView, InboxView + InboxRowView, LedgeView,
                  Settings (View · Panes · Chrome)
-TrillTests/      geometry, policy, pipeline, inbox — pure logic, no display
+TrillTests/      geometry, policy, pipeline, inbox, presence — no display
 ```
 
 ## The agent surface (`ai/SKILL.md`)

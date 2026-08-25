@@ -9,6 +9,13 @@ actor EventRepository {
     private let policy: () -> PolicyEngine
     private var database: AppDatabase?
     private var seenIDs: OrderedIDWindow
+    /// Is anyone in front of this Mac as events land? Read per event, off the
+    /// main actor, so it is a lock around a Bool rather than a hop
+    /// (`PresenceFlag`). It decides one thing only: whether a banner counts
+    /// as having been *seen*. A card drawn at a locked screen was not, and
+    /// the inbox and the catch-up card both depend on that being recorded
+    /// truthfully at ingest — there is no second chance to find out later.
+    private let presence: @Sendable () -> Bool
 
     private var subscribers: [UUID: AsyncStream<DeliveredEvent>.Continuation] = [:]
     private var providerTasks: [String: Task<Void, Never>] = [:]
@@ -29,9 +36,14 @@ actor EventRepository {
         self.database = database
     }
 
-    init(policy: @escaping @Sendable () -> PolicyEngine, database: AppDatabase?) {
+    init(
+        policy: @escaping @Sendable () -> PolicyEngine,
+        database: AppDatabase?,
+        presence: @escaping @Sendable () -> Bool = { true }
+    ) {
         self.policy = policy
         self.database = database
+        self.presence = presence
         self.seenIDs = OrderedIDWindow(capacity: 2048)
     }
 
@@ -89,7 +101,7 @@ actor EventRepository {
         let decision = policy().decide(event, now: .now)
         if decision == .drop { return }
 
-        database?.insert(event, decision: decision)
+        database?.insert(event, decision: decision, seen: presence())
         Self.log.debug("ingested \(event.id, privacy: .public) from \(providerName, privacy: .public)")
 
         let delivered = DeliveredEvent(event: event, decision: decision)

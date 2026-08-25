@@ -64,6 +64,12 @@ notifications experimentally tomorrow.
   (`config.json`, same directory) — the Settings window reads and writes that
   file and keeps nothing of its own, so anything you can click you can also
   type, and vice versa, without a restart.
+- **the morning paper** — unlock a Mac that was busy without you and one
+  low card says what it missed: *while you were away — 2 asks, 1 fault, 14
+  notes*, with a click that opens the inbox on exactly those. Not a replay of
+  the night's stack: nothing is re-drawn, the numbers are counted by kind so
+  the asks lead, and a quiet night produces no card at all. It cannot
+  interrupt you, because it only ever fires as you come back.
 - **shy on a shared screen** — while macOS is showing its in-use indicator
   (something is capturing the screen, or the camera or mic is live) or a
   display is mirrored, every card drops its body and keeps only the title,
@@ -92,6 +98,8 @@ pounce/perch      │             │ EventKit push   │ read-only, schema-prob
           BannerQueue (coalescing · hover-pause/expand · capacity)
                   ▲
           DigestScheduler (tally per digest · one card on the hour)
+                  ▲
+          CatchUpReporter (what you missed · one card on unlock)
                   ▼
           BannerWindowSystem (NSPanel per card · stacked · all Spaces · over fullscreen)
 ```

@@ -32,7 +32,7 @@ struct InboxView: View {
 
     @State private var entries: [InboxEntry] = []
     @State private var query = ""
-    @State private var unreadOnly = false
+    @State private var unreadOnly: Bool
     /// Thread ids whose mates are showing. Threads open closed: the fold is
     /// the whole reason a fifteen-message thread is one row.
     @State private var openThreads: Set<String> = []
@@ -44,6 +44,18 @@ struct InboxView: View {
     @FocusState private var searchFocused: Bool
 
     private let clock = Timer.publish(every: 30, on: .main, in: .common).autoconnect()
+
+    /// Written out rather than left to the memberwise one for a single line:
+    /// the unread filter starts where the *scope* says it should, so a
+    /// catch-up card's click lands on exactly the events it counted. Doing it
+    /// in `onAppear` instead would show the wider list for a frame and then
+    /// visibly narrow it.
+    init(feed: InboxFeed, scope: InboxScope = .all, router: ActionRouter? = nil) {
+        self.feed = feed
+        self.scope = scope
+        self.router = router
+        _unreadOnly = State(initialValue: scope.opensUnreadOnly)
+    }
 
     private var rows: [InboxRow] {
         InboxList.rows(from: entries, scope: scope, query: query, unreadOnly: unreadOnly)
@@ -197,6 +209,8 @@ struct InboxView: View {
             return database.recent(limit: InboxList.fetchLimit)
         case .digest(let name, let since):
             return database.digest(named: name, since: since, limit: InboxList.fetchLimit)
+        case .since(let instant):
+            return database.events(since: instant, limit: InboxList.fetchLimit)
         }
     }
 
@@ -250,6 +264,7 @@ struct InboxView: View {
         case .asks: "Trill — Asks"
         case .digest(let name, _):
             name == DigestCard.defaultName ? "Trill — Digest" : "Trill — \(name)"
+        case .since: "Trill — While You Were Away"
         }
     }
 
@@ -268,6 +283,7 @@ struct InboxView: View {
         case .all: return "Nothing yet"
         case .asks: return "No asks"
         case .digest: return "Nothing in this digest"
+        case .since: return "Nothing came in"
         }
     }
 
@@ -296,6 +312,9 @@ struct InboxView: View {
             // disk — this is the seam where the two can disagree.
             return "The events behind that card aren't in history — "
                 + "either it was off when they arrived, or they've been pruned since."
+        case .since:
+            return "Nothing has landed since you left — which is what the card would "
+                + "have said, if there had been one."
         }
     }
 }
