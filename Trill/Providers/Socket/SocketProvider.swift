@@ -11,7 +11,7 @@ struct SocketProvider: NotificationProvider {
     /// One JSON object per line. `v` is the wire version.
     struct Request: Codable, Equatable {
         var v: Int?
-        /// "send" | "ping" | "doctor"
+        /// "send" | "ping" | "doctor" | "inbox"
         var verb: String
         var event: NotificationEvent?
         /// doctor: audit exactly these bundle ids.
@@ -20,6 +20,9 @@ struct SocketProvider: NotificationProvider {
         var all: Bool?
         /// doctor: put the findings on screen as banners, not just in the reply.
         var notify: Bool?
+        /// inbox: show only `ask` events — the kind the ledge parks. This is
+        /// the deep link a hot corner (haus's wiring, not trill's) will call.
+        var asks: Bool?
     }
 
     struct Response: Codable {
@@ -44,13 +47,19 @@ struct SocketProvider: NotificationProvider {
     /// Injected rather than read here so the provider keeps knowing nothing
     /// about rules — `AppRuntime` owns the hot-reloaded `RuleSet`.
     private let listedApps: @Sendable () -> [String]
+    /// Opens the inbox window for the `inbox` verb. Injected for the same
+    /// reason: the provider knows nothing about windows, and the CLI
+    /// personality has none to open. The Bool is "asks only".
+    private let openInbox: @Sendable (Bool) -> Void
 
     init(
         path: String = SocketProvider.defaultSocketPath(),
-        listedApps: @escaping @Sendable () -> [String] = { [] }
+        listedApps: @escaping @Sendable () -> [String] = { [] },
+        openInbox: @escaping @Sendable (Bool) -> Void = { _ in }
     ) {
         self.path = path
         self.listedApps = listedApps
+        self.openInbox = openInbox
     }
 
     func probe() async -> ProviderHealth {
@@ -69,6 +78,7 @@ struct SocketProvider: NotificationProvider {
             let decoder = JSONDecoder.trill
             let encoder = JSONEncoder.trill
             let listedApps = self.listedApps
+            let openInbox = self.openInbox
 
             let server = SocketServer(path: path) { line, reply in
                 let response: Response
@@ -101,6 +111,12 @@ struct SocketProvider: NotificationProvider {
                                 ?? "macOS's notification settings are unreadable"
                         )
                     }
+                case .inbox(let asksOnly):
+                    // The caller *is* the summons: `trill inbox` is the user
+                    // (or their hot corner) asking for a window, so opening
+                    // one doesn't break the never-steal-focus rule.
+                    openInbox(asksOnly)
+                    response = Response(ok: true, id: nil, error: nil)
                 case .failure(let message):
                     response = Response(ok: false, id: nil, error: message)
                 }
@@ -123,6 +139,7 @@ struct SocketProvider: NotificationProvider {
         case send(NotificationEvent)
         case ping
         case doctor(DoctorRequest)
+        case inbox(asksOnly: Bool)
         case failure(String)
     }
 
@@ -168,6 +185,8 @@ struct SocketProvider: NotificationProvider {
                 scope = nil // the daemon's own listed apps
             }
             return .doctor(DoctorRequest(scope: scope, notify: request.notify == true))
+        case "inbox":
+            return .inbox(asksOnly: request.asks == true)
         case let other:
             return .failure("unknown verb '\(other)'")
         }

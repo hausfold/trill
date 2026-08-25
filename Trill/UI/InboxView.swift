@@ -5,15 +5,21 @@ import SwiftUI
 /// keyboard-first pounce hand-off are milestone 2.
 struct InboxView: View {
     let database: AppDatabase?
+    /// `trill inbox --asks`: show only `ask` events — the kind the ledge
+    /// parks. The database has no answered/unanswered state (answering a
+    /// banner is not a write), so this is a kind filter, honestly named.
+    var asksOnly: Bool = false
     @State private var items: [AppDatabase.StoredEvent] = []
 
     var body: some View {
         Group {
             if items.isEmpty {
                 ContentUnavailableView(
-                    "Nothing yet",
+                    asksOnly ? "No asks" : "Nothing yet",
                     systemImage: "tray",
-                    description: Text("Events arrive here as sources send them — try `trill send --title hello`.")
+                    description: asksOnly
+                        ? Text("Nothing has asked for you — events sent with `--kind ask` land here.")
+                        : Text("Events arrive here as sources send them — try `trill send --title hello`.")
                 )
             } else {
                 List(items) { stored in
@@ -43,7 +49,7 @@ struct InboxView: View {
         }
         .frame(minWidth: 420, minHeight: 320)
         .onAppear(perform: reload)
-        .navigationTitle("Trill")
+        .navigationTitle(asksOnly ? "Trill — Asks" : "Trill")
         .toolbar {
             Button("Refresh", systemImage: "arrow.clockwise", action: reload)
         }
@@ -51,6 +57,7 @@ struct InboxView: View {
     }
 
     private func reload() {
-        items = database?.recent(limit: 200) ?? []
+        let recent = database?.recent(limit: 200) ?? []
+        items = asksOnly ? recent.filter { $0.event.kind == .ask } : recent
     }
 }

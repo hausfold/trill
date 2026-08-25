@@ -14,6 +14,9 @@ final class AppRuntime {
     private let windowSystem: BannerWindowSystem
     private var deliveryTask: Task<Void, Never>?
     private var rulesWatcher: RulesWatcher
+    /// The daemon side of `trill inbox` — set by the app delegate, which
+    /// owns the windows. The Bool is "asks only".
+    var onOpenInbox: ((Bool) -> Void)?
 
     private static let log = Logger(subsystem: "com.hausfold.trill", category: "runtime")
 
@@ -63,9 +66,14 @@ final class AppRuntime {
             // `trill doctor` with no app list audits whatever the current
             // rules name — read live, so an edited rules.json changes the
             // next audit without a restart.
-            await repository.supervise(SocketProvider(listedApps: {
-                NotificationSettingsAudit.listedBundleIDs(in: rulesWatcher.current())
-            }))
+            await repository.supervise(SocketProvider(
+                listedApps: {
+                    NotificationSettingsAudit.listedBundleIDs(in: rulesWatcher.current())
+                },
+                openInbox: { [weak self] asksOnly in
+                    Task { @MainActor in self?.onOpenInbox?(asksOnly) }
+                }
+            ))
             // Always probed, regardless of the toggle: Settings gates the
             // toggle itself on Full Disk Access being granted, which it can
             // only know by reading this provider's health.

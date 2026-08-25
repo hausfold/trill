@@ -1,8 +1,9 @@
 import Foundation
 
-/// Main-actor banner scheduling: what is visible, what waits, what coalesces.
-/// The queue owns event state so panels stay disposable — a display topology
-/// rebuild throws every panel away and redraws from here, losing nothing.
+/// Main-actor banner scheduling: what is visible, what waits, what coalesces
+/// — and what parks. The queue owns event state so panels stay disposable —
+/// a display topology rebuild throws every panel away and redraws from here,
+/// losing nothing.
 @MainActor
 final class BannerQueue {
     struct Entry: Identifiable, Equatable {
@@ -49,14 +50,33 @@ final class BannerQueue {
         }
     }
 
+    /// Fins the ledge holds at most. Past this the *oldest* ask yields —
+    /// the ledge is a glanceable strip, not a second queue, and everything
+    /// it evicts already survives in the inbox like every delivered event.
+    static let parkedCapacity = 5
+
     /// Redraw callback; the window system owns the panels.
     var onVisibleChanged: (([Entry]) -> Void)?
+    /// Ledge redraw callback — the parked bucket changed. Separate from
+    /// `onVisibleChanged` because the two surfaces re-render independently:
+    /// a fin appearing must not restack the banner column and vice versa.
+    var onParkedChanged: (([Entry]) -> Void)?
 
     private(set) var visible: [Entry] = []
     /// Held back until a slot frees. Kept ordered by urgency (critical
     /// first), arrival order within a rank — a burst of chatter can delay a
     /// critical's *slot*, never bury it behind twenty notes.
     private var waiting: [Entry] = []
+    /// The ledge: asks whose dismiss clock ran out with nobody there,
+    /// oldest first. They render as fins on the screen edge, not banners,
+    /// and they have no clock — a question stays asked until it's answered,
+    /// dismissed, or evicted by a newer ask past `parkedCapacity`.
+    private(set) var parked: [Entry] = []
+    /// Which parked entry the pointer is over — that one slides out as a
+    /// full card. An id for the same reason `hoveredID` is: entering fin B
+    /// can beat leaving fin A. Independent of the stack's hover; the two
+    /// surfaces share no clock.
+    private var parkedHoverID: String?
     private var capacity: Int
     /// Which banner the pointer is over, if any. Hover both pauses the queue
     /// and expands that one banner's fold, so it has to be an id, not a bool.
@@ -137,6 +157,12 @@ final class BannerQueue {
     // MARK: - Lifecycle
 
     func dismiss(id: String) {
+        if parked.contains(where: { $0.id == id }) {
+            parked.removeAll { $0.id == id }
+            if parkedHoverID == id { parkedHoverID = nil }
+            notifyParked()
+            return
+        }
         dismissTimers.removeValue(forKey: id)?.cancel()
         visible.removeAll { $0.id == id }
         if hoveredID == id {
@@ -157,6 +183,57 @@ final class BannerQueue {
         visible.removeAll()
         waiting.removeAll()
         notify()
+        guard !parked.isEmpty else { return }
+        parked.removeAll()
+        parkedHoverID = nil
+        notifyParked()
+    }
+
+    /// The dismiss clock ran out with nobody there. Most kinds are simply
+    /// done (they survive in the inbox); an `ask` is a question nobody has
+    /// answered yet, and quietly dropping the one event that is *blocked on
+    /// the user* is the failure the ledge exists to end — it parks instead.
+    func expire(id: String) {
+        guard let index = visible.firstIndex(where: { $0.id == id }),
+              visible[index].event.kind == .ask
+        else {
+            dismiss(id: id)
+            return
+        }
+        dismissTimers.removeValue(forKey: id)?.cancel()
+        var entry = visible.remove(at: index)
+        entry.expanded = false
+        if hoveredID == id {
+            // Same stranded-hover rule as `dismiss`: no exit event follows
+            // a panel that is simply gone.
+            hoveredID = nil
+            visible.forEach { armDismiss(for: $0.id) }
+        }
+        parked.append(entry)
+        while parked.count > Self.parkedCapacity {
+            let evicted = parked.removeFirst()
+            if parkedHoverID == evicted.id { parkedHoverID = nil }
+        }
+        refill()
+        notify()
+        notifyParked()
+    }
+
+    /// Hover over a fin (or the card it slid out): that one parked entry
+    /// expands and the ledge re-renders. Exit only clears the hover it
+    /// owns — entering fin B can beat leaving fin A, same as the stack.
+    func setParkedHover(_ hovering: Bool, id: String) {
+        if hovering {
+            guard parkedHoverID != id else { return }
+            parkedHoverID = id
+        } else {
+            guard parkedHoverID == id else { return }
+            parkedHoverID = nil
+        }
+        for i in parked.indices {
+            parked[i].expanded = parked[i].id == parkedHoverID
+        }
+        notifyParked()
     }
 
     /// Hover: while the pointer is over a banner, nothing auto-dismisses and
@@ -235,11 +312,18 @@ final class BannerQueue {
         dismissTimers[id] = Task { [weak self, displayDuration] in
             try? await Task.sleep(for: displayDuration)
             guard !Task.isCancelled else { return }
-            self?.dismiss(id: id)
+            // Expire, not dismiss: only the clock parks an ask. A user's
+            // own dismissal (the ✕, a pill, the face) means they saw it,
+            // and answered questions don't belong on the ledge.
+            self?.expire(id: id)
         }
     }
 
     private func notify() {
         onVisibleChanged?(visible)
+    }
+
+    private func notifyParked() {
+        onParkedChanged?(parked)
     }
 }

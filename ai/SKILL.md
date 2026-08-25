@@ -33,11 +33,17 @@ work. There is no sound, ever — don't promise one.
 | is the daemon up? | `trill ping` |
 | which apps still banner themselves? | `trill doctor` |
 | …every app, as JSON | `trill doctor --all --json` |
+| open the inbox window | `trill inbox` |
+| …just the asks | `trill inbox --asks` |
 | everything, exhaustively | `trill help` |
 
 `--kind` colors the banner by what it asks of the user: `ask` (blocked on
 them), `fault` (broke), `chat` (a human), `pulse` (in flight), `done`
-(finished well), `note` (fyi, the default). `--urgency` is the loudness —
+(finished well), `note` (fyi, the default). An `ask` whose banner times out
+unattended doesn't vanish — it parks as a slim fin on the right screen edge
+until the user hovers it back out and answers or dismisses it. So `--kind
+ask` is the right shape for "I'm blocked, come back to me": it waits;
+nothing else does. `--urgency` is the loudness —
 `low`, `normal` (default) or `critical` — and is a different axis: a fault can
 be low, a note can be critical. `--thread <name>` groups related banners.
 `--source <slug>` is what the user's rules file matches on — give a
