@@ -6,6 +6,7 @@ import Foundation
 ///   trill send --title "Deploy landed" [--body …] [--source deploy]
 ///              [--symbol checkmark.circle] [--thread deploys]
 ///              [--kind ask|fault|chat|pulse|done|note]
+///              [--progress 0.42|42%] [--key NAME]
 ///              [--urgency low|normal|critical] [--redact] [--url https://…]
 ///              [--action "Label=https://…"] [--action "Label=lane:repo/name"]…
 ///   echo '{"title":"Backup complete"}' | trill send --json
@@ -106,6 +107,7 @@ enum TrillCLI {
         var source = "cli"
         var symbol: String?
         var thread: String?
+        var progress: Double?
         var key: String?
         var resolves: [String] = []
         var until: String?
@@ -124,6 +126,11 @@ enum TrillCLI {
             case "--source": source = value() ?? source
             case "--symbol": symbol = value()
             case "--thread": thread = value()
+            case "--progress":
+                guard let raw = value(), let parsed = parseProgress(raw) else {
+                    return .failure("--progress wants a fraction 0–1 (0.42) or a percentage (42%)")
+                }
+                progress = parsed
             case "--key": key = value()
             case "--resolves":
                 guard let raw = value() else { return .failure("--resolves wants a key") }
@@ -188,13 +195,30 @@ enum TrillCLI {
         return .success(NotificationEvent(
             source: source, key: key, resolves: resolves, until: until,
             title: title, subtitle: subtitle, body: body,
-            symbol: symbol, thread: thread,
+            symbol: symbol, progress: progress, thread: thread,
             // Same inference the decoder applies to un-kinded events: an
             // unlabeled critical keeps its old red reading by being a fault.
-            kind: kind ?? (urgency == .critical ? .fault : .note),
+            // A bar with no kind is a running job, which is what `pulse` is
+            // for — nobody should have to type both.
+            kind: kind ?? (progress != nil ? .pulse : (urgency == .critical ? .fault : .note)),
             urgency: urgency, privacy: privacy,
             actions: actions
         ))
+    }
+
+    /// `0.42` or `42%` — and nothing in between. A bare `42` is refused
+    /// rather than guessed at: read as a fraction it is 4200%, read as a
+    /// percentage it makes `--progress 1` ambiguous between 1% and done. The
+    /// `%` is how the caller says which one they meant.
+    static func parseProgress(_ raw: String) -> Double? {
+        let text = raw.trimmingCharacters(in: .whitespaces)
+        if text.hasSuffix("%") {
+            guard let percent = Double(text.dropLast()), percent.isFinite, (0...100).contains(percent)
+            else { return nil }
+            return percent / 100
+        }
+        guard let fraction = Double(text), fraction.isFinite, (0...1).contains(fraction) else { return nil }
+        return fraction
     }
 
     // MARK: - ask
@@ -616,7 +640,7 @@ enum TrillCLI {
     usage:
       trill send --title TEXT [--body TEXT] [--subtitle TEXT] [--source NAME]
                  [--symbol SFNAME] [--thread NAME]
-                 [--kind ask|fault|chat|pulse|done|note]
+                 [--kind ask|fault|chat|pulse|done|note] [--progress 0.42|42%]
                  [--urgency low|normal|critical] [--redact] [--url URL]
                  [--action "Label=https://…"] [--action "Label=app:bundle.id"]
                  [--action "Label=lane:repo/name"]
@@ -637,6 +661,16 @@ enum TrillCLI {
     · done (finished well) · note (fyi, the default). Unlabeled critical
     events render as fault. --urgency stays the loudness: low dims, critical
     bolds — still silent.
+
+    --progress draws a bar on the card and, with --key, makes every later
+    send under that key *replace* it instead of stacking a second banner —
+    one card for a whole build. Takes a fraction (0.42) or a percentage
+    (42%); a bare 42 is refused, because then 1 would be ambiguous. Ticks are
+    live, not history: only the ending reaches the inbox. --kind defaults to
+    pulse when a bar is present.
+
+      trill send --key haus --progress 0.4 --title "haus rebuild" --body "12/30"
+      trill send --key haus --progress 1 --kind done --title "haus rebuilt"
 
     An ask whose banner times out unattended doesn't vanish: it parks as a
     slim fin on the right screen edge until you answer or dismiss it. Hover

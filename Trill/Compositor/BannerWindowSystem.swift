@@ -87,12 +87,14 @@ final class BannerWindowSystem {
     }
 
     /// Every card's collapsed footprint — the face plus its pill row when
-    /// the event draws one. Both the fold budget and the layout start here.
+    /// the event draws one, plus its progress bar when it has one. Both the
+    /// fold budget and the layout start here.
     private static func collapsedSizes(for entries: [BannerQueue.Entry]) -> [CGSize] {
         entries.map { entry in
             BannerGeometry.cardSize(
                 foldedCount: 0, expanded: false, maxRows: 0,
-                actionCount: entry.event.pillActions.count
+                actionCount: entry.event.pillActions.count,
+                hasProgress: entry.event.progress != nil
             )
         }
     }
@@ -131,7 +133,8 @@ final class BannerWindowSystem {
                     foldedCount: entries[index].coalescedCount,
                     expanded: entries[index].expanded,
                     maxRows: rows[index],
-                    actionCount: entries[index].event.pillActions.count
+                    actionCount: entries[index].event.pillActions.count,
+                    hasProgress: entries[index].event.progress != nil
                 )
             }
         )
@@ -321,7 +324,8 @@ final class BannerWindowSystem {
                         foldedCount: entry.coalescedCount,
                         expanded: entry.expanded,
                         maxRows: 0,
-                        actionCount: entry.event.pillActions.count
+                        actionCount: entry.event.pillActions.count,
+                        hasProgress: entry.event.progress != nil
                     )
                     frame = BannerGeometry.Ledge.cardFrame(
                         finFrame: fins[index], cardSize: cardSize, on: screen

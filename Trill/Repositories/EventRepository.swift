@@ -101,7 +101,11 @@ actor EventRepository {
         let decision = policy().decide(event, now: .now)
         if decision == .drop { return }
 
-        database?.insert(event, decision: decision, seen: presence())
+        // Drawn, not stored: see `isProgressTick`. The ending (progress 1,
+        // or the `done` that replaces the card) persists like anything else.
+        if !event.isProgressTick {
+            database?.insert(event, decision: decision, seen: presence())
+        }
         Self.log.debug("ingested \(event.id, privacy: .public) from \(providerName, privacy: .public)")
 
         let delivered = DeliveredEvent(event: event, decision: decision)

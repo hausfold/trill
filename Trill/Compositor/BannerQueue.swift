@@ -185,6 +185,18 @@ final class BannerQueue {
             notifyParked()
         }
 
+        // A progress tick is not an arrival — it is the same card getting
+        // truer. An event carrying `progress` and a `key` takes over the card
+        // already wearing that key, keeping the entry's id (so its panel is
+        // updated, never torn down and rebuilt) and restarting its clock. A
+        // build that reports itself fifty times owns one card the whole way.
+        //
+        // Only progress does this. For everything else a re-send is a second
+        // arrival, which is what the coalesce window is for — the ledge's
+        // supersede just above is the other exception, and for the same
+        // reason: a question re-asked is one question.
+        if let key = event.key, supersede(key: key, with: event) { return }
+
         if let thread = event.thread,
            let last = lastThreadArrival[thread],
            now.timeIntervalSince(last.at) < coalesceWindow,
@@ -231,6 +243,38 @@ final class BannerQueue {
     /// lie about which screen to look at.
     func waitingCount(onScreen screen: String?) -> Int {
         waiting.count { $0.screenID == screen }
+    }
+
+    /// Take over the card wearing `key` with a newer reading of the same
+    /// thing. Either side has to be carrying `progress` — that is what makes
+    /// the pair one running job rather than two events that happen to share a
+    /// name — so the *ending* replaces the bar too: a `done` sent under the
+    /// build's key lands on its card instead of beside it.
+    ///
+    /// Only the event changes: the entry keeps its id *and its screen*, on
+    /// the same rule arrivals already follow — the display is frozen onto the
+    /// entry when it lands, and a card that hopped screens mid-build because
+    /// a rule changed under it is a card you lose track of.
+    private func supersede(key: String, with event: NotificationEvent) -> Bool {
+        func isTheSameJob(_ entry: Entry) -> Bool {
+            entry.event.key == key && (event.progress != nil || entry.event.progress != nil)
+        }
+
+        if let i = visible.firstIndex(where: isTheSameJob) {
+            visible[i].event = event
+            // Fresh content, fresh clock — same rule a folded thread-mate
+            // gets. A job that keeps reporting keeps its card; one that goes
+            // quiet mid-build times out like anything else, because a bar
+            // frozen at 40% for an hour is worse than no bar.
+            armDismiss(for: visible[i].id)
+            notify()
+            return true
+        }
+        if let i = waiting.firstIndex(where: isTheSameJob) {
+            waiting[i].event = event
+            return true
+        }
+        return false
     }
 
     /// Fold `latest` into an existing banner/queued entry for its thread.

@@ -39,6 +39,13 @@
     out who was in front of the screen. Everything that counts what you
     missed — the inbox's unread count, the catch-up card — reads that one
     stamp.
+14. A progress tick is an **update, not an arrival**: an event carrying
+    `progress` and a `key` replaces the card wearing that key instead of
+    stacking or folding beside it, and it is drawn without being stored —
+    fifty readings are one build, so only the ending reaches the inbox or a
+    digest tally. Liveness is the *sender's* job: the card's clock is
+    rearmed by each tick, so a driver that dies takes its card off screen
+    rather than pinning one there.
 
 ## Boundaries
 

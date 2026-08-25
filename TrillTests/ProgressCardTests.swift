@@ -1,0 +1,153 @@
+import XCTest
+@testable import Trill
+
+/// The progress card: one bar, one key, one card for a whole build. Wire
+/// format, the CLI's refusal to guess at units, the queue rule that makes a
+/// tick an *update* rather than an arrival, and the geometry the bar costs —
+/// all headless, like every test here.
+final class ProgressCardTests: XCTestCase {
+    private func tick(key: String, _ fraction: Double?, id: String = UUID().uuidString) -> NotificationEvent {
+        NotificationEvent(
+            id: id, source: "haus", key: key, title: "haus rebuild",
+            progress: fraction, kind: .pulse
+        ).normalized()
+    }
+
+    // MARK: - The wire
+
+    func testProgressRoundTripsAndStaysAbsentWhenUnsent() throws {
+        let event = NotificationEvent(source: "haus", title: "rebuild", progress: 0.42)
+        let decoded = try JSONDecoder.trill.decode(
+            NotificationEvent.self, from: JSONEncoder.trill.encode(event)
+        )
+        XCTAssertEqual(decoded.progress, 0.42)
+
+        let bare = try JSONDecoder.trill.decode(
+            NotificationEvent.self, from: Data(#"{"title":"hello"}"#.utf8)
+        )
+        XCTAssertNil(bare.progress, "most events aren't going anywhere — no bar, not a zero-length one")
+    }
+
+    func testNormalizationClampsWhatASenderGotWrong() {
+        XCTAssertEqual(NotificationEvent(source: "s", title: "t", progress: 1.4).normalized().progress, 1)
+        XCTAssertEqual(NotificationEvent(source: "s", title: "t", progress: -3).normalized().progress, 0)
+        XCTAssertNil(
+            NotificationEvent(source: "s", title: "t", progress: .nan).normalized().progress,
+            "a divide-by-zero NaN is no bar at all, not a bar of unknown length"
+        )
+    }
+
+    func testOnlyAnUnfinishedBarIsATick() {
+        XCTAssertTrue(NotificationEvent(source: "s", title: "t", progress: 0.5).isProgressTick)
+        XCTAssertFalse(NotificationEvent(source: "s", title: "t", progress: 1).isProgressTick, "the ending is history")
+        XCTAssertFalse(NotificationEvent(source: "s", title: "t").isProgressTick)
+    }
+
+    // MARK: - The CLI
+
+    func testProgressTakesAFractionOrAPercentAndNothingElse() {
+        XCTAssertEqual(TrillCLI.parseProgress("0.42"), 0.42)
+        XCTAssertEqual(TrillCLI.parseProgress("42%"), 0.42)
+        XCTAssertEqual(TrillCLI.parseProgress("1"), 1)
+        XCTAssertEqual(TrillCLI.parseProgress("100%"), 1)
+        // The whole reason for the `%`: read as a fraction this is 4200%,
+        // read as a percentage it makes `--progress 1` ambiguous.
+        XCTAssertNil(TrillCLI.parseProgress("42"))
+        XCTAssertNil(TrillCLI.parseProgress("101%"))
+        XCTAssertNil(TrillCLI.parseProgress("-1"))
+        XCTAssertNil(TrillCLI.parseProgress("soon"))
+    }
+
+    func testABarWithNoKindIsARunningJob() throws {
+        guard case .success(let event) = TrillCLI.parseSend(["--title", "build", "--progress", "30%"]) else {
+            return XCTFail("--progress should parse")
+        }
+        XCTAssertEqual(event.kind, .pulse)
+        XCTAssertEqual(event.progress, 0.3)
+
+        guard case .success(let done) = TrillCLI.parseSend(
+            ["--title", "built", "--progress", "1", "--kind", "done"]
+        ) else { return XCTFail("--kind should still win") }
+        XCTAssertEqual(done.kind, .done)
+
+        guard case .failure = TrillCLI.parseSend(["--title", "build", "--progress", "42"]) else {
+            return XCTFail("a bare 42 is refused at the call site, not silently read as 4200%")
+        }
+    }
+
+    // MARK: - The queue rule
+
+    @MainActor
+    func testATickReplacesItsOwnCardInsteadOfStackingOrFolding() {
+        let queue = BannerQueue(capacity: 3, displayDuration: .seconds(3600))
+        queue.enqueue(tick(key: "haus", 0.1, id: "first"))
+        queue.enqueue(tick(key: "haus", 0.4))
+        queue.enqueue(tick(key: "haus", 0.9))
+
+        XCTAssertEqual(queue.visible.count, 1, "one build, one card")
+        XCTAssertEqual(queue.visible.first?.event.progress, 0.9, "the newest reading is the card")
+        XCTAssertEqual(
+            queue.visible.first?.id, "first",
+            "the entry keeps its id — the panel is updated, never torn down and rebuilt"
+        )
+        XCTAssertEqual(
+            queue.visible.first?.coalescedCount, 0,
+            "a tick is not a thread-mate: nothing folds in behind the face"
+        )
+    }
+
+    @MainActor
+    func testTheEndingLandsOnTheCardTheBuildWasAlreadyUsing() {
+        let queue = BannerQueue(capacity: 3, displayDuration: .seconds(3600))
+        queue.enqueue(tick(key: "haus", 0.6, id: "first"))
+        queue.enqueue(NotificationEvent(
+            id: "last", source: "haus", key: "haus", title: "haus rebuilt", kind: .done
+        ).normalized())
+
+        XCTAssertEqual(queue.visible.count, 1, "the done replaces the bar rather than landing beside it")
+        XCTAssertEqual(queue.visible.first?.event.kind, .done)
+        XCTAssertNil(queue.visible.first?.event.progress)
+    }
+
+    @MainActor
+    func testTwoBuildsAreTwoCardsAndAKeyAloneIsStillTwoArrivals() {
+        let queue = BannerQueue(capacity: 4, displayDuration: .seconds(3600))
+        queue.enqueue(tick(key: "haus", 0.2))
+        queue.enqueue(tick(key: "trill", 0.2))
+        XCTAssertEqual(queue.visible.count, 2, "one card per key")
+
+        // Nothing here carries progress, so the old rule stands: a re-send is
+        // a second arrival (the ledge's supersede is the only other exception).
+        let plain = NotificationEvent(source: "cli", key: "note", title: "hello")
+        queue.enqueue(plain.normalized())
+        queue.enqueue(NotificationEvent(source: "cli", key: "note", title: "hello again").normalized())
+        XCTAssertEqual(queue.visible.count, 4)
+    }
+
+    // MARK: - What the bar costs
+
+    func testTheBarGetsItsOwnRowAndPaysForItOnce() {
+        let bare = BannerGeometry.cardSize(foldedCount: 0, expanded: false, maxRows: 0)
+        let withBar = BannerGeometry.cardSize(
+            foldedCount: 0, expanded: false, maxRows: 0, hasProgress: true
+        )
+        XCTAssertEqual(withBar.height, bare.height + BannerGeometry.progressRowHeight)
+        XCTAssertEqual(withBar.width, bare.width, "cards only ever grow downward")
+
+        let withBoth = BannerGeometry.cardSize(
+            foldedCount: 0, expanded: false, maxRows: 0, actionCount: 2, hasProgress: true
+        )
+        XCTAssertEqual(
+            withBoth.height,
+            bare.height + BannerGeometry.actionRowHeight + BannerGeometry.progressRowHeight,
+            "a card can have both a bar and pills"
+        )
+    }
+
+    func testThePercentageNeverReadsDoneBeforeItIs() {
+        XCTAssertEqual(BannerView.percent(0), "0%")
+        XCTAssertEqual(BannerView.percent(0.425), "42%")
+        XCTAssertEqual(BannerView.percent(0.999), "99%", "rounding to 100 mid-build is the one unforgivable number")
+        XCTAssertEqual(BannerView.percent(1), "100%")
+    }
+}

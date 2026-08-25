@@ -48,6 +48,9 @@ struct BannerView: View {
     private var redacted: Bool { shy || event.privacy == .redacted }
     private var kindColor: Color { BannerTheme.current().color(for: event.kind) }
     private var pills: [NotificationEvent.Action] { event.pillActions }
+    /// How far along, or nil for the overwhelming majority of events that
+    /// aren't going anywhere. Already clamped to `0…1` by `normalized()`.
+    private var progress: Double? { event.progress }
 
     /// The same arithmetic the compositor sized the panel with — never a
     /// measured height (`fittingSize` lags a state change by a turn on
@@ -57,13 +60,17 @@ struct BannerView: View {
             foldedCount: entry.coalescedCount,
             expanded: entry.expanded,
             maxRows: maxFoldRows,
-            actionCount: pills.count
+            actionCount: pills.count,
+            hasProgress: progress != nil
         )
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             face
+            if let progress {
+                progressRow(progress)
+            }
             if !pills.isEmpty {
                 actionRow
             }
@@ -253,6 +260,47 @@ struct BannerView: View {
         }
     }
 
+    /// The bar. A 4pt kind-hued track under the face with the percentage
+    /// beside it — the whole of what "how far along" needs to look like on a
+    /// card you read in a glance from across the room.
+    ///
+    /// It is drawn while the screen is watched, unlike a body: a fraction is
+    /// not content. "62%" says nothing about what is building, and a card
+    /// that hid its bar mid-build would look broken for no privacy gained.
+    private func progressRow(_ fraction: Double) -> some View {
+        HStack(spacing: 8) {
+            Capsule()
+                .fill(Color.primary.opacity(0.10))
+                .frame(height: 4)
+                .overlay(alignment: .leading) {
+                    GeometryReader { geometry in
+                        Capsule()
+                            .fill(event.urgency == .low ? AnyShapeStyle(.tertiary) : AnyShapeStyle(kindColor))
+                            .frame(width: geometry.size.width * fraction, height: 4)
+                    }
+                    .frame(height: 4)
+                }
+            Text(Self.percent(fraction))
+                .font(.caption.weight(.medium))
+                .monospacedDigit()
+                .foregroundStyle(.secondary)
+                // Fixed so the track doesn't twitch shorter as the label
+                // grows a digit — 9% to 10% is the most-watched moment of
+                // any build, and the bar must not jump backwards there.
+                .frame(width: 34, alignment: .trailing)
+        }
+        // Growth is the one motion this card is allowed; under Reduce Motion
+        // it snaps, like every other animation here.
+        .animation(reduceMotion ? nil : .easeOut(duration: 0.25), value: fraction)
+        .padding(.leading, 52)
+        .padding(.trailing, 12)
+        .frame(height: BannerGeometry.progressRowHeight)
+        // The face's own label already reads the percentage out — see
+        // `faceAccessibilityText`. Two elements saying "62% complete" is
+        // worse than one.
+        .accessibilityHidden(true)
+    }
+
     /// 2–3 pills under the face. The first is the primary — same action the
     /// card click runs, tinted to say so; the rest stay neutral. Only
     /// performable actions get here (`pillActions`): trill draws no dead
@@ -388,6 +436,7 @@ struct BannerView: View {
     /// rows to speak for themselves.
     private var faceAccessibilityText: String {
         var head = "\(event.source): \(event.title)"
+        if let progress { head += ", \(Self.percent(progress)) complete" }
         if shy { head += ", body hidden while the screen is being watched" }
         guard entry.coalescedCount > 0 else { return head }
         return "\(head), \(entry.coalescedCount) more in this thread"
@@ -396,6 +445,15 @@ struct BannerView: View {
     /// A banner that survived a busy stack for a while must admit its age.
     /// Compact on purpose — this sits between the source slug and the fold
     /// count, and "4 minutes ago" would eat the row.
+    /// `0.42` as `42%`. Rounded down, and never to 100 before the job is
+    /// actually done: a card reading 100% while the build is still running is
+    /// the one number on it nobody would forgive.
+    static func percent(_ fraction: Double) -> String {
+        let clamped = min(max(fraction, 0), 1)
+        let whole = clamped == 1 ? 100 : min(Int(clamped * 100), 99)
+        return "\(whole)%"
+    }
+
     static func age(of timestamp: Date, at now: Date) -> String {
         let seconds = now.timeIntervalSince(timestamp)
         switch seconds {
