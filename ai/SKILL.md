@@ -131,13 +131,20 @@ quiet things · ci ×4, garden ×3") opening the inbox on exactly those.
 The app's own switches, and the truth for them — Settings reads and writes this
 same file, live. Every key at its default, each optional — `{"launchAtLogin":
 true, "persistHistory": true, "systemMirror": false, "githubBridge": false,
-"shyWhenWatched": true}`. Don't write it if it's a symlink into `/nix/store`:
+"shyWhenWatched": true, "catchUpCard": true, "calendar": false,
+"calendarLeadMinutes": 10, "cliLink": true}`. Don't write it if it's a symlink into `/nix/store`:
 the desktop generates it there and a rebuild reverts you.
 
 ## Traps
 
 - **Everything but `trill help` needs the daemon.** Exit 2 (69 for `ask`) means
   nothing is listening, not that your command was wrong. Don't loop on it.
+- **`trill: command not found` is not "trill isn't installed".** The app places
+  the shim itself, but only into a directory already on the login shell's PATH
+  — on a Mac with none, the link sits in `~/.local/bin` and never resolves. The
+  app is always its own CLI: `/Applications/Trill.app/Contents/MacOS/Trill` (or
+  `~/Applications/…`) takes every verb on this page. Say that rather than
+  reporting trill as missing.
 - **A dropped event looks exactly like a delivered one** — both exit 0. On "I
   never got it", read `~/.config/trill/rules.json`; the answer is only there.
 - **Quiet hours silently demote** non-critical events (an `ask` there exits

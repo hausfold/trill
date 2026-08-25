@@ -74,6 +74,318 @@ enum SystemIntegration {
         open("x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?Privacy_AllFiles")
     }
 
+    // MARK: - `trill` on PATH
+
+    /// What `trill` resolves to for a shell, and how it got there.
+    enum CLILinkState: Equatable, Sendable {
+        /// Switched off in config.json — trill placed nothing.
+        case off
+        /// Another install source already answers `trill`, at this path:
+        /// nix's own `bin/trill`, a desktop's link at the copy it placed, a
+        /// cask's `binary` stanza. trill leaves all of those alone.
+        case managed(String)
+        /// trill placed the link, and a login shell resolves it.
+        case linked(String)
+        /// trill placed the link, but its directory is on nobody's PATH, so
+        /// the command still doesn't resolve. A link is not an install: the
+        /// difference between these two cases is the whole reason this is
+        /// three states and not a Bool.
+        case linkedNotOnPath(String)
+        /// Nothing was placed, and why in one sentence.
+        case blocked(String)
+    }
+
+    /// The directory trill puts the shim in, chosen from the PATH the user
+    /// actually has.
+    ///
+    /// Picking a fixed directory is the obvious version and it is wrong in the
+    /// common case: `~/.local/bin` is the conventional answer and is on
+    /// **nobody's** PATH by default on macOS, so a fixed choice writes a file
+    /// that exists and a command that never runs. So look at the login shell's
+    /// own PATH first and use a directory already on it, and only fall back to
+    /// `~/.local/bin` (creating it) when the PATH offers nothing usable — at
+    /// which point the caller says so rather than claiming success.
+    ///
+    /// Only directories **under the user's home** are eligible, and never
+    /// nix-managed ones. `/usr/local/bin` wants admin, and an app that raises
+    /// an authorization prompt at launch to install a convenience is an app
+    /// people quit.
+    ///
+    /// The nix exclusions are the subtle half, and the obvious spelling of
+    /// them is dead code: `/nix/store`, `/etc/profiles/…` and
+    /// `/run/current-system/…` are already excluded by the home check, since
+    /// nothing under `$HOME` can start with them. The profile bins that
+    /// actually reach a user's PATH live INSIDE home —
+    /// `~/.nix-profile/bin`, `~/.local/state/nix/profile/bin` — and every one
+    /// of them is a symlink chain into the read-only store: a link written
+    /// there fails outright, and would be gone at the next rebuild if it
+    /// didn't. Those are the names worth filtering.
+    static func cliLinkDirectory(loginPath: [String], home: String) -> URL {
+        let fallback = URL(fileURLWithPath: home).appendingPathComponent(".local/bin")
+        let homePrefix = home.hasSuffix("/") ? home : home + "/"
+        let managed = [
+            homePrefix + ".nix-profile",
+            homePrefix + ".local/state/nix/profile",
+        ]
+
+        let eligible = loginPath.filter { entry in
+            entry.hasPrefix(homePrefix) && !managed.contains(where: entry.hasPrefix)
+        }
+        // Preferred first, so a machine that happens to have both gets the
+        // conventional one rather than whatever came earliest on PATH.
+        for preferred in [fallback.path, URL(fileURLWithPath: home).appendingPathComponent("bin").path]
+        where eligible.contains(preferred) {
+            return URL(fileURLWithPath: preferred)
+        }
+        return eligible.first.map { URL(fileURLWithPath: $0) } ?? fallback
+    }
+
+    /// What's already on disk where the shim goes.
+    enum CLILinkOccupant: Equatable, Sendable {
+        case nothing
+        case symlink
+        /// A regular file, a directory, anything that isn't a symlink.
+        case other
+    }
+
+    /// What to do about the shim, decided from four facts and nothing else.
+    enum CLILinkPlan: Equatable, Sendable {
+        case place
+        /// Something on PATH already runs THIS bundle — trill's own link from
+        /// a launch when the chosen directory was a different one. Nothing to
+        /// do, and emphatically not "someone else installed it".
+        case alreadyOurs(String)
+        case leaveAlone(String)
+        case refuse(String)
+    }
+
+    /// The whole decision, as a pure function — the traps here are all about
+    /// telling three near-identical situations apart, and that is exactly the
+    /// kind of thing that should be testable without a filesystem.
+    ///
+    /// - `resolved` is what a login shell says `trill` is *today*, if anything.
+    ///   Non-nil and pointing somewhere other than our own link means another
+    ///   install source owns the name — nix, a desktop, a cask — and its answer
+    ///   points at the bundle whose grants and socket the user actually has.
+    ///   Replacing it would silently hand `trill send` a second daemon.
+    /// - `resolved` equal to our own link path is the ordinary re-launch: the
+    ///   thing it found is the thing we placed, so we still own it and refresh.
+    static func cliLinkPlan(
+        resolved: String?,
+        linkPath: String,
+        occupant: CLILinkOccupant,
+        resolvedRunsThisBundle: Bool
+    ) -> CLILinkPlan {
+        if let resolved, resolved != linkPath {
+            // A `trill` at some other path that nonetheless runs this very
+            // bundle is one trill placed itself, earlier, when the login PATH
+            // looked different — the user has since added a directory this
+            // code now prefers. Reporting that as another installer's work
+            // would name trill's own file as a stranger's.
+            return resolvedRunsThisBundle ? .alreadyOurs(resolved) : .leaveAlone(resolved)
+        }
+        switch occupant {
+        case .other:
+            return .refuse("\(linkPath) already exists and isn't a symlink, so trill left it alone.")
+        case .nothing, .symlink:
+            return .place
+        }
+    }
+
+    /// Make `trill` resolve on PATH, whatever installed this bundle.
+    ///
+    /// The app binary IS the CLI — one executable, two personalities — so a
+    /// running trill has always been one symlink away from being scriptable,
+    /// and for a long time nothing created it. Every install source dropped a
+    /// bundle and stopped: `trill send` failed on a Mac with trill live in the
+    /// menu bar, and the callers that worked worked by hunting for the bundle
+    /// themselves (`holt notify` still carries that fallback list). That hunt
+    /// is a reasonable thing for one Go program to do and an unreasonable
+    /// thing to document as the way to use a CLI.
+    ///
+    /// The order matters. **Ask first, link second**: a source that ships its
+    /// own `trill` — nix's `bin/trill`, a desktop linking the copy it placed
+    /// at a fixed path, a cask's `binary` — owns the name, and its answer
+    /// points at the bundle whose permission grants and daemon socket the
+    /// user actually has. Overwriting that with a link to *this* bundle would
+    /// hand `trill send` a second daemon.
+    ///
+    /// Never fatal, never blocking: this is a convenience, and a compositor
+    /// that refused to draw because it couldn't write a symlink would have
+    /// its priorities backwards.
+    @discardableResult
+    static func ensureCLILink(enabled: Bool) async -> CLILinkState {
+        guard enabled else { return .off }
+
+        // A Debug build must never own the name. It already carries its own
+        // bundle id and its own state directory so it can't fight the
+        // installed app over one TCC row or one socket (see `AppPaths`), and
+        // PATH is the same class of shared resource: a build run out of an
+        // agent worktree would otherwise point the user's `trill` at a
+        // checkout that gets deleted when the lane is reaped, and every
+        // `trill send` on the machine would start failing for a reason
+        // nothing on screen explains.
+        if Bundle.main.bundleIdentifier?.hasSuffix(".debug") == true {
+            return .blocked("This is a Debug build, so it left the `trill` command to the installed app.")
+        }
+
+        guard let target = Bundle.main.executableURL?.resolvingSymlinksInPath() else {
+            return .blocked("Trill can't tell where its own executable is.")
+        }
+
+        // Whoever answers now, answers from the user's real PATH — not this
+        // process's. A login-item launch inherits launchd's environment, which
+        // names none of the directories a person installs tools into, so
+        // asking our own `environ` would report "nothing there" on exactly the
+        // Macs where something is. One shell, both questions.
+        let shell = await loginShellReading()
+        let resolved = shell.resolved
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        let link = cliLinkDirectory(loginPath: shell.path, home: home)
+            .appendingPathComponent("trill")
+
+        let fm = FileManager.default
+        // `attributesOfItem` does NOT follow the last symlink, which is what
+        // makes it the right question here: a dangling link must read as a
+        // link (ours, refreshable), not as nothing.
+        let occupant: CLILinkOccupant
+        if let attrs = try? fm.attributesOfItem(atPath: link.path) {
+            occupant = (attrs[.type] as? FileAttributeType) == .typeSymbolicLink ? .symlink : .other
+        } else {
+            occupant = .nothing
+        }
+
+        // Whether what already answers `trill` is in fact this bundle under
+        // another name. Compared after resolving symlinks on both sides,
+        // because the thing on PATH is a symlink by construction.
+        let resolvedRunsThisBundle = resolved
+            .map { URL(fileURLWithPath: $0).resolvingSymlinksInPath().path == target.path } ?? false
+
+        switch cliLinkPlan(
+            resolved: resolved, linkPath: link.path,
+            occupant: occupant, resolvedRunsThisBundle: resolvedRunsThisBundle
+        ) {
+        case .alreadyOurs(let path): return .linked(path)
+        case .leaveAlone(let path): return .managed(path)
+        case .refuse(let reason): return .blocked(reason)
+        case .place: break
+        }
+
+        do {
+            try fm.createDirectory(at: link.deletingLastPathComponent(), withIntermediateDirectories: true)
+            // Replace rather than skip-if-present: the existing link may point
+            // at a bundle that has since moved or been deleted, and a dangling
+            // `trill` is worse than none — `command -v` succeeds and every
+            // call fails.
+            try? fm.removeItem(at: link)
+            try fm.createSymbolicLink(at: link, withDestinationURL: target)
+        } catch {
+            log.info("cli link: \(error.localizedDescription, privacy: .public)")
+            return .blocked("Couldn't write \(link.path): \(error.localizedDescription)")
+        }
+
+        // Placing the link is not the same as being reachable: a file in a
+        // directory nobody's PATH names exists and never runs. Deciding from
+        // the PATH we already read rather than re-running the shell — the
+        // directory came out of that list, so membership is the answer.
+        guard shell.path.contains(link.deletingLastPathComponent().path) else {
+            return .linkedNotOnPath(link.path)
+        }
+        return .linked(link.path)
+    }
+
+    /// One login shell, two answers: what `trill` resolves to today, and the
+    /// PATH the user actually has.
+    ///
+    /// `-l` is load-bearing — the profile is where PATH gets assembled, and a
+    /// non-login shell would answer for an environment nobody types in. Both
+    /// facts come from ONE spawn: two would cost a second rc-file evaluation
+    /// at launch and could disagree.
+    ///
+    /// Everything about how it asks is defence against the rc file. A login
+    /// shell sources `.zshenv`/`.zprofile`/`.zlogin` (or `.bash_profile`), and
+    /// those routinely PRINT — a version-manager banner, a greeting, somebody's
+    /// `echo`. So the answers are fenced with sentinels rather than read off
+    /// fixed line numbers: one line of banner would otherwise shift the whole
+    /// reading down and hand `resolved` a greeting, which the caller would
+    /// dutifully treat as another installer owning the name.
+    ///
+    /// stdin is `/dev/null` so an rc file that reads it can't steal the
+    /// terminal a development build was launched from, and the whole thing is
+    /// on a deadline so an rc file that BLOCKS costs a delayed answer rather
+    /// than a wedged probe and a stuck `zsh` for the life of the app.
+    ///
+    /// Best-effort throughout: a shell that fails, hangs, or isn't there at
+    /// all yields "nothing resolves, no PATH", and the caller degrades to
+    /// reporting rather than to failing.
+    private static let shellProbeTimeout: TimeInterval = 10
+
+    private static func loginShellReading() async -> (resolved: String?, path: [String]) {
+        let shell = ProcessInfo.processInfo.environment["SHELL"] ?? "/bin/zsh"
+        let timeout = shellProbeTimeout
+        return await Task.detached(priority: .utility) { () -> (String?, [String]) in
+            let task = Process()
+            task.executableURL = URL(fileURLWithPath: shell)
+            task.arguments = [
+                "-l", "-c",
+                """
+                printf '%s\\n' '\(commandSentinel)'
+                command -v trill
+                printf '%s\\n' '\(pathSentinel)'
+                printf '%s\\n' "$PATH"
+                """,
+            ]
+            let pipe = Pipe()
+            task.standardOutput = pipe
+            task.standardError = FileHandle.nullDevice
+            task.standardInput = FileHandle.nullDevice
+            do { try task.run() } catch { return (nil, []) }
+
+            // The deadline has to kill the PROCESS, not cancel a Task:
+            // `readToEnd()` blocks on a pipe that stays open for as long as
+            // the shell lives, so nothing short of terminating it unblocks
+            // this. SIGTERM closes the write end, the read returns whatever
+            // was printed before the hang, and the parse below simply finds
+            // no sentinels.
+            let deadline = DispatchWorkItem { if task.isRunning { task.terminate() } }
+            DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + timeout, execute: deadline)
+
+            // Read before waiting: a shell that fills the pipe buffer while we
+            // wait for it to exit deadlocks both sides.
+            let data = (try? pipe.fileHandleForReading.readToEnd()) ?? Data()
+            task.waitUntilExit()
+            deadline.cancel()
+            return parseShellReading(String(decoding: data, as: UTF8.self))
+        }.value
+    }
+
+    /// Fences around the two answers, so rc-file chatter can't be mistaken for
+    /// either. Distinctive enough that a shell printing one by coincidence is
+    /// not a thing that happens.
+    nonisolated private static let commandSentinel = "__trill_cli__"
+    nonisolated private static let pathSentinel = "__trill_path__"
+
+    /// Split what the login shell printed. Separate and `nonisolated` so the
+    /// parsing is testable without a shell — the rc-file-noise case is the one
+    /// that would silently mis-report a greeting as an installed binary.
+    nonisolated static func parseShellReading(_ output: String) -> (resolved: String?, path: [String]) {
+        let lines = output.components(separatedBy: "\n")
+        // Last occurrence, not first: an rc file that echoed our own sentinel
+        // back (a shell tracing every command, say) must not win over the real
+        // one, and the real one is always the later.
+        func lineAfter(_ sentinel: String) -> String? {
+            guard let index = lines.lastIndex(of: sentinel), index + 1 < lines.count else { return nil }
+            return lines[index + 1].trimmingCharacters(in: .whitespaces)
+        }
+        // `command -v` printing nothing leaves the next sentinel on that line,
+        // which is exactly how "nothing resolves" is told from a real answer.
+        let command = lineAfter(commandSentinel)
+        let resolved = (command == pathSentinel || command?.isEmpty != false) ? nil : command
+        let entries = (lineAfter(pathSentinel) ?? "")
+            .split(separator: ":").map(String.init).filter { !$0.isEmpty }
+        return (resolved, entries)
+    }
+
     // MARK: - Relaunch watchdog (finishing Apple's "Quit & Reopen")
 
     /// How long after arming the watchdog gives up and stands down. Long

@@ -64,10 +64,32 @@ stdenvNoCC.mkDerivation {
   dontConfigure = true;
   dontBuild = true;
 
+  # `bin/trill` is a symlink, never a copy. The app binary IS the CLI — one
+  # executable serves the daemon and every verb — and it is signed and notarized
+  # as part of the bundle, so a copy sitting outside the .app would be nested
+  # code torn out of the seal it was signed under. (No case-insensitive clash to
+  # dodge here, unlike perch's `perch-cli`: `$out/bin/trill` and
+  # `Contents/MacOS/Trill` differ in directory, not just in case.)
+  #
+  # This is what makes `trill` resolve for a profile install. A desktop that
+  # copies the bundle to a fixed /Applications path will want a link pointing
+  # THERE instead — permission grants are keyed per app path, and the CLI's own
+  # fallback for finding its daemon is the bundle it sits in — the way haus's
+  # shelf room does it for perch (`perch-cli-link`). No such room exists for
+  # trill yet: trill is deliberately not a haus flake input, so this package's
+  # own bin/ is the only nix answer today.
   installPhase = ''
     runHook preInstall
     mkdir -p $out/Applications
     /usr/bin/ditto Trill.app $out/Applications/Trill.app
+    # Defensive, the way perch's is: a hand-bootstrapped pin or a dev bundle
+    # built without the app target would leave a dangling bin/trill, which is
+    # worse than no bin/trill — `command -v trill` would succeed and every
+    # call would fail.
+    if [ -x "$out/Applications/Trill.app/Contents/MacOS/Trill" ]; then
+      mkdir -p $out/bin
+      ln -s $out/Applications/Trill.app/Contents/MacOS/Trill $out/bin/trill
+    fi
     runHook postInstall
   '';
 
