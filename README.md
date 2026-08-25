@@ -198,9 +198,15 @@ Three lanes, in order of honesty:
 1. **First-party** (shipping): anything local speaks the socket. haus
    apps, scripts, CI — clean, supported, forever.
 2. **System Mirror** (experimental, off by default): reads the `usernoted`
-   store read-only under Full Disk Access and redraws other apps' banners.
-   Undocumented surface — a schema probe disables it safely when macOS
-   moves. trill stays fully useful without it.
+   store read-only under Full Disk Access and redraws other apps' banners,
+   as `com.apple.MobileSMS` and friends — the bundle id is the rule's
+   `source`. Undocumented surface — a schema probe disables it safely when
+   macOS moves. trill stays fully useful without it.
+   **A mirrored card arrives about five seconds after the notification
+   itself**: usernoted batches its writes, nothing outside that daemon can
+   hurry it, and the number is here rather than hidden because it decides
+   what the mirror is good for. Its *timestamp* is exact, so a late card
+   still says when the thing happened.
 3. **Suppressing Apple's own banners** is Focus + per-app settings — trill
    deep-links you there but never pretends to own that dial.
 
@@ -261,7 +267,9 @@ See [ARCHITECTURE.md](./ARCHITECTURE.md) for the invariants and
 ## status
 
 Pre-release scaffold. The first-party pipeline (socket → rules → banners →
-inbox) is the v1 target; System Mirror ships only after its feasibility
-spike answers the questions in the PRD.
+inbox) is the v1 target. System Mirror's feasibility spike is done (macOS
+26.5, 2026-08-25) and it ships opt-in and experimental — see
+[ARCHITECTURE.md](./ARCHITECTURE.md), "The undocumented mirror", for the
+measurements it stands on.
 
 MIT. Part of the [hausfold](https://github.com/hausfold) family.

@@ -41,10 +41,19 @@ types stop at its own boundary), advertises `ProviderHealth` from an explicit
 never into a broken pipeline. Corollaries:
 
 - **System Mirror is quarantined.** The `usernoted` store is opened
-  `SQLITE_OPEN_READONLY`, schema-probed before every session, and disabled
-  with a visible reason on any drift. It is opt-in, experimental, and the
-  app must stay fully useful without it. No usernoted type or column name
-  may appear outside `Providers/SystemMirror/`.
+  `SQLITE_OPEN_READONLY`, schema-probed before every session — tables *and*
+  the columns the reader reads — and disabled with a visible reason on any
+  drift. It is opt-in, experimental, and the app must stay fully useful
+  without it. No usernoted type or column name may appear outside
+  `Providers/SystemMirror/`; everything crossing out is a `UsernotedRecord`,
+  and every decision about it is `SystemMirrorMapper`'s and pure.
+  Two things measured in the M3 spike are load-bearing and must not be
+  "optimised" away. **A mirrored card is ~5.1 s late and that is usernoted's
+  batching, not ours** — say the number, don't chase it; watching the `-wal`
+  buys cost, not latency. And **trill never mirrors trill**: `ownBundleIDs`
+  excludes the whole family by identity, because a mirror that reads its own
+  banners draws, records, re-reads and draws again. Unlikely isn't good
+  enough there; impossible is.
 - **The calendar is read, never written, and never asked for unprompted.**
   `CalendarProvider` runs EventKit in-process — the OS pushes changes, so
   there is no poller — and draws one `note` per occurrence, `calendarLeadMinutes`

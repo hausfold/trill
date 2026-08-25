@@ -423,11 +423,41 @@ sitting there at five, still claiming ten minutes.
 
 `SystemMirrorProvider` treats the usernoted store the way any undocumented
 Apple store deserves: independently probed, explicitly enabled, never assumed.
-The probe checks existence, readability, and expected tables before any
-session; drift produces `unavailable(reason:)` — a settings string, not a
-crash. Ingest (WAL-watching vs polling, Focus interaction, per-app field
-survival) is deliberately unimplemented until the PRD's spike answers those
-questions on real macOS versions.
+The probe checks existence, readability, expected tables **and the columns the
+reader actually reads** before any session; drift produces
+`unavailable(reason:)` — a settings string, not a crash. A table-name probe
+alone is not enough: `record` surviving an update with `data` renamed would
+pass it and then decode nothing, forever, quietly.
+
+The M3 spike ran on macOS 26.5 (2026-08-25) against this Mac's own store.
+What it found, and what the ingest is shaped by:
+
+| Question | Measured |
+|---|---|
+| Do rows appear promptly? | **No — ~5.14 s late.** Twice: 5137 ms and 5143 ms between `display notification` and the row being visible to a reader. usernoted batches; `delivered_date` is accurate to ~65 ms of the real event, so only *visibility* lags. |
+| WAL-watching or polling? | Neither buys latency — the `-wal` file changes in the same instant the row appears. Watching wins on cost, not speed, so the watcher is a `DispatchSource` on the log with a 15 s sweep behind it. |
+| What lands under a per-app switch that's off? | **Everything.** Apps with the master allow bit clear (`com.apple.MobileSMS`, `com.apple.mobilephone`, `com.apple.Photos` here) still write records. `record.style` is 1 only when macOS drew something itself and 0 when it didn't — which is exactly the signal that makes "silence Apple's, keep trill's" work. |
+| Which fields survive? | `req.titl`, `req.subt`, `req.body`, `req.thre`, `req.cate`, `req.durl`, `req.unct`; `app` in canonical case; `date` in the 2001 epoch. Title is *optional* — Tips and Find My post without one. `body` is a `String` **or** a localization triple `[key, sentence, args]`. |
+| Can destination metadata open the right place? | Only sometimes, and never as a URL trill will open: `req.durl` is `messages://…`, `x-apple-tips://…`. The Open pill activates the app instead, which is where Apple's own banner would land you. |
+| How aggressively are rows pruned? | Not by age — rows live as long as the item sits in Notification Center (three days' worth here). The watermark, not a time window, is what stops a launch replaying them. |
+
+**The verdict: ship it, opt-in and experimental, and say the number.** A
+mirrored card is five seconds late by construction, which is the right trade
+for "one banner instead of two" and the wrong one for anything time-critical.
+Nothing outside the daemon can close that gap, so the honest move is to
+document it rather than design around it.
+
+Two rules the ingest can't be built without:
+
+- **trill never mirrors trill.** `SystemMirrorMapper.ownBundleIDs` excludes
+  every id in the family, by identity rather than by "did we just send this" —
+  a mirror that reads its own banners draws, records, re-reads and draws
+  again. The loop has to be impossible, not unlikely.
+- **The `_SYSTEM_CENTER_:` prefix is stripped.** usernoted files daemon-posted
+  notifications under a prefixed twin, so `com.apple.SoftwareUpdateNotification`
+  appears twice. They are one app to the person reading the banner, and asking
+  someone to write a rule naming an internal prefix is asking them to know it
+  exists. The raw identifier survives in `metadata.bundleId`.
 
 ### Suppressing Apple's banners
 

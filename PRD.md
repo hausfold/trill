@@ -157,21 +157,32 @@ the reference driver, reading nix's `internal-json` counters (the set-level
 `resProgress`, never the per-path byte one) and beating every 3s so a long
 compile keeps its card.
 
-### M3 — System Mirror feasibility spike (measure, then decide)
+### M3 — System Mirror feasibility spike — **measured, and shipped**
 
-Read `~/Library/Group Containers/group.com.apple.usernoted/db2/db` under
-Full Disk Access and answer with numbers, per macOS version (Sonoma →
-current):
+Measured on macOS 26.5, 2026-08-25. The numbers and the reasoning are in
+ARCHITECTURE.md, "The undocumented mirror"; the short form:
 
-1. Do records appear promptly on delivery? Via WAL watching or only polling?
-2. What lands under an active Focus? When banners are disabled per-app?
-3. Which fields survive for Slack, Mail, Calendar, browsers, system?
-4. Can destination/bundle metadata reliably open the right place?
-5. How aggressively are rows pruned?
+1. **Records appear ~5.14 s after delivery** (5137/5143 ms, n=2) — usernoted
+   batches its flush. `delivered_date` is accurate to ~65 ms, so the card is
+   late but its timestamp isn't. WAL-watching and polling see the row at the
+   same instant, so the watcher is a `DispatchSource` on `db-wal` with a 15 s
+   sweep behind it; that is a cost decision, not a latency one.
+2. **A per-app switch being off does not stop the row being written** — apps
+   with the master allow bit clear still record, and `record.style` says
+   whether macOS drew anything itself. That is what makes "silence Apple's,
+   keep trill's" possible at all. (Behaviour under an *active Focus* is still
+   unmeasured — the one question of the five left open.)
+3. Titles are optional, bodies are sometimes a localization triple, and the
+   bundle id arrives in canonical case. All handled at the boundary.
+4. Destination metadata exists as a private-scheme URL and is kept as
+   metadata; the Open pill activates the app, which is where Apple's own
+   banner lands you.
+5. Rows are not age-pruned — they live as long as the item is in Notification
+   Center. A launch starts from a high-water mark rather than replaying them.
 
-Ship System Mirror as opt-in experimental only if the answers support it;
-otherwise it stays a power-user module and trill remains the first-party
-layer. Either result is a success — the decision is the deliverable.
+**Decision: shipped, opt-in and experimental**, with the five seconds stated
+plainly rather than designed around. Still open: behaviour under an active
+Focus, and a second macOS version to confirm the schema probe earns its keep.
 
 ### M4 — provider actions
 
