@@ -19,11 +19,14 @@ import AppKit
 /// permission is not requested anywhere in the codebase.
 @MainActor
 enum DesktopLayoutProbe {
-    /// Every on-screen window that could matter for placement, in the same
-    /// bottom-left global coordinates as `ScreenDescriptor` — the window
-    /// server answers in top-left coordinates, so each rect is flipped here
-    /// and nowhere else.
-    static func windows(on screenFrame: CGRect) -> [DesktopLayout.Window] {
+    /// One reading of the window server, flipped into `ScreenDescriptor`
+    /// coordinates — the window server answers in top-left coordinates, so
+    /// each rect is flipped here and nowhere else.
+    ///
+    /// Taken once per render pass and shared across displays: this is the
+    /// expensive call on the path, and a Mac with three monitors must not
+    /// pay for it three times to draw one card.
+    static func allWindows() -> [DesktopLayout.Window] {
         guard let global = NSScreen.screens.first?.frame else { return [] }
         // `.excludeDesktopElements` is deliberately NOT passed, and that is the
         // whole reason this works: sketchybar draws at `kCGBackstopMenuLevel`
@@ -57,7 +60,6 @@ enum DesktopLayoutProbe {
                 width: width,
                 height: height
             )
-            guard frame.intersects(screenFrame) else { return nil }
             let layer = entry[kCGWindowLayer as String] as? Int ?? 0
             return DesktopLayout.Window(frame: frame, isOverlay: layer != 0)
         }
@@ -65,19 +67,46 @@ enum DesktopLayoutProbe {
 }
 
 extension ScreenDescriptor {
+    /// One display, measured against a window reading the caller already
+    /// took — see `attached()`.
     @MainActor
-    init(screen: NSScreen) {
-        let number = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")]
-        let windows = DesktopLayoutProbe.windows(on: screen.frame)
+    init(screen: NSScreen, windows: [DesktopLayout.Window]) {
+        let number = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber
+        let onThisScreen = windows.filter { $0.frame.intersects(screen.frame) }
         self.init(
-            id: (number as? NSNumber)?.stringValue ?? screen.localizedName,
+            id: number?.stringValue ?? screen.localizedName,
             frame: screen.frame,
             visibleFrame: screen.visibleFrame,
             contentFrame: DesktopLayout.anchor(
                 visible: screen.visibleFrame,
-                windows: windows,
+                windows: onThisScreen,
                 inset: BannerGeometry.inset
-            )
+            ),
+            isBuiltin: number.map { CGDisplayIsBuiltin(CGDirectDisplayID($0.uint32Value)) != 0 } ?? false
         )
+    }
+
+    /// Every attached display, in the system's own order (index 0 carries the
+    /// menu bar), off a single reading of the window server.
+    @MainActor
+    static func attached() -> [ScreenDescriptor] {
+        let windows = DesktopLayoutProbe.allWindows()
+        return NSScreen.screens.map { ScreenDescriptor(screen: $0, windows: windows) }
+    }
+
+    /// The display the pointer is on — what `DisplayTarget.active` means.
+    ///
+    /// The pointer, and not `NSScreen.main`: that is documented as the screen
+    /// with the *key window*, and trill's own windows are non-activating, so
+    /// on a Mac where nothing is focused it answers for the last app that
+    /// was. Where the hand is is the honest reading of "the display you're
+    /// facing", and it costs no permission.
+    @MainActor
+    static func pointerScreenID() -> String? {
+        let location = NSEvent.mouseLocation
+        guard let screen = NSScreen.screens.first(where: { $0.frame.contains(location) })
+        else { return nil }
+        let number = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber
+        return number?.stringValue ?? screen.localizedName
     }
 }

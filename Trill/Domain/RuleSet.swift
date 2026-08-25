@@ -2,8 +2,10 @@ import Foundation
 
 /// What the policy engine decides to do with one event.
 enum DeliveryDecision: Equatable, Sendable {
-    /// Draw a banner now (and record to the inbox).
-    case banner
+    /// Draw a banner now (and record to the inbox), on the display the rule
+    /// named. `.primary` unless a rule said otherwise, which is where macOS
+    /// puts its own and where every banner went before routing existed.
+    case banner(DisplayTarget)
     /// No banner; the event lands in the inbox only.
     case inboxOnly
     /// Batch into a named digest, flushed on the digest's schedule.
@@ -25,12 +27,17 @@ struct RuleSet: Codable, Sendable, Equatable {
             var titleContains: String?
             /// Rule applies only at or below this urgency.
             var urgencyAtMost: NotificationEvent.Urgency?
+            /// Exact event kind (`ask`, `fault`, `chat`, `pulse`, `done`,
+            /// `note`). The axis routing is usually written against — "faults
+            /// on the big screen" is a sentence about kind, not about source.
+            var kind: NotificationEvent.Kind?
 
             func matches(_ event: NotificationEvent) -> Bool {
                 if let source, event.source != source.lowercased() { return false }
                 if let titleContains,
                    !event.title.localizedCaseInsensitiveContains(titleContains) { return false }
                 if let urgencyAtMost, event.urgency > urgencyAtMost { return false }
+                if let kind, event.kind != kind { return false }
                 return true
             }
         }
@@ -49,6 +56,12 @@ struct RuleSet: Codable, Sendable, Equatable {
 
         var match: Match
         var delivery: Delivery
+        /// Which display a bannered match draws on. Written flat beside
+        /// `delivery`, like `digest`. Nil means `.primary`; it is ignored on
+        /// a rule that banners nothing, because a digest card is drawn by the
+        /// scheduler hours later and an inbox row is drawn on no screen at
+        /// all.
+        var display: DisplayTarget?
     }
 
     struct QuietHours: Codable, Sendable, Equatable {
@@ -103,19 +116,30 @@ struct RuleSet: Codable, Sendable, Equatable {
 /// decoded with the same nested convention, and never read a line of the
 /// documented format.
 extension RuleSet.Rule {
-    private enum CodingKeys: String, CodingKey { case match }
+    private enum CodingKeys: String, CodingKey { case match, display, delivery }
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         match = try container.decodeIfPresent(Match.self, forKey: .match) ?? Match()
-        // The same decoder, not a nested one: `delivery`/`digest` are the
-        // rule's own keys.
-        delivery = try Delivery(from: decoder)
+        display = try container.decodeIfPresent(DisplayTarget.self, forKey: .display)
+        // A rule may name only *where*: `{"match": …, "display": "builtin"}`
+        // is a routing rule, and making it also write `"delivery": "banner"`
+        // would be ceremony for the commonest thing anyone writes. `delivery`
+        // stays required everywhere else, so a mistyped key still fails the
+        // file loudly instead of quietly becoming a banner rule.
+        if display != nil, !container.contains(.delivery) {
+            delivery = .banner
+        } else {
+            // The same decoder, not a nested one: `delivery`/`digest` are the
+            // rule's own keys.
+            delivery = try Delivery(from: decoder)
+        }
     }
 
     func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(match, forKey: .match)
+        try container.encodeIfPresent(display, forKey: .display)
         try delivery.encode(to: encoder)
     }
 }

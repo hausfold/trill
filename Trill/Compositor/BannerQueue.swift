@@ -34,10 +34,21 @@ final class BannerQueue {
         /// Stable for the life of the fold. Panels and dismiss timers key off
         /// it, so swapping the face event must never change it.
         let id: String
+        /// Which display the rules sent this to — the *intent*, kept for the
+        /// life of the entry so a topology change can re-resolve it and an
+        /// event routed to a monitor finds it again when it comes back.
+        var display: DisplayTarget = .primary
+        /// The screen that intent currently names, or nil when it names none.
+        /// Resolved once on arrival — `active` must mean the display you were
+        /// facing when the card landed, not wherever the pointer wandered to
+        /// since — and again on every topology change.
+        var screenID: String?
 
-        init(event: NotificationEvent) {
+        init(event: NotificationEvent, display: DisplayTarget = .primary, screenID: String? = nil) {
             self.event = event
             self.id = event.id
+            self.display = display
+            self.screenID = screenID
         }
 
         /// Fold a newer thread-mate in: it takes the face, the outgoing face
@@ -98,11 +109,22 @@ final class BannerQueue {
     /// can beat leaving fin A. Independent of the stack's hover; the two
     /// surfaces share no clock.
     private var parkedHoverID: String?
-    private var capacity: Int
+    /// Where the displays are, asked freshly at every arrival — that is what
+    /// makes `DisplayTarget.active` mean the screen you are facing *now* and
+    /// not the one you were facing when the monitor was plugged in. The
+    /// compositor installs this; the default is a single nameless display,
+    /// which is what a queue built without one gets.
+    var displays: () -> DisplayRouting
+    private var routing: DisplayRouting
     /// Which banner the pointer is over, if any. Hover both pauses the queue
     /// and expands that one banner's fold, so it has to be an id, not a bool.
     private var hoveredID: String?
-    private var paused: Bool { hoveredID != nil }
+    /// The display that hovered card is on. The pause is scoped to it: the
+    /// pointer is over one screen, and cards on another are not under it, so
+    /// their clocks keep running. Stored rather than derived because the
+    /// entry is gone by the time `dismiss` needs to know which lane to
+    /// restart.
+    private var hoveredLane: String?
     private var dismissTimers: [String: Task<Void, Never>] = [:]
 
     private let displayDuration: Duration
@@ -112,14 +134,45 @@ final class BannerQueue {
     private var lastThreadArrival: [String: (id: String, at: Date)] = [:]
 
     init(capacity: Int = 3, displayDuration: Duration = .seconds(6), coalesceWindow: TimeInterval = 10) {
-        self.capacity = max(0, capacity)
+        let single = DisplayRouting.single(capacity: max(0, capacity))
+        self.displays = { single }
+        self.routing = single
         self.displayDuration = displayDuration
         self.coalesceWindow = coalesceWindow
     }
 
+    // MARK: - Lanes
+
+    /// The screen an entry is drawn on, or nil while it names none.
+    private func lane(_ entry: Entry) -> String? { entry.screenID }
+
+    /// Is there room on that display for one more card? An unknown screen
+    /// fits nothing, so its events wait rather than draw nowhere.
+    private func hasRoom(on lane: String?) -> Bool {
+        visible.count(where: { $0.screenID == lane }) < routing.capacity(of: lane)
+    }
+
+    /// Hover pauses the display it happened on, and only that one.
+    private func isPaused(on lane: String?) -> Bool {
+        hoveredID != nil && hoveredLane == lane
+    }
+
+    private func rearm(lane: String?) {
+        for entry in visible where entry.screenID == lane { armDismiss(for: entry.id) }
+    }
+
     // MARK: - Intake
 
-    func enqueue(_ event: NotificationEvent, now: Date = .now) {
+    func enqueue(
+        _ event: NotificationEvent,
+        on display: DisplayTarget = .primary,
+        now: Date = .now
+    ) {
+        // Read the topology now, not at the last rebuild: `active` means the
+        // display you are facing as this card lands. What it resolves to is
+        // then frozen onto the entry — a card that changed screens because
+        // you reached for the other keyboard is a card you lose.
+        routing = displays()
         // A re-sent ask supersedes its own fin. Without this, a lane that
         // says "still blocked" every ten minutes grows a column of fins for
         // one question — and the ledge holds five, so three such lanes would
@@ -144,7 +197,11 @@ final class BannerQueue {
             lastThreadArrival[thread] = (event.id, now)
         }
 
-        let entry = Entry(event: event)
+        let entry = Entry(
+            event: event,
+            display: display,
+            screenID: routing.screen(for: display)
+        )
         // Hover does NOT gate arrivals: a new card appends at the bottom of
         // the stack, so nothing moves under the cursor — and its dismiss
         // timer stays unarmed while the queue is paused (`armDismiss`), so
@@ -153,7 +210,7 @@ final class BannerQueue {
         // happened to rest on the stack. Only a *freed slot* refilling is
         // still deferred to unhover: a refill can follow a dismissal above
         // the cursor, and that does shift cards.
-        if visible.count < capacity {
+        if hasRoom(on: entry.screenID) {
             show(entry)
         } else {
             // After every waiting entry of equal-or-higher urgency: a new
@@ -165,9 +222,16 @@ final class BannerQueue {
         notify()
     }
 
-    /// How many entries the display doesn't have room for right now — what
-    /// the compositor's overflow badge counts.
+    /// How many entries no display has room for right now.
     var waitingCount: Int { waiting.count }
+
+    /// The same count for one display — what that screen's overflow badge
+    /// reports. A badge is per column, because "2 waiting" hanging off the
+    /// laptop's stack while the two are queued for the monitor would be a
+    /// lie about which screen to look at.
+    func waitingCount(onScreen screen: String?) -> Int {
+        waiting.count { $0.screenID == screen }
+    }
 
     /// Fold `latest` into an existing banner/queued entry for its thread.
     /// The newest content wins the face of the banner; the events behind it
@@ -205,8 +269,10 @@ final class BannerQueue {
             // The pointer's target just vanished. SwiftUI does not reliably
             // send the matching exit for a view that goes away under the
             // cursor, and a hover left set would pause the queue forever.
+            let lane = hoveredLane
             hoveredID = nil
-            visible.forEach { armDismiss(for: $0.id) }
+            hoveredLane = nil
+            rearm(lane: lane)
         }
         refill()
         notify()
@@ -216,6 +282,7 @@ final class BannerQueue {
         dismissTimers.values.forEach { $0.cancel() }
         dismissTimers.removeAll()
         hoveredID = nil
+        hoveredLane = nil
         notifyDropped(visible + waiting)
         visible.removeAll()
         waiting.removeAll()
@@ -280,8 +347,10 @@ final class BannerQueue {
         if hoveredID == id {
             // Same stranded-hover rule as `dismiss`: no exit event follows
             // a panel that is simply gone.
+            let lane = hoveredLane
             hoveredID = nil
-            visible.forEach { armDismiss(for: $0.id) }
+            hoveredLane = nil
+            rearm(lane: lane)
         }
         parked.append(entry)
         while parked.count > Self.parkedCapacity {
@@ -314,7 +383,14 @@ final class BannerQueue {
             // real), but its buttons aren't, and trill draws no dead ones.
             var event = item.event
             event.actions.removeAll { $0.kind == .reply }
-            var entry = Entry(event: event)
+            // Restored to the primary display whatever screen it was on: the
+            // ledge remembers the question, not the topology, and the rules
+            // that routed it are not re-run for something already delivered.
+            var entry = Entry(
+                event: event,
+                display: .primary,
+                screenID: routing.screen(for: .primary)
+            )
             entry.coalescedCount = item.coalescedCount
             parked.append(entry)
         }
@@ -350,44 +426,87 @@ final class BannerQueue {
         if hovering {
             guard hoveredID != id else { return }
             hoveredID = id
-            dismissTimers.values.forEach { $0.cancel() }
-            dismissTimers.removeAll()
+            hoveredLane = visible.first { $0.id == id }?.screenID
+            // That display's clocks only. A card on the *other* monitor is
+            // not under the pointer, and holding it up because you leaned
+            // into something over here would leave it there indefinitely.
+            for entry in visible where entry.screenID == hoveredLane {
+                dismissTimers.removeValue(forKey: entry.id)?.cancel()
+            }
         } else {
             guard hoveredID == id else { return }
+            let lane = hoveredLane
             hoveredID = nil
-            visible.forEach { armDismiss(for: $0.id) }
+            hoveredLane = nil
+            rearm(lane: lane)
             refill()
         }
         refreshExpansion()
         notify()
     }
 
-    /// Display capacity changed (topology rebuild, smaller screen). Overflow
-    /// slides back into the waiting line — events survive every rebuild.
-    func setCapacity(_ newCapacity: Int) {
-        capacity = max(0, newCapacity)
-        while visible.count > capacity {
-            let overflow = visible.removeLast()
-            dismissTimers.removeValue(forKey: overflow.id)?.cancel()
-            // Ahead of its own rank, not just at the front: it was already
-            // on screen, so it refills before anything that never was —
-            // without letting a demoted note cut in front of a critical.
-            let index = waiting.firstIndex { $0.event.urgency <= overflow.event.urgency }
-                ?? waiting.endIndex
-            waiting.insert(overflow, at: index)
-            if hoveredID == overflow.id {
-                // The card under the pointer just left the screen with the
-                // display it was on. No exit event is coming for a panel
-                // torn down by a topology rebuild, and a hover left set
-                // would pause the queue for good.
-                hoveredID = nil
+    /// The topology changed: a display arrived, left, or resized. Every
+    /// entry's target is resolved again — so a card routed to a monitor that
+    /// came back finds it — and anything a display no longer has room for
+    /// slides into the waiting line. Events survive every rebuild.
+    func refreshDisplays() {
+        routing = displays()
+        for i in visible.indices {
+            visible[i].screenID = routing.screen(for: visible[i].display)
+        }
+        for i in waiting.indices {
+            waiting[i].screenID = routing.screen(for: waiting[i].display)
+        }
+        if let hoveredID {
+            hoveredLane = visible.first { $0.id == hoveredID }?.screenID
+        }
+
+        // Per display, from the bottom of that display's column: two targets
+        // can land on one screen (a laptop with nothing plugged in resolves
+        // `builtin` and `external` alike to it), and they share its room.
+        var overflowed: [Entry] = []
+        for lane in Set(visible.map(\.screenID)) {
+            let column = visible.filter { $0.screenID == lane }
+            let allowed = routing.capacity(of: lane)
+            guard column.count > allowed else { continue }
+            overflowed += column.suffix(column.count - allowed)
+        }
+        if !overflowed.isEmpty {
+            let leaving = Set(overflowed.map(\.id))
+            visible.removeAll { leaving.contains($0.id) }
+            for overflow in overflowed.reversed() {
+                dismissTimers.removeValue(forKey: overflow.id)?.cancel()
+                // Ahead of its own rank, not just at the front: it was already
+                // on screen, so it refills before anything that never was —
+                // without letting a demoted note cut in front of a critical.
+                let index = waiting.firstIndex { $0.event.urgency <= overflow.event.urgency }
+                    ?? waiting.endIndex
+                waiting.insert(overflow, at: index)
+                if hoveredID == overflow.id {
+                    // The card under the pointer just left the screen with the
+                    // display it was on. No exit event is coming for a panel
+                    // torn down by a topology rebuild, and a hover left set
+                    // would pause the queue for good.
+                    hoveredID = nil
+                    hoveredLane = nil
+                }
             }
         }
-        if !paused {
-            visible.forEach { armDismiss(for: $0.id) }
+
+        for entry in visible where !isPaused(on: entry.screenID) {
+            armDismiss(for: entry.id)
         }
         refill()
         notify()
+    }
+
+    /// One nameless display of this many cards — the shape a queue with no
+    /// compositor behind it has, and how every test that doesn't care about
+    /// routing says "the display got smaller".
+    func setCapacity(_ newCapacity: Int) {
+        let single = DisplayRouting.single(capacity: max(0, newCapacity))
+        displays = { single }
+        refreshDisplays()
     }
 
     // MARK: - Internals
@@ -397,9 +516,19 @@ final class BannerQueue {
         armDismiss(for: entry.id)
     }
 
+    /// Promote whatever the displays now have room for, in waiting order —
+    /// skipping, not stopping at, an entry whose own display is full. A busy
+    /// monitor must not hold up the laptop's queue; order is preserved
+    /// *within* a display, which is where it means anything.
     private func refill() {
-        while !paused, visible.count < capacity, !waiting.isEmpty {
-            show(waiting.removeFirst())
+        var index = 0
+        while index < waiting.count {
+            let lane = waiting[index].screenID
+            guard !isPaused(on: lane), hasRoom(on: lane) else {
+                index += 1
+                continue
+            }
+            show(waiting.remove(at: index))
         }
     }
 
@@ -414,7 +543,9 @@ final class BannerQueue {
 
     private func armDismiss(for id: String) {
         dismissTimers[id]?.cancel()
-        guard !paused else { return }
+        guard let entry = visible.first(where: { $0.id == id }),
+              !isPaused(on: entry.screenID)
+        else { return }
         dismissTimers[id] = Task { [weak self, displayDuration] in
             try? await Task.sleep(for: displayDuration)
             guard !Task.isCancelled else { return }

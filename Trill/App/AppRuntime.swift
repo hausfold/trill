@@ -127,12 +127,12 @@ final class AppRuntime {
                 // event in someone's rules; the fin it clears is not.
                 queue.resolve(keys: delivered.event.resolves)
                 switch delivered.decision {
-                case .banner:
+                case .banner(let display):
                     // Claimed before it is drawn: past this point the ask
                     // waits on the user for as long as they take, and the
                     // broker's claim watchdog stands down.
                     askBroker.claim(id: delivered.event.id)
-                    queue.enqueue(delivered.event)
+                    queue.enqueue(delivered.event, on: display)
                 case .digest(let name):
                     // Counted now, drawn on the hour. The event itself was
                     // already persisted by the repository — the scheduler

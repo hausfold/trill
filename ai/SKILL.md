@@ -8,10 +8,10 @@ description: Put a notification banner on this Mac's screen from the command lin
 Trill draws its own notification banners on macOS. Not Apple's Notification
 Center: its own daemon, its own rules file, never a sound. Anything that runs a
 command can put a banner on screen — the right answer to *"tell me when this is
-done"* — and `trill ask` can put a *question* there and wait. You reach it with
-the `trill` command; the daemon must be running (`trill ping` exits 0 silently
-when it is, everything else **2**). Banners never steal focus, so one is safe
-mid-work. No sound, ever — don't promise one.
+done"* — and `trill ask` can put a *question* there and wait. The daemon must be
+running (`trill ping` exits 0 silently when it is, everything else **2**).
+Banners never steal focus, so one is safe mid-work. No sound, ever — don't
+promise one.
 
 ## Verbs
 
@@ -27,23 +27,22 @@ mid-work. No sound, ever — don't promise one.
 | which apps still banner themselves? | `trill doctor` (`--all --json` for every app) |
 | open the inbox window | `trill inbox [--asks]` · everything: `trill help` |
 
-`--kind` colors the banner by what it asks of the user: `ask` (blocked on
-them), `fault` (broke), `chat` (a human), `pulse` (in flight), `done` (finished
-well), `note` (fyi, the default). An `ask` whose banner times out unattended
-parks as a slim fin on the screen edge, across restarts, until answered — the
-shape for "I'm blocked, come back to me".
+`--kind` colors the banner by what it asks of the user: `ask` (blocked on them),
+`fault` (broke), `chat` (a human), `pulse` (in flight), `done` (finished well),
+`note` (fyi, the default). An `ask` whose banner times out unattended parks as a
+slim fin on the screen edge, across restarts — "I'm blocked, come back to me".
 
 An ask can also stop waiting on its own: `trill resolve <id>` (the id `send`
-printed) clears it from any process, any time later; `--until NAME[:args]` has
-the daemon poll a check *the user declared* in their rules file; `--key K`
-names it, and re-sending with that key replaces its fin.
+printed) clears it from any process, any time later; `--until NAME[:args]` polls
+a check *the user declared* in their rules file; `--key K` names it, and
+re-sending with that key replaces its fin.
 
 `--urgency` (`low`/`normal`/`critical`) is the loudness, a different axis: a
 fault can be low, a note critical. `--thread` groups related banners; `--source
-<slug>` is what the rules file matches on; `--redact` keeps body and subtitle
-off the banner. `--action "Label=https://…"` — also `Label=app:ID`, or
-`Label=lane:repo/name` for that holt lane's window, repeatable — adds buttons,
-the first being what clicking the banner body does too.
+<slug>` is what rules match on; `--redact` keeps body and subtitle off it.
+`--action "Label=https://…"` (also `Label=app:ID`, `Label=lane:repo/name` for a
+holt lane's window, repeatable) adds buttons, the first being what clicking the
+banner body does too.
 
 ## Exit codes — check these, they mean different recoveries
 
@@ -56,11 +55,11 @@ the first being what clicking the banner body does too.
 | 4 | `doctor`: apps found still notifying natively | report the list |
 | 5 | `doctor`: can't read macOS's settings | needs Full Disk Access — **not** "all quiet" |
 
-**Exit 0 means the daemon took the event, not that a banner appeared** — a
-rule, coalescing, quiet hours or a digest can route it elsewhere without
-changing the code, so say "sent", not "you'll see it". **Exit 5 means *can't
-tell*, not "nothing to fix"**: three verdicts, not two, and calling the third
-clean is a bug this app already shipped once.
+**Exit 0 means the daemon took the event, not that a banner appeared** — a rule,
+coalescing, quiet hours or a digest can route it elsewhere without changing the
+code, so say "sent", not "you'll see it". **Exit 5 means *can't tell*, not
+"nothing to fix"**: three verdicts, not two, and calling the third clean is a
+bug this app already shipped once.
 
 ## `trill ask` — the two-way one
 
@@ -74,11 +73,10 @@ trill ask "Push to origin?" --pill Allow --pill Deny --timeout 300 && git push
 
 No `--pill` means Yes and No; three at most, the pressed label goes to stdout,
 and **give it a `--timeout` unless the user is sitting there**. Its codes are
-its own, because the low ones are answers: **0…2** the pill pressed · **64**
-bad usage · **69** no daemon · **70** refused · **75** nobody answered (timed
-out, taken down, resolved elsewhere, kept off screen). **75 is never consent** —
-treat it as no. It takes `--key`/`--until` like a sent ask, and killing your
-command retracts the question.
+its own, because the low ones are answers: **0…2** the pill pressed · **64** bad
+usage · **69** no daemon · **70** refused · **75** nobody answered (timed out,
+taken down, resolved elsewhere, kept off screen). **75 is never consent** — treat
+it as no. It takes `--key`/`--until`, and killing your command retracts it.
 
 ## When to reach for this
 
@@ -115,13 +113,15 @@ Read and edit it as a file. First matching rule wins; no match means banner.
 ```
 
 `resolvers` is what `--until` may name — argv (or `"get": "https://…"`) with
-`$1`…`$9` filled from the invocation's comma-separated args. It is the only
-place a command may live (**never the command line**), so adding one is theirs.
+`$1`…`$9` filled from the invocation's comma-separated args, and the only place
+a command may live (**never the command line**), so adding one is theirs.
 
-`match` takes `source` (exact, case-insensitive), `titleContains` and
-`urgencyAtMost`. `delivery` is `banner`, `inbox`, `digest` (with a sibling
-`digest` name) or `drop`, written **flat beside** `match`, not nested in it. A
-`digest` rule banners nothing: it tallies and draws one card on the hour ("9
+`match` takes `source` (exact, case-insensitive), `titleContains`,
+`urgencyAtMost` and `kind`. `delivery` is `banner`, `inbox`, `digest` (with a
+sibling `digest` name) or `drop`, written **flat beside** `match`, not nested
+in it. `display` names the screen: `primary` (menu-bar, the default), `active`
+(the pointer's), `builtin`, `external` — naming one alone still banners, and an
+unplugged one falls back rather than swallowing. A `digest` rule banners nothing: it tallies and draws one card on the hour ("9
 quiet things · ci ×4, garden ×3") opening the inbox on exactly those.
 `quietHours` is minutes since local midnight, may cross it (`1320`/`420` =
 22:00–07:00), demoting non-critical events inside it.

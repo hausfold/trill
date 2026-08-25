@@ -21,6 +21,53 @@ struct ScreenDescriptor: Sendable, Equatable {
     /// gap that a banner flush to the corner visibly disagrees with. See
     /// `DesktopLayout`.
     var contentFrame: CGRect?
+    /// This Mac's own panel, as opposed to anything plugged into it. The one
+    /// thing `DisplayTarget.builtin` and `.external` are decided on — and a
+    /// property of the hardware, so the pure side can be handed it rather
+    /// than guessing from size or position.
+    var isBuiltin: Bool = false
+}
+
+/// Resolves a rule's `DisplayTarget` against the displays actually attached.
+/// Pure, like everything else in this file: the compositor measures the
+/// screens, this decides which one a target meant.
+///
+/// **Every target falls back to the primary display.** A rule that says
+/// "faults on the external screen" written by someone who then unplugged it
+/// must still put faults somewhere — routing may move a banner, never lose
+/// one.
+enum DisplayRouter {
+    /// The display a target names. `screens` is in the system's own order,
+    /// so `screens.first` is the menu-bar display; `pointer` is the id of
+    /// the screen the pointer is on, when it is on one.
+    static func screen(
+        for target: DisplayTarget,
+        among screens: [ScreenDescriptor],
+        pointer: String?
+    ) -> ScreenDescriptor? {
+        guard let primary = screens.first else { return nil }
+        switch target {
+        case .primary: return primary
+        case .active: return screens.first { $0.id == pointer } ?? primary
+        case .builtin: return screens.first(where: \.isBuiltin) ?? primary
+        case .external: return screens.first { !$0.isBuiltin } ?? primary
+        }
+    }
+
+    /// The whole table for one topology: every target resolved, and the
+    /// capacity of each screen that came back. This is what the queue counts
+    /// lanes with, and it is rebuilt rather than patched — two targets
+    /// landing on the same physical screen must share that screen's capacity,
+    /// or a Mac with nothing plugged in would draw two overlapping columns.
+    static func routing(among screens: [ScreenDescriptor], pointer: String?) -> DisplayRouting {
+        var routing = DisplayRouting()
+        for target in DisplayTarget.allCases {
+            guard let screen = screen(for: target, among: screens, pointer: pointer) else { continue }
+            routing.screens[target] = screen.id
+            routing.capacity[screen.id] = BannerGeometry.capacity(on: screen)
+        }
+        return routing
+    }
 }
 
 /// Reads the desktop the user actually arranged — overlay bars and the top

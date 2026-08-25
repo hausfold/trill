@@ -6,16 +6,20 @@ struct PolicyEngine: Sendable {
     var ruleSet: RuleSet
 
     func decide(_ event: NotificationEvent, now: Date, calendar: Calendar = .current) -> DeliveryDecision {
-        // First matching rule wins.
+        // First matching rule wins — including for *where* it draws: the
+        // display is that same rule's, never a second walk of the list.
         for rule in ruleSet.rules where rule.match.matches(event) {
             switch rule.delivery {
-            case .banner: return quietAdjusted(.banner, for: event, now: now, calendar: calendar)
+            case .banner:
+                return quietAdjusted(
+                    .banner(rule.display ?? .primary), for: event, now: now, calendar: calendar
+                )
             case .inbox: return .inboxOnly
             case .digest(let name): return .digest(name)
             case .drop: return .drop
             }
         }
-        return quietAdjusted(.banner, for: event, now: now, calendar: calendar)
+        return quietAdjusted(.banner(.primary), for: event, now: now, calendar: calendar)
     }
 
     /// Quiet hours demote banners to inbox-only. Critical events are the one
@@ -26,7 +30,7 @@ struct PolicyEngine: Sendable {
         now: Date,
         calendar: Calendar
     ) -> DeliveryDecision {
-        guard decision == .banner,
+        guard case .banner = decision,
               let quiet = ruleSet.quietHours,
               event.urgency < .critical
         else { return decision }

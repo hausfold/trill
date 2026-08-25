@@ -92,6 +92,30 @@ re-presentation — the ledge's fins are torn down and redrawn like banners. Cap
 — covered by unit test, no display required, thanks to the pure
 `ScreenDescriptor`/`BannerGeometry` split.
 
+### More than one display
+
+A rule may say *where*, not just whether: `"display": "builtin"` beside
+`delivery`, resolving to `primary` (the menu-bar display, and the default),
+`active` (the one the pointer is on), `builtin` or `external`. The policy
+engine answers with a `DisplayTarget` on `.banner` — an intent, never a screen
+id, because what "the external one" means changes every time something is
+plugged in.
+
+`DisplayRouter` (pure) turns that intent into one of the attached
+`ScreenDescriptor`s, and **every target falls back to primary**: a rule naming
+a monitor you unplugged must still put its banners somewhere. The queue counts
+a column **per resolved screen**, not per target — on a laptop with nothing
+attached, `builtin` and `external` are the same display and share its room,
+where per-target counting would draw two stacks over each other. Hover pauses
+the display it happened on and no other; the overflow badge is per column, so
+"⌄ 2 waiting" always names the screen you are looking at.
+
+The target is resolved once, on arrival — `active` means the display you were
+facing when the card landed, not wherever the pointer went next — and again on
+every topology change, which is what carries a monitor's cards home when it
+comes back. Cards for a display that isn't attached wait; nothing is dropped
+for want of a screen.
+
 ### The screen already has furniture on it
 
 `NSScreen.visibleFrame` knows about the menu bar and the Dock and nothing
@@ -517,8 +541,6 @@ would have gone down.
   a rule-declared cadence replaces it without touching the scheduler.
 - Pounce inbox: `trill history --json` over the socket, rendered by a
   pounce command.
-- Per-display routing: `BannerWindowSystem` already keys panels by entry;
-  a queue per screen descriptor is additive.
 - Provider actions (chat reply, dismiss-at-source): richer capability sets on
   existing providers. Calendar's `open_event` is the shape they take — a named
   capability with a validated target, not a URL on the wire.
