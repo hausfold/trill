@@ -159,20 +159,34 @@ final class AppSettings: ObservableObject {
     /// one place these live afterwards. Keys nobody ever changed are absent
     /// from defaults and stay absent from the file — a default is not a
     /// setting somebody made.
+    ///
+    /// **The file wins wherever it speaks.** Only keys config.json does not
+    /// name are filled in from the old defaults: a value someone typed into
+    /// the file — or that their desktop generated — is a later, more
+    /// deliberate decision than a switch they flipped in a previous build, and
+    /// a migration that overwrote it would take a machine whose settings are
+    /// declared and quietly hand it the old ones instead.
+    ///
+    /// The legacy keys are cleared either way, including when the file can't be
+    /// written at all, so this can't run again on the next launch.
     private static func migrateFromDefaults(_ defaults: UserDefaults, into store: ConfigFileStore) {
-        let legacy: [(key: String, keyPath: WritableKeyPath<AppConfig, Bool>)] = [
-            ("launchAtLogin", \.launchAtLogin),
-            ("persistHistory", \.persistHistory),
-            ("systemMirrorEnabled", \.systemMirrorEnabled),
-            ("githubBridgeEnabled", \.githubBridgeEnabled),
+        let legacy: [(key: String, fileKey: String, keyPath: WritableKeyPath<AppConfig, Bool>)] = [
+            ("launchAtLogin", AppConfig.Key.launchAtLogin, \.launchAtLogin),
+            ("persistHistory", AppConfig.Key.persistHistory, \.persistHistory),
+            ("systemMirrorEnabled", AppConfig.Key.systemMirror, \.systemMirrorEnabled),
+            ("githubBridgeEnabled", AppConfig.Key.githubBridge, \.githubBridgeEnabled),
         ]
         let stored = legacy.filter { defaults.object(forKey: $0.key) != nil }
         guard !stored.isEmpty else { return }
-        let migrated = stored.reduce(into: store.current()) { config, entry in
+        defer { for entry in stored { defaults.removeObject(forKey: entry.key) } }
+
+        let named = store.namedKeys()
+        let fillable = stored.filter { !named.contains($0.fileKey) }
+        guard !fillable.isEmpty, !store.isManagedExternally else { return }
+        let migrated = fillable.reduce(into: store.current()) { config, entry in
             config[keyPath: entry.keyPath] = defaults.bool(forKey: entry.key)
         }
-        guard store.update({ config in config = migrated }) == nil else { return }
-        for entry in stored { defaults.removeObject(forKey: entry.key) }
+        store.update { config in config = migrated }
     }
 
     /// A file trill has never been told about is a file with no login-item

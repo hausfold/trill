@@ -136,18 +136,32 @@ final class ConfigFileStore: @unchecked Sendable {
 
     var fileURL: URL { file }
 
+    /// The keys the file itself names, whatever their values. What separates
+    /// "the user set this to false" from "the file is silent, so it defaults to
+    /// false" — the only way a migration can fill the gaps without overwriting
+    /// a decision somebody already wrote down.
+    func namedKeys() -> Set<String> {
+        queue.sync { Set(raw.keys) }
+    }
+
     /// Apply a change and write the whole file back. Returns the error if the
     /// write failed, so Settings can say so rather than showing a switch that
     /// moved and a file that didn't.
     @discardableResult
     func update(_ mutate: @Sendable (inout AppConfig) -> Void) -> Error? {
         queue.sync {
+            // Refused BEFORE anything in memory moves. A store that accepted
+            // the change and only failed the write would answer `current()`
+            // with a value the file rejects — and the second click, seeing no
+            // change to make, would report success. A read-only pane that
+            // sticks on the second try is worse than one that never moves.
+            guard !isManagedExternally else { return ConfigWriteError.managedExternally }
             var updated = config
             mutate(&updated)
             guard updated != config else { return nil }
-            config = updated
             do {
                 try write(updated)
+                config = updated
                 return nil
             } catch {
                 Self.log.error("config.json write failed: \(error.localizedDescription, privacy: .public)")
@@ -186,7 +200,6 @@ final class ConfigFileStore: @unchecked Sendable {
         guard !isManagedExternally else { throw ConfigWriteError.managedExternally }
         var merged = raw
         for (key, value) in config.json { merged[key] = value }
-        raw = merged
         let data = try JSONSerialization.data(
             withJSONObject: merged,
             options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
@@ -198,6 +211,7 @@ final class ConfigFileStore: @unchecked Sendable {
         // half-written file. The rename that makes it atomic is also what the
         // watcher has to re-arm after — `watch()` handles that.
         try (data + Data("\n".utf8)).write(to: file, options: .atomic)
+        raw = merged
         // The file may not have existed when the watcher armed, and an atomic
         // write replaces the inode either way: re-arm against what is there
         // now, or the next hand-edit goes unnoticed.
@@ -205,9 +219,15 @@ final class ConfigFileStore: @unchecked Sendable {
     }
 
     private func watch() {
+        // `cancel()` is asynchronous and its handler runs on this very queue,
+        // so it cannot have closed the old descriptor by the time we return —
+        // which is why the fd is NOT closed here. `open` below would be handed
+        // the same number straight back, and the stale handler would then
+        // close the new watcher out from under us (or, worse, whatever else
+        // took that number in between). Ownership passes to the handler.
         source?.cancel()
         source = nil
-        if watchedFD >= 0 { close(watchedFD); watchedFD = -1 }
+        watchedFD = -1
         // Nothing to watch yet. `start()` is called again after any write, and
         // a config that has never been written is all defaults anyway.
         guard observer != nil else { return }

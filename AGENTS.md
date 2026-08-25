@@ -104,10 +104,11 @@ window frame, the selected pane, the one-shot flags the Full Disk Access flow
 arms across a relaunch).
 
 Adding a switch means adding it to `AppConfig` in **both** directions —
-`init(json:)` and `json` — and to a pane. Miss the second and the key is
-dropped from the file on the next write, which reads as "my edit vanished".
-A key the file doesn't name is that key at its default; a partial config.json
-is the normal case, not a broken one. Unknown keys are preserved verbatim
+`init(json:)` and `json` — and to a pane. Miss `json` and the switch moves
+while the file never changes, so the value reverts the next time the file is
+read; miss `init(json:)` and what someone typed into the file is ignored. A key
+the file doesn't name is that key at its default; a partial config.json is the
+normal case, not a broken one. Keys trill doesn't know are preserved verbatim
 across writes.
 
 The file is refused as read-only when it's a symlink into the Nix store —

@@ -123,31 +123,12 @@ non-critical event is demoted to inbox-only whatever the rules said.
 
 ## Settings file — `~/.config/trill/config.json`
 
-The app's own switches, and **the source of truth for them** — the Settings
-window reads and writes this same file, so editing it is not a workaround, it
-is the supported way. Every key is optional; an absent key is that key at its
-default. Trill re-reads the file while it runs, so a change takes effect
-without a restart.
-
-```json
-{
-  "launchAtLogin": true,
-  "persistHistory": true,
-  "systemMirror": false,
-  "githubBridge": false
-}
-```
-
-`launchAtLogin` registers/unregisters trill as a login item. `persistHistory`
-off means nothing about any event touches disk (and the inbox stays empty).
-`systemMirror` and `githubBridge` switch the two opt-in sources on — both also
-need something else (Full Disk Access; `github.json` plus a tunnel), so
-switching one on is a request, not a promise. Settings shows why one is still
-off.
-
-**Don't write it if it is a symlink into `/nix/store`** — that Mac's desktop
-generates it, the write fails, and the next rebuild would revert it anyway.
-Change it where it's declared and rebuild.
+The app's own switches, and the source of truth for them: Settings reads and
+writes this same file, and trill re-reads it live. All four keys, at their
+defaults — `{"launchAtLogin": true, "persistHistory": true, "systemMirror":
+false, "githubBridge": false}`; each is optional. `persistHistory` off stops
+disk writes from that moment on. Don't write the file if it's a symlink into
+`/nix/store`: the desktop generates it there and a rebuild reverts you.
 
 ## Traps
 
