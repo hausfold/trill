@@ -65,6 +65,28 @@ Notification Center with perfect compatibility."
   filtered to `ask` events — the deep link a hot corner (haus's wiring, not
   trill's) calls.
 
+### M1.7 — GitHub bridge (webhook ingest)
+
+- GitHub events become trill events, seconds after they happen: webhooks →
+  a tunnel (cloudflared against `hausfold.co`, haus's wiring) → a localhost
+  HTTP receiver inside the daemon (`Providers/GitHub/`). Webhooks over
+  polling because latency is the point.
+- Mapping is the product: `review_requested` for the configured login →
+  `ask` (parks on the Ledge), a red `workflow_run` → `fault`, green →
+  `done`, a run gated on approval → `ask`, an `@login` mention → `chat`.
+  Everything else maps to nothing — the bridge banners only what the kinds
+  can say honestly.
+- Auth is the webhook's HMAC secret and nothing else: trill holds no GitHub
+  token, **never writes GitHub state**, and 401s any delivery that doesn't
+  verify. Config is one owner-read file, `~/.config/trill/github.json`
+  (`{secret, login, port?}`).
+- Dedupe is the delivery GUID (`github:<X-GitHub-Delivery>`): redeliveries
+  and tunnel retries collide in the repository's id window by construction.
+- Off with a reason, like every provider: missing config, taken port, or
+  the Settings toggle — each is a visible health line, never a broken
+  pipeline. Payload content never reaches logs; delivery ids, event names,
+  and repo slugs only.
+
 ### M2 — rules that earn the name
 
 Digest flushing on schedule, per-source styling hooks, `trill history

@@ -33,6 +33,9 @@ pounce / perch / scripts (same lane)  │        probe() → ProviderHealth
 usernoted db2 ──read-only──► SystemMirrorProvider   normalize · dedupe
               (quarantined, schema-probed)          persist · supervise
                                       │
+GitHub ──webhook──► tunnel ──► GitHubWebhookProvider
+   (HMAC-gated; tunnel = haus's wiring)
+                                      │
                         PolicyEngine (pure) ── rules.json, hot-reloaded
                                       │
               ┌───────────────────────┼─────────────────────┐
