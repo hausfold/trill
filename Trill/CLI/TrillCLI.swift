@@ -541,9 +541,22 @@ enum TrillCLI {
                 ? "on (\(finding.desktopAlert.rawValue))" : "off"
             print("  \(finding.bundleID)")
             print("      desktop: \(desktop)   sound: \(finding.playsSound ? "on" : "off")")
+            // Only ever an explicitly-named app (`--all` filters these out).
+            // Said here because the Fix line below is a dead end for it, and
+            // a dead end nobody warned you about reads as trill being wrong.
+            if !finding.hasSettingsRow {
+                print("      macOS lists no row for this one — there is nothing to untick.")
+            }
         }
-        print("\nFix: System Settings → Notifications → <app> → untick Desktop, Play sound off.")
-        print("Or run `trill doctor --notify` and click the banner to be walked through it.")
+        // Every app in the list is one macOS keeps to itself: the pane would
+        // be a wasted trip, so don't send them on one.
+        if findings.contains(where: \.hasSettingsRow) {
+            print("\nFix: System Settings → Notifications → <app> → untick Desktop, Play sound off.")
+            print("Or run `trill doctor --notify` and click the banner to be walked through it.")
+        } else {
+            print("\nNothing to fix in System Settings — macOS draws these itself and offers")
+            print("no switch. Route them to the inbox in rules.json to see each one once.")
+        }
         return 4
     }
 

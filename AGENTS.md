@@ -104,6 +104,16 @@ never into a broken pipeline. Corollaries:
   store needs FDA and can't be assumed readable, the walkthrough's **Done**
   button is the mechanism and the poll is a bonus that ticks apps off where
   it can. Don't "fix" the panel by making it wait for confirmation again.
+  **An app macOS lists no row for is a step with no click** — bit 7, reached
+  only by naming it in `rules.json` (`com.apple.SoftwareUpdateNotification` is
+  the one a real rules file hits). It keeps its place in the worklist, because
+  having no switch doesn't make it quiet, but it shows no replica and no
+  **Done**: demoing two controls that aren't on the pane teaches a gesture
+  macOS won't accept, and **Done** asks the user to affirm a change nobody
+  could make. It says what macOS will keep doing, offers the one lever that is
+  theirs (route it to the inbox), and **Skip**s. Skipped apps are their own set
+  — they take the "macOS has stopped drawing them" line away exactly as a
+  user-advanced one does.
 - **A resolver is named on the wire and *declared* in `rules.json`.** An
   `ask` can clear itself — `trill resolve`, an event carrying `resolves`, or
   a `--until` poller — but what that poller runs lives in the user's own
