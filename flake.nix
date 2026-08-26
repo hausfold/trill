@@ -48,12 +48,12 @@
         };
 
         # The agent skill (ai/SKILL.md), so a consumer can install it without
-        # installing trill itself. ⚠️ Reachable from haus since it took trill as
-        # a flake input (2026-08-25), but not yet INSTALLED by it — haus's
-        # modules/ai/tool-skills.nix still lists only holt, and nix/skill.nix
-        # says what stands in the way. Its own package rather than a file inside
-        # `trill`: it is pure and tiny, while `trill` wraps a macOS-only
-        # notarized ZIP. See nix/skill.nix.
+        # installing trill itself. haus installs it from here —
+        # modules/ai/tool-skills.nix names `trill`, gated on
+        # `haus.notifications.compositor` — so the name is a promise its
+        # `.#tool-skills` check proves at build time. Its own package rather
+        # than a file inside `trill`: it is pure and tiny, while `trill` wraps a
+        # macOS-only notarized ZIP. See nix/skill.nix.
         trill-skill = final.callPackage ./nix/skill.nix { };
       };
 
