@@ -332,17 +332,23 @@ bug that already shipped once.
 
 `nix/skill.nix` ships it as `pkgs.trill-skill` (`$out/trill/SKILL.md`); the
 build fails if the frontmatter is missing, because a skill without it is
-installed, listed, and never loaded. ⚠️ **Nothing consumes that package yet** —
-haus takes trill as a flake input as of 2026-08-25, so `pkgs.trill-skill` is
-*reachable* — but `haus`'s `modules/ai/tool-skills.nix` still lists only holt,
-and adding it there is its own change (that list is unconditional, while a skill
-for an app the machine doesn't have is worse than none; and trill's flake
-outputs darwin systems only, so haus's Linux CI can't evaluate the name-check
-unguarded). Until then a user gets this skill from `trill skill install` once
-that verb exists. **Don't add trill to `bench`'s `FAMILY` to fix that** — that
-advice survived route B unchanged, because a lock edge and family membership are
-different questions and trill is what separated them (see bench's 🚨 by
-`FAMILY`).
+installed, listed, and never loaded. **haus installs it** —
+`modules/ai/tool-skills.nix` names `trill`, and `modules/ai/default.nix` passes
+`trillEnabled = config.haus.trill.enable`, so the skill lands in every client's
+skills directory on a machine that has the app and on no other: a skill teaching
+an agent to drive an app this Mac doesn't have is worse than none. There is no
+`trill skill install` verb and no need for one. Two consequences for anyone
+renaming the skill: the name is a promise haus's `.#tool-skills` check proves at
+build time, so **a rename here is a red rebuild there** until haus's list moves
+with the lock bump — and that proof only runs on a **Mac**, because trill's flake
+outputs darwin systems only and haus's Linux CI drops the entry to `null`.
+
+**None of that makes trill one of `bench`'s `FAMILY` repos, and it must not
+become one.** trill is a flake input, a lock source and `OVERRIDABLE`; `FAMILY`
+is the narrower thing — the checkouts bench walks and ships — and trill lands
+through its own PRs, with `bench release trill` as its only bench verb. A lock
+edge and family membership are different questions, and trill is what separated
+them (see bench's 🚨 by `FAMILY`).
 
 **Every claim in it must be runnable.** When you change a verb, a flag or an
 exit code, change `ai/SKILL.md` in the same PR — a stale line there is a
