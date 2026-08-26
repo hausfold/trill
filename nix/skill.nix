@@ -2,17 +2,16 @@
 #
 # The source is `ai/SKILL.md` at the repo root — one file, committed, the same
 # one that gets embedded in the binary when `trill skill` lands. This derivation
-# is how a *consumer* WILL get it. ⚠️ Nothing consumes it today, but the reason
-# changed on 2026-08-25: haus DOES take trill as a flake input now, so
-# `pkgs.trill-skill` is reachable — it is haus's `modules/ai/tool-skills.nix`
-# that still lists only holt. Adding it there is its own change, for two reasons
-# worth doing on purpose: that list is unconditional, while a skill for an app
-# the machine doesn't have is worse than none; and this flake outputs darwin
-# systems only, so the derivation that proves a listed skill name is real can't
-# be evaluated by haus's Linux CI unguarded. Don't "fix" any of it by adding
-# trill to bench's FAMILY — that advice survived route B unchanged. A standalone
-# user will get the identical bytes from `trill skill install` — step 4 of the
-# standard's rollout, not a verb that exists today.
+# is how a *consumer* gets it. haus installs it: `modules/ai/tool-skills.nix`
+# names `trill`, gated on `haus.notifications.compositor` (a skill for an app
+# the machine doesn't have is worse than none), so the skill lands in every AI
+# client on a Mac running trill and on no other. Two consequences for a rename:
+# the name is a promise haus's `.#tool-skills` check proves at build time, so a
+# rename here is a red rebuild there until haus's list moves with the lock bump
+# — and that proof only runs on a Mac, because this flake outputs darwin systems
+# only and haus's Linux CI drops the entry to null. Don't "fix" any of it by
+# adding trill to bench's FAMILY. There is no `trill skill install` verb and no
+# need for one.
 #
 # `$out/<tool>/SKILL.md` is the family standard's §6 layout (the workshop's
 # notes/agent-surface.md): one nesting level, named for the skill, so a
