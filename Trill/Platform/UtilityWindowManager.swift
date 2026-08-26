@@ -8,10 +8,18 @@ import AppKit
 /// behind whatever's already visible — especially under tiling window
 /// managers like AeroSpace, which manage window placement themselves.
 /// Switching to `.regular` while a window is up, activating with
-/// `ignoringOtherApps`, and holding the window at `.floating` level
+/// `ignoringOtherApps`, and raising the window at `.floating` level
 /// together clear that; reverting to `.accessory` once every tracked
 /// window has closed keeps the app a quiet menu-bar resident the rest of
 /// the time.
+///
+/// ⚠️ The `.floating` level is for the *raise only*, and drops back to
+/// `.normal` the moment the ordering has settled. Holding it there makes
+/// the window sit on top of every other app forever — including System
+/// Settings, which is the one window trill's own Settings pane sends
+/// people to, and which they then cannot see beside it. A summoned window
+/// stays in front because it is the front app's key window, not because
+/// it outranks the desktop.
 ///
 /// This is separate from `OnboardingAssistantPanelController`, whose panel
 /// is deliberately non-activating (it sits alongside System Settings,
@@ -31,6 +39,12 @@ final class UtilityWindowManager: NSObject, NSWindowDelegate {
         window.center()
         window.makeKeyAndOrderFront(nil)
         window.orderFrontRegardless()
+        // Next runloop turn: the tiler has had its say on placement by then,
+        // and from here the window behaves like any other — in front while
+        // trill is frontmost, behind whatever the user switches to next.
+        DispatchQueue.main.async { [weak window] in
+            window?.level = .normal
+        }
     }
 
     func windowWillClose(_ notification: Notification) {
