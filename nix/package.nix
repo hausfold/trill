@@ -75,7 +75,8 @@ stdenvNoCC.mkDerivation {
   # `pkgs.trill` in their packages and expects the name to work.
   #
   # A desktop that copies the bundle to a fixed /Applications path is a
-  # different case, and haus's `haus.trill.enable` room settled it the other
+  # different case, and haus's `haus.notifications.compositor` room settled it
+  # the other
   # way from perch's: perch gets a `perch-cli-link` into /Applications because
   # nothing else in haus answers `perch`, while haus already ships a `trill`
   # WRAPPER that resolves the bundle at call time. A second bin/trill there
