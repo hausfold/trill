@@ -382,10 +382,13 @@ struct ProvidersPane: View {
                         }
                         .disabled(settings.isManagedExternally)
                     }
-                    // The grant is macOS's, and its sheet only ever appears
-                    // once: after a "Don't Allow" the only road back is the
-                    // Privacy pane, so the row hands the user that door rather
-                    // than a switch that is already on and doing nothing.
+                    // Which door this row opens depends on what macOS has
+                    // been asked. Apple's sheet appears exactly once, so after
+                    // a "Don't Allow" the Privacy pane is the only road back
+                    // — but *before* the ask there is no road at all: that
+                    // pane lists an app only once the app has requested, so
+                    // sending someone there while trill has never asked shows
+                    // them a list trill isn't in. Ask first; point second.
                     if let reason = status["calendar"].flatMap({ $0 }) {
                         SettingsDivider()
                         SettingsRow(
@@ -394,7 +397,14 @@ struct ProvidersPane: View {
                             title: "Not running",
                             subtitle: reason
                         ) {
-                            if CalendarProvider.authorization != .fullAccess {
+                            switch CalendarProvider.authorization {
+                            case .fullAccess:
+                                EmptyView()
+                            case .notDetermined:
+                                Button("Ask macOS…") {
+                                    Task { await CalendarProvider.requestAccess() }
+                                }
+                            default:
                                 Button("Open Settings…") {
                                     SystemIntegration.openCalendarPrivacySettings()
                                 }

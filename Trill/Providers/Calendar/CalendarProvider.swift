@@ -59,7 +59,17 @@ struct CalendarProvider: NotificationProvider {
     static func requestAccess() async -> Bool {
         let store = EKEventStore()
         do {
-            return try await store.requestFullAccessToEvents()
+            let granted = try await store.requestFullAccessToEvents()
+            // Say what came back, because macOS can answer *without* showing
+            // its sheet — a refusal it records nowhere, which leaves
+            // `authorizationStatus` at `.notDetermined` and the Privacy pane
+            // with no trill row to turn on. That state is indistinguishable
+            // from "never asked" from the outside, so the log is the only
+            // place the difference survives.
+            log.info(
+                "calendar access request answered: granted=\(granted, privacy: .public), status now \(authorization.rawValue, privacy: .public)"
+            )
+            return granted
         } catch {
             log.info("calendar access request failed: \(error.localizedDescription, privacy: .public)")
             return false
