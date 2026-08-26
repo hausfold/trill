@@ -34,10 +34,10 @@ blocked, come back to me". It can also stop waiting on its own: `trill resolve <
 rules. `--key K` names it; re-sending under that key replaces its fin.
 
 `--progress 0.42|42%` draws a bar and **requires `--key`**: later sends under that key **replace**
-the card instead of stacking a second — one card for a whole build, `--kind` defaulting to
-`pulse`. Send the ending under the same key (`--kind done`, or `fault`). Ticks are live, not
-history: only the ending is kept. A bare `42` is refused — say which unit. Swatting a bar away
-hushes its ticks; the ending still lands.
+the card instead of stacking a second — one card per build, `--kind` defaulting to `pulse`. The
+card gets its seconds on screen, then keeps filling as a fin on the edge, so **send the ending
+under the same key** (`--kind done`/`fault`) — that is what takes the fin down. Ticks are live,
+not history. A bare `42` is refused — say which unit. Swatting a bar hushes its ticks, not its end.
 
 `--urgency` (`low`/`normal`/`critical`) is the loudness, a different axis: a fault can be low, a
 note critical. `--thread` groups banners; `--source <slug>` is what rules match on; `--redact`

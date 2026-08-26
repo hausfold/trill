@@ -204,6 +204,22 @@ never into a broken pipeline. Corollaries:
   nothing in the compositor knows what a build is — a card stays up because its
   sender keeps sending, so a driver that dies loses its card on the normal
   clock (`scripts/nix-progress.sh` is the reference driver, heartbeat included).
+- **A build outlives one card's worth of screen, so it finishes on the ledge.**
+  A job's card gets the clock every card gets — *once*: a tick does **not**
+  re-arm it, or a driver ticking faster than the clock runs would pin a banner
+  up for the whole rebuild. When it runs out the card **parks as a fin**
+  (`expire` is the same door an unanswered ask goes through), later ticks fill
+  that fin in place, and the **ending takes it down and draws the one card
+  worth drawing**. Before this, the card simply vanished at six seconds and
+  every later tick drew a fresh banner — a bar blinking in and out of a
+  twenty-minute rebuild, and nothing at all once a slow step outlasted the
+  clock. Three rules keep the ledge honest about it: a job's fin **yields
+  before a question does** when a sixth fin lands, because evicting an ask
+  unblocks its caller with a 75 and evicting a bar costs a reading; a fin whose
+  job goes quiet for `progressStallTimeout` comes down by itself, because
+  liveness is still the sender's job; and a job's fin is **never written to the
+  ledge store or restored** — the build died with the daemon, and a bar frozen
+  at 40% that nothing will ever finish is the one fin that can't be true.
 - **The queue is the truth; panels are disposable.** Display topology
   rebuilds re-render from `BannerQueue` state. Never park event state in a
   panel or view.

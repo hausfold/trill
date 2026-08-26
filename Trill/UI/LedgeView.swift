@@ -54,16 +54,44 @@ struct LedgeItemView: View {
     }
 
     /// The parked state: a kind-hued tab against the screen edge. No text,
-    /// no glyph, no motion — from across the room it only says "a question
-    /// is waiting", and its hue says what kind.
+    /// no glyph, no motion — from across the room it only says "something is
+    /// waiting", and its hue says what kind.
+    ///
+    /// A *running job* is the one thing that moves here, and it moves once
+    /// every few seconds by a hair: the tab fills from the bottom as its bar
+    /// does. That is the whole reason a build parks instead of vanishing —
+    /// the strip has to be able to answer "how far along" from across the
+    /// room, and hovering slides out the real card with the real bar.
     private var fin: some View {
-        UnevenRoundedRectangle(topLeadingRadius: 4, bottomLeadingRadius: 4, style: .continuous)
-            .fill(BannerTheme.current().color(for: entry.event.kind).opacity(0.9))
+        let shape = UnevenRoundedRectangle(
+            topLeadingRadius: 4, bottomLeadingRadius: 4, style: .continuous
+        )
+        let hue = BannerTheme.current().color(for: entry.event.kind)
+        let progress = entry.event.progress
+
+        return shape
+            .fill(hue.opacity(progress == nil ? 0.9 : 0.25))
             .frame(
                 width: BannerGeometry.Ledge.finSize.width,
                 height: BannerGeometry.Ledge.finSize.height
             )
+            .overlay(alignment: .bottom) {
+                if let progress {
+                    Rectangle()
+                        .fill(hue.opacity(0.9))
+                        .frame(height: BannerGeometry.Ledge.finSize.height * progress)
+                }
+            }
+            .clipShape(shape)
             .accessibilityElement()
-            .accessibilityLabel("\(entry.event.source): \(entry.event.title), parked")
+            .accessibilityLabel(label)
+    }
+
+    /// What the fin says to VoiceOver, which is the one reader that gets the
+    /// percentage in words — the tab itself only fills.
+    private var label: String {
+        let head = "\(entry.event.source): \(entry.event.title)"
+        guard let progress = entry.event.progress else { return "\(head), parked" }
+        return "\(head), \(BannerView.percent(progress)) complete, parked"
     }
 }

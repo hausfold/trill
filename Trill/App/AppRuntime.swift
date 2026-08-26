@@ -297,15 +297,25 @@ final class AppRuntime {
         // handle would keep mirroring the ledge into a database the user just
         // turned off.
         queue.onParkedForResolution = { [weak self] entries in
-            self?.database?.saveLedge(entries.map {
+            // Questions only, on the way to disk: the ledge also holds the
+            // fin of a *running job* now, and that one is worth nothing after
+            // a relaunch — the build it was reporting died with the daemon,
+            // and a bar frozen at 40% that nothing will ever finish is the
+            // one thing a restored fin must not be. It is also not history:
+            // a tick is never written to the events table either.
+            let questions = entries.filter { !$0.event.isProgressTick }
+            self?.database?.saveLedge(questions.map {
                 AppDatabase.StoredParked(event: $0.event, coalescedCount: $0.coalescedCount)
             })
+            // Resolvers get the whole ledge: `--until` is a property of the
+            // event, not of its kind, so a job that named one is polled like
+            // a question that did.
             monitor.reconcile(entries)
             // The inbox draws a fin beside the asks that are still on the
             // ledge, so an eviction has to reach it: the ask that yielded is
             // now only here, and looking identical to one still parked would
             // be the inbox lying about where the question lives.
-            self?.inboxFeed.noteParked(Set(entries.map(\.event.id)))
+            self?.inboxFeed.noteParked(Set(questions.map(\.event.id)))
         }
 
         guard let database else { return }
