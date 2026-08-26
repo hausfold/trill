@@ -204,6 +204,9 @@ final class TrillAppDelegate: NSObject, NSApplicationDelegate {
                     onRequestAuditAccess: { [weak self] in
                         self?.presentFullDiskAccessAssistant(runtime: runtime, enablesSystemMirror: false)
                     },
+                    onSilenceNative: { [weak self] findings in
+                        self?.presentNativeBannerAssistant(findings: findings)
+                    },
                     listedApps: { [weak runtime] in runtime?.listedApps ?? [] },
                     celebrateUnlock: celebrateUnlock
                 )
@@ -258,6 +261,38 @@ final class TrillAppDelegate: NSObject, NSApplicationDelegate {
                 // "Quit & Reopen" sheet is still on screen behind us, so keep
                 // it armed long enough to cover an answer to it.
                 disarmReopenOnLaunch(runtime: runtime, after: fdaGrantLanded ? 300 : 0)
+            }
+        )
+        DispatchQueue.main.async { [weak self] in
+            self?.settingsWindow?.close()
+        }
+    }
+
+    /// The audit's walkthrough, presented the way the Full Disk Access one
+    /// is: open the deep link *first*, while trill is still the frontmost
+    /// regular app and can hand activation over (closing this window drops
+    /// the app back to `.accessory`, and System Settings then comes up behind
+    /// whatever the user was looking at), then get our own window out of the
+    /// panel's way on the next runloop turn.
+    ///
+    /// Unlike the Full Disk Access flow this one *does* put Settings back on
+    /// dismissal: nothing relaunches, macOS has no sheet of its own waiting
+    /// behind us, and the pane the user came from is exactly the thing the
+    /// walkthrough just changed the answer to.
+    private func presentNativeBannerAssistant(findings: [NativeNotificationSettings]) {
+        SystemIntegration.presentNativeBannerAssistant(
+            findings: findings,
+            onDismiss: { [weak self] in
+                // Next runloop turn, because presenting a *second* helper
+                // tears the first one down and would otherwise fire this —
+                // raising Settings over a walkthrough that just started.
+                // By then the replacement panel has been assigned.
+                DispatchQueue.main.async {
+                    guard let self,
+                          !OnboardingAssistantPanelController.shared.isPresenting
+                    else { return }
+                    self.presentSettings(celebrateUnlock: false)
+                }
             }
         )
         DispatchQueue.main.async { [weak self] in

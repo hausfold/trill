@@ -1210,6 +1210,10 @@ final class OnboardingAssistantPanelController: NSObject, NSWindowDelegate {
     private var panel: NSPanel?
     private var onDismiss: (() -> Void)?
 
+    /// True while a helper panel is on screen. Read by a dismissal handler
+    /// that has to tell "the flow ended" from "a second flow replaced it".
+    var isPresenting: Bool { panel != nil }
+
     func present(
         mode: OnboardingAssistantView.Mode,
         onGrantConfirmed: @escaping () -> Void = {},
