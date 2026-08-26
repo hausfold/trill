@@ -66,6 +66,17 @@ final class BannerQueue {
     /// it evicts already survives in the inbox like every delivered event.
     static let parkedCapacity = 5
 
+    /// How long a parked *job* may go quiet before its fin comes down. A
+    /// fin has no dismiss clock — that is the point of it — so this is the
+    /// only thing standing between a driver that died mid-build and a tab on
+    /// the screen edge forever. Liveness stays the sender's job, exactly as
+    /// it is for a card on screen: the reference driver heartbeats every
+    /// three seconds, so a build that is merely slow never comes near this,
+    /// and one that stopped reporting loses its fin without anyone deciding
+    /// it failed. It is deliberately long — a fin costs 8pt of edge, and
+    /// taking one down early is how you lose the second half of a rebuild.
+    static let progressStallTimeout: TimeInterval = 300
+
     /// How long a parked ask may survive daemon restarts. A question still
     /// on the edge of the screen a week after it was asked has outlived its
     /// subject; keeping it there teaches you to stop looking at the ledge,
@@ -99,10 +110,13 @@ final class BannerQueue {
     /// first), arrival order within a rank — a burst of chatter can delay a
     /// critical's *slot*, never bury it behind twenty notes.
     private var waiting: [Entry] = []
-    /// The ledge: asks whose dismiss clock ran out with nobody there,
-    /// oldest first. They render as fins on the screen edge, not banners,
-    /// and they have no clock — a question stays asked until it's answered,
-    /// dismissed, or evicted by a newer ask past `parkedCapacity`.
+    /// The ledge: what the dismiss clock ran out on with nobody there and
+    /// nobody done with it, oldest first. Two kinds live here — an
+    /// unanswered `ask`, and a *running job* whose card has had its time on
+    /// screen — and they render as fins on the screen edge, not banners.
+    /// Neither has a dismiss clock: a question stays asked until it's
+    /// answered, dismissed or evicted, and a job's fin stays until the job
+    /// ends, is swatted away, or goes quiet (`progressStallTimeout`).
     private(set) var parked: [Entry] = []
     /// Which parked entry the pointer is over — that one slides out as a
     /// full card. An id for the same reason `hoveredID` is: entering fin B
@@ -126,19 +140,30 @@ final class BannerQueue {
     /// restart.
     private var hoveredLane: String?
     private var dismissTimers: [String: Task<Void, Never>] = [:]
+    /// One per parked *job*, and nothing else on the ledge has one: an
+    /// unanswered question waits as long as it takes, a build that stopped
+    /// reporting does not (`progressStallTimeout`).
+    private var stallTimers: [String: Task<Void, Never>] = [:]
 
     private let displayDuration: Duration
+    private let stallTimeout: TimeInterval
     /// Thread-mates arriving within this window fold into the existing
     /// banner instead of stacking a new one.
     private let coalesceWindow: TimeInterval
     private var lastThreadArrival: [String: (id: String, at: Date)] = [:]
 
-    init(capacity: Int = 3, displayDuration: Duration = .seconds(6), coalesceWindow: TimeInterval = 10) {
+    init(
+        capacity: Int = 3,
+        displayDuration: Duration = .seconds(6),
+        coalesceWindow: TimeInterval = 10,
+        stallTimeout: TimeInterval = BannerQueue.progressStallTimeout
+    ) {
         let single = DisplayRouting.single(capacity: max(0, capacity))
         self.displays = { single }
         self.routing = single
         self.displayDuration = displayDuration
         self.coalesceWindow = coalesceWindow
+        self.stallTimeout = stallTimeout
     }
 
     // MARK: - Lanes
@@ -284,6 +309,7 @@ final class BannerQueue {
     private func supersedeParked(key: String) {
         guard let index = parked.firstIndex(where: { $0.event.key == key }) else { return }
         let superseded = parked.remove(at: index)
+        cancelStall(superseded.id)
         if parkedHoverID == superseded.id { parkedHoverID = nil }
         notifyParked()
     }
@@ -297,7 +323,14 @@ final class BannerQueue {
     /// to owe — the socket died with the last daemon.
     private func trimParked(announcingDrops: Bool) {
         while parked.count > Self.parkedCapacity {
-            let evicted = parked.removeFirst()
+            // Oldest first *among running jobs*, and only then among
+            // questions: a rebuild's fin must never push an unanswered ask
+            // off the edge, because that ends a question nobody answered and
+            // unblocks its caller with a 75 — the exact loss the ledge was
+            // built to prevent. A bar evicted early costs a progress reading.
+            let index = parked.firstIndex { $0.event.isProgressTick } ?? 0
+            let evicted = parked.remove(at: index)
+            cancelStall(evicted.id)
             if parkedHoverID == evicted.id { parkedHoverID = nil }
             if announcingDrops { notifyDropped([evicted]) }
         }
@@ -319,6 +352,14 @@ final class BannerQueue {
     /// the pair one running job rather than two events that happen to share a
     /// name — so the *ending* replaces the bar too: a `done` sent under the
     /// build's key lands on its card instead of beside it.
+    ///
+    /// The card may be on the ledge by now (see `expire`), and a tick found
+    /// there updates the **fin**, silently: a rebuild that outlives one
+    /// card's worth of screen keeps reporting into the strip on the edge
+    /// rather than shoving itself back in front of you every few seconds.
+    /// The *ending* is the one that comes back — it takes the fin down and
+    /// returns `false`, so `enqueue` draws it as the arrival it is. That is
+    /// what you were waiting for; the fifty steps to it were not.
     ///
     /// Only the event changes: the entry keeps its id *and its screen*, on
     /// the same rule arrivals already follow — the display is frozen onto the
@@ -344,11 +385,20 @@ final class BannerQueue {
             visible[i].folded = []
             visible[i].coalescedCount = 0
             visible[i].expanded = false
-            // Fresh content, fresh clock — same rule a folded thread-mate
-            // gets. A job that keeps reporting keeps its card; one that goes
-            // quiet mid-build times out like anything else, because a bar
-            // frozen at 40% for an hour is worse than no bar.
-            armDismiss(for: visible[i].id)
+            // Fresh content, and — for an *ending* — a fresh clock, same
+            // rule a folded thread-mate gets. A tick deliberately does not
+            // restart it: a card that re-armed on every reading would sit on
+            // screen for the whole rebuild, because the driver ticks faster
+            // than the clock runs (three seconds against six). So a job gets
+            // exactly what any other card gets, once, and then parks as a fin
+            // for the rest of the build — the ledge is where a thing you are
+            // still waiting on lives. The `nil` check is for the hovered
+            // case: `setHover` cancelled these, and `rearm` puts them back.
+            if event.isProgressTick {
+                if dismissTimers[visible[i].id] == nil { armDismiss(for: visible[i].id) }
+            } else {
+                armDismiss(for: visible[i].id)
+            }
             notify()
             return true
         }
@@ -363,6 +413,27 @@ final class BannerQueue {
             let index = waiting.firstIndex { $0.event.urgency < event.urgency } ?? waiting.endIndex
             waiting.insert(entry, at: index)
             notify()
+            return true
+        }
+        if let i = parked.firstIndex(where: isTheSameJob) {
+            guard event.isProgressTick else {
+                // Done, or failed, or whatever else the sender calls an
+                // ending: the fin comes down and the caller falls through to
+                // a normal arrival, so the one event worth interrupting for
+                // gets a card. Not `notifyDropped` — nothing was lost and
+                // nobody is blocked on a bar.
+                let finished = parked.remove(at: i)
+                cancelStall(finished.id)
+                if parkedHoverID == finished.id { parkedHoverID = nil }
+                notifyParked()
+                return false
+            }
+            // A fin updating in place: same entry, same id, same slot on the
+            // edge — and `expanded` is left alone, so a fin the pointer is
+            // holding out fills its bar under the cursor.
+            parked[i].event = event
+            armStall(for: parked[i].id)
+            notifyParked()
             return true
         }
         return false
@@ -406,6 +477,7 @@ final class BannerQueue {
         }
         if let index = parked.firstIndex(where: { $0.id == id }) {
             let gone = parked.remove(at: index)
+            cancelStall(id)
             if parkedHoverID == id { parkedHoverID = nil }
             notifyDropped([gone])
             notifyParked()
@@ -438,6 +510,8 @@ final class BannerQueue {
         waiting.removeAll()
         notify()
         guard !parked.isEmpty else { return }
+        stallTimers.values.forEach { $0.cancel() }
+        stallTimers.removeAll()
         notifyDropped(parked)
         parked.removeAll()
         parkedHoverID = nil
@@ -481,12 +555,22 @@ final class BannerQueue {
     }
 
     /// The dismiss clock ran out with nobody there. Most kinds are simply
-    /// done (they survive in the inbox); an `ask` is a question nobody has
-    /// answered yet, and quietly dropping the one event that is *blocked on
-    /// the user* is the failure the ledge exists to end — it parks instead.
+    /// done (they survive in the inbox). Two park instead:
+    ///
+    /// - an **ask**, because quietly dropping the one event that is *blocked
+    ///   on the user* is the failure the ledge exists to end; and
+    /// - a **running job**, because a bar that vanishes at six seconds takes
+    ///   the rest of the rebuild with it — the next tick would have drawn a
+    ///   fresh card, so what you actually get is a banner blinking in and out
+    ///   of a twenty-minute build, or nothing at all once a slow step outlasts
+    ///   the clock. It keeps reporting into its fin instead, and the ending
+    ///   takes that fin down (`supersede`).
+    ///
+    /// The ending is not a tick, so a `done` or a `fault` that expires is
+    /// simply gone, like any other card: you were told.
     func expire(id: String) {
         guard let index = visible.firstIndex(where: { $0.id == id }),
-              visible[index].event.kind == .ask
+              visible[index].event.kind == .ask || visible[index].event.isProgressTick
         else {
             dismiss(id: id)
             return
@@ -503,6 +587,7 @@ final class BannerQueue {
             rearm(lane: lane)
         }
         parked.append(entry)
+        if entry.event.isProgressTick { armStall(for: entry.id) }
         trimParked(announcingDrops: true)
         refill()
         notify()
@@ -523,6 +608,12 @@ final class BannerQueue {
         guard !restored.isEmpty else { return }
         let known = Set(parked.map(\.id))
         for item in restored where !known.contains(item.event.id) {
+            // A *job* is not restorable: the build that was ticking died with
+            // the daemon, and a fin nothing will ever update or take down is
+            // furniture. The mirror already declines to write one; this is
+            // the same rule said where a ledge written by an older trill
+            // arrives (`AppRuntime.wireLedge`).
+            guard !item.event.isProgressTick else { continue }
             // A `reply` pill can only be honored by the process that asked
             // and the socket that carried the question — both died with the
             // last daemon. The fin is still worth restoring (the question was
@@ -697,6 +788,33 @@ final class BannerQueue {
             // and answered questions don't belong on the ledge.
             self?.expire(id: id)
         }
+    }
+
+    /// Start (or restart) the quiet-job clock for a parked job. Every tick
+    /// re-arms it, so it measures silence, not the length of the build.
+    private func armStall(for id: String) {
+        stallTimers[id]?.cancel()
+        stallTimers[id] = Task { [weak self, stallTimeout] in
+            try? await Task.sleep(for: .seconds(stallTimeout))
+            guard !Task.isCancelled else { return }
+            self?.stall(id: id)
+        }
+    }
+
+    private func cancelStall(_ id: String) {
+        stallTimers.removeValue(forKey: id)?.cancel()
+    }
+
+    /// The job stopped reporting. The fin goes without a word — no
+    /// `onDropped`, because nothing is blocked on a bar and nothing was
+    /// answered — and the ending, if it ever comes, arrives as the plain
+    /// banner it would have been anyway.
+    private func stall(id: String) {
+        guard let index = parked.firstIndex(where: { $0.id == id }) else { return }
+        parked.remove(at: index)
+        stallTimers.removeValue(forKey: id)
+        if parkedHoverID == id { parkedHoverID = nil }
+        notifyParked()
     }
 
     private func notify() {

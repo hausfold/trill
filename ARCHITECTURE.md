@@ -43,9 +43,11 @@
     `progress` and a `key` replaces the card wearing that key instead of
     stacking or folding beside it, and it is drawn without being stored —
     fifty readings are one build, so only the ending reaches the inbox or a
-    digest tally. Liveness is the *sender's* job: the card's clock is
-    rearmed by each tick, so a driver that dies takes its card off screen
-    rather than pinning one there. Two guards keep "replace" from becoming a
+    digest tally. The card gets one card's worth of screen and then **parks
+    as a fin**, filling on the edge for the rest of the build; the ending
+    takes the fin down and draws the one card worth drawing. Liveness is
+    still the *sender's* job — a fin that stops being ticked comes down on
+    `progressStallTimeout`. Two guards keep "replace" from becoming a
     way to lose things: a bar never takes over an **ask** however it was
     keyed (that would drop a question with nobody told and its caller still
     blocked), and a card the user **swatted away** hushes further ticks under
@@ -224,18 +226,26 @@ pressable: it stands for several events, so there is no one thing to do.
 
 Three more consequences worth knowing:
 
-- **An unattended ask parks; everything else expires.** The dismiss timer
-  lands on `BannerQueue.expire`, not `dismiss`: an `ask` whose clock runs
-  out moves to the `parked` bucket and renders as a slim fin on the right
-  screen edge (`BannerGeometry.Ledge`, `LedgePanelController`) until it's
-  answered, dismissed, resolved, or evicted by a sixth ask. Only the clock
-  parks — a user's own dismissal means they saw it. Hovering a fin is queue
+- **An unattended ask parks, a running job parks, everything else expires.**
+  The dismiss timer lands on `BannerQueue.expire`, not `dismiss`: an `ask`
+  whose clock runs out moves to the `parked` bucket and renders as a slim fin
+  on the right screen edge (`BannerGeometry.Ledge`, `LedgePanelController`)
+  until it's answered, dismissed, resolved, or evicted. So does a **progress
+  tick** — a rebuild lasts twenty minutes and a card lasts six seconds, so a
+  bar that simply expired took the rest of the build with it. Its fin fills as
+  the ticks come in, the ending takes it down and banners, and a fin whose job
+  goes quiet for `progressStallTimeout` comes down by itself. Only the clock
+  parks — a user's own dismissal means they saw it, and swatting a bar's fin
+  hushes its ticks the way swatting its card does. Hovering a fin is queue
   state too (`setParkedHover`), so the slid-out card survives rebuilds like
   any panel. The bucket is mirrored to its own sqlite table on every change
   and restored at launch (`AppDatabase.saveLedge`/`parkedLedge`,
   `BannerQueue.restoreParked`), because a question that evaporates on a
   crash is exactly what the ledge exists to prevent; anything older than
-  `parkedLifetime` is dropped on the way back in.
+  `parkedLifetime` is dropped on the way back in. **Questions only**, in both
+  directions: the build a job's fin was reporting died with the daemon, and a
+  bar frozen at 40% that nothing will ever finish or take down is the one fin
+  that cannot be true. A tick is not history anywhere else either.
 - **Which banner is hovered is queue state, not panel state.** Expanding one
   card re-lays every card beneath it, so the render pass has to see it —
   `BannerQueue` holds a `hoveredID` (an id, not a bool) and stamps
@@ -670,7 +680,9 @@ sits down.
 ### The inbox is where the overflow goes
 
 Three surfaces deliberately drop things on the floor, and all three land here.
-The ledge holds five fins and a sixth ask evicts the oldest; a digest card is a
+The ledge holds five fins and a sixth evicts — the oldest *running job* first
+and only then the oldest question, because evicting an ask unblocks its caller
+with a 75 while evicting a bar costs a progress reading; a digest card is a
 count, not a list; quiet hours and an `inbox` rule route whole events past the
 screen. None of that is loss, because `AppDatabase` already has the rows — but
 it is only *not loss* if the window is one you would actually open.

@@ -51,6 +51,11 @@ notifications experimentally tomorrow.
   something else says it's answered (`trill resolve`, or a merged PR the
   GitHub bridge recognizes), or when a check *you declared in your rules
   file* finally says yes.
+- **a long build gets one card, then the edge** — `--key` plus `--progress`
+  is one card that fills up instead of fifty banners. When its seconds on
+  screen are up it parks beside the questions as a fin that keeps filling, so
+  a twenty-minute rebuild is still glanceable at minute twelve; hover it for
+  the card and the bar. The ending takes it down and gets a banner of its own.
 - **your next meeting, ten minutes out** — switch the Calendar source on and
   trill draws one quiet card before each meeting: the title, *in 10m*, a pill
   that opens the event, and a **Join** pill when the invite carries a link it

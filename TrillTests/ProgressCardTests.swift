@@ -238,6 +238,161 @@ final class ProgressCardTests: XCTestCase {
         )
     }
 
+    // MARK: - The ledge (a build outlives one card's worth of screen)
+
+    /// A job's card gets what any card gets — once — and then keeps
+    /// reporting from the edge.
+    @MainActor
+    func testAJobParksAsAFinInsteadOfTakingTheRestOfTheBuildWithIt() {
+        let queue = BannerQueue(capacity: 3, displayDuration: .seconds(3600))
+        queue.enqueue(tick(key: "haus", 0.2, id: "bar"))
+        queue.expire(id: "bar")
+
+        XCTAssertEqual(queue.visible.count, 0)
+        XCTAssertEqual(queue.parked.map(\.id), ["bar"], "the bar went to the ledge, not away")
+
+        // The ending is not a tick: told once, it is simply gone.
+        let queue2 = BannerQueue(capacity: 3, displayDuration: .seconds(3600))
+        queue2.enqueue(NotificationEvent(
+            id: "done", source: "haus", key: "haus", title: "haus rebuilt", kind: .done
+        ).normalized())
+        queue2.expire(id: "done")
+        XCTAssertTrue(queue2.parked.isEmpty, "an ending that timed out was seen — it doesn't park")
+    }
+
+    @MainActor
+    func testTicksKeepFillingTheFinAndNeverBannerAgainMidBuild() {
+        let queue = BannerQueue(capacity: 3, displayDuration: .seconds(3600))
+        queue.enqueue(tick(key: "haus", 0.2, id: "bar"))
+        queue.expire(id: "bar")
+
+        queue.enqueue(tick(key: "haus", 0.5))
+        queue.enqueue(tick(key: "haus", 0.8))
+
+        XCTAssertEqual(queue.visible.count, 0, "a build must not shove itself back in front of you every tick")
+        XCTAssertEqual(queue.parked.map(\.id), ["bar"], "same fin, same slot on the edge")
+        XCTAssertEqual(queue.parked.first?.event.progress, 0.8, "and it fills")
+    }
+
+    @MainActor
+    func testTheEndingTakesTheFinDownAndDrawsTheOneCardWorthDrawing() {
+        let queue = BannerQueue(capacity: 3, displayDuration: .seconds(3600))
+        var dropped: [NotificationEvent] = []
+        queue.onDropped = { dropped.append(contentsOf: $0) }
+        queue.enqueue(tick(key: "haus", 0.4, id: "bar"))
+        queue.expire(id: "bar")
+
+        queue.enqueue(NotificationEvent(
+            id: "done", source: "haus", key: "haus", title: "haus rebuilt",
+            progress: 1, kind: .done
+        ).normalized())
+
+        XCTAssertTrue(queue.parked.isEmpty, "the fin comes down on its own — that is what you were waiting for")
+        XCTAssertEqual(queue.visible.map(\.id), ["done"], "the ending is an arrival and gets a card")
+        XCTAssertTrue(dropped.isEmpty, "nothing was lost or abandoned — the job finished")
+
+        // The same ending sent without a bar (the driver's failure path) takes
+        // the fin down too, through `supersedeParked`.
+        let queue2 = BannerQueue(capacity: 3, displayDuration: .seconds(3600))
+        queue2.enqueue(tick(key: "haus", 0.4, id: "bar"))
+        queue2.expire(id: "bar")
+        queue2.enqueue(NotificationEvent(
+            id: "failed", source: "haus", key: "haus", title: "rebuild failed",
+            kind: .fault, urgency: .critical
+        ).normalized())
+        XCTAssertTrue(queue2.parked.isEmpty)
+        XCTAssertEqual(queue2.visible.map(\.id), ["failed"])
+    }
+
+    @MainActor
+    func testABarsFinYieldsBeforeAQuestionDoes() {
+        let queue = BannerQueue(capacity: 10, displayDuration: .seconds(3600))
+        var dropped: [NotificationEvent] = []
+        queue.onDropped = { dropped.append(contentsOf: $0) }
+
+        queue.enqueue(tick(key: "haus", 0.3, id: "bar"))
+        queue.expire(id: "bar")
+        for i in 1...BannerQueue.parkedCapacity {
+            let id = "ask\(i)"
+            queue.enqueue(NotificationEvent(id: id, source: "lane", title: "needs you", kind: .ask))
+            queue.expire(id: id)
+        }
+
+        XCTAssertEqual(
+            queue.parked.map(\.id), ["ask1", "ask2", "ask3", "ask4", "ask5"],
+            "the sixth fin evicts the running job, never the oldest question"
+        )
+        XCTAssertEqual(dropped.map(\.id), ["bar"], "and only the bar's caller — which nobody was blocked on")
+    }
+
+    @MainActor
+    func testSwattingTheFinHushesTheRestOfTheBuildJustLikeSwattingTheCard() {
+        let queue = BannerQueue(capacity: 3, displayDuration: .seconds(3600))
+        queue.enqueue(tick(key: "haus", 0.2, id: "bar"))
+        queue.expire(id: "bar")
+        queue.dismiss(id: "bar")
+
+        queue.enqueue(tick(key: "haus", 0.6))
+        XCTAssertTrue(queue.parked.isEmpty, "you took the fin off the edge; it must not put itself back")
+        XCTAssertTrue(queue.visible.isEmpty, "and it must not come back as a banner either")
+
+        queue.enqueue(NotificationEvent(
+            id: "done", source: "haus", key: "haus", title: "haus rebuilt", kind: .done
+        ).normalized())
+        XCTAssertEqual(queue.visible.map(\.id), ["done"], "the ending still lands")
+    }
+
+    @MainActor
+    func testAFinIsNeverRestoredForABuildThatDiedWithTheDaemon() {
+        let queue = BannerQueue(capacity: 3, displayDuration: .seconds(3600))
+        queue.restoreParked([
+            (event: tick(key: "haus", 0.4, id: "bar"), coalescedCount: 0),
+            (
+                event: NotificationEvent(id: "ask", source: "lane", title: "needs you", kind: .ask),
+                coalescedCount: 0
+            )
+        ])
+        XCTAssertEqual(
+            queue.parked.map(\.id), ["ask"],
+            "a bar frozen at 40% that nothing will ever finish is not worth a fin"
+        )
+    }
+
+    @MainActor
+    func testAJobThatStopsReportingLosesItsFinAndAQuestionDoesNot() async throws {
+        let queue = BannerQueue(
+            capacity: 3, displayDuration: .seconds(3600), stallTimeout: 0.15
+        )
+        queue.enqueue(tick(key: "haus", 0.3, id: "bar"))
+        queue.expire(id: "bar")
+        queue.enqueue(NotificationEvent(id: "ask", source: "lane", title: "needs you", kind: .ask))
+        queue.expire(id: "ask")
+
+        try await Task.sleep(for: .milliseconds(500))
+        XCTAssertEqual(
+            queue.parked.map(\.id), ["ask"],
+            "liveness is the sender's job: a driver that died loses its fin, a question waits"
+        )
+    }
+
+    @MainActor
+    func testATickDoesNotRestartTheCardsClock() async throws {
+        // A driver ticks faster than the clock runs (three seconds against
+        // six), so a card that re-armed on every reading would sit on screen
+        // for the whole rebuild. Scaled down: the card's second is up at
+        // 1.0 s, a re-armed one wouldn't be until 1.6 s.
+        let queue = BannerQueue(capacity: 3, displayDuration: .seconds(1), coalesceWindow: 0)
+        queue.enqueue(tick(key: "haus", 0.1, id: "bar"))
+
+        try await Task.sleep(for: .milliseconds(600))
+        queue.enqueue(tick(key: "haus", 0.5))
+        try await Task.sleep(for: .milliseconds(700))
+
+        XCTAssertTrue(queue.visible.isEmpty, "one card's worth of screen, then the edge")
+        XCTAssertEqual(queue.parked.map(\.id), ["bar"])
+        XCTAssertEqual(queue.parked.first?.event.progress, 0.5, "carrying the newest reading it had")
+    }
+
     // MARK: - What the bar costs
 
     func testTheBarGetsItsOwnRowAndPaysForItOnce() {
