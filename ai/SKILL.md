@@ -127,11 +127,11 @@ you get unwritten; name one kind and the rest keep theirs.
 
 ## Settings file — `~/.config/trill/config.json`
 
-The app's own switches, and the truth for them — Settings reads and writes this same file, live.
-Every key at its default, each optional — `{"launchAtLogin": true, "persistHistory": true,
-"systemMirror": false, "githubBridge": false, "shyWhenWatched": true, "catchUpCard": true,
-"focusAware": true, "calendar": false, "calendarLeadMinutes": 10, "cliLink": true}`. Don't write
-it if it's a symlink into `/nix/store`: the desktop generates it there and a rebuild reverts you.
+The app's own switches, and the truth for them — Settings reads and writes this same file, live. Every key at its
+default, each optional — `{"launchAtLogin": true, "persistHistory": true, "systemMirror": false, "githubBridge":
+false, "shyWhenWatched": true, "catchUpCard": true, "focusAware": true, "calendar": false, "calendarLeadMinutes":
+10, "cliLink": true}`. `systemMirrorApps` has no default: absent it mirrors every app, a list exactly those, `[]`
+none. Don't write it if it's a symlink into `/nix/store`: the desktop generates it there and a rebuild reverts you.
 
 ## Traps
 

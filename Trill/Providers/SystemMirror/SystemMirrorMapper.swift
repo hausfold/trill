@@ -36,6 +36,19 @@ enum SystemMirrorMapper {
         return String(lowered.dropFirst(systemCenterPrefix.count))
     }
 
+    /// Is this app one the mirror is allowed to draw?
+    ///
+    /// `nil` means nobody has narrowed the list, so every app is — which is
+    /// what System Mirror has always done and what flipping the switch on
+    /// still gets you. A set means *exactly these*, so an empty one draws
+    /// nothing: the user unticked every app, and inventing a card for one of
+    /// them would be overruling that. Compared on the same slug `rules.json`
+    /// matches on, so a list written by hand may spell an id in any case.
+    static func isAllowed(_ bundleID: String, allowing allowed: Set<String>?) -> Bool {
+        guard let allowed else { return true }
+        return allowed.contains(source(for: bundleID))
+    }
+
     /// Is this row one trill must not read back in? Its own, and anything
     /// whose identifier didn't survive to a usable slug.
     static func isOwn(_ bundleID: String, runningBundleID: String? = nil) -> Bool {

@@ -103,6 +103,59 @@ final class NotificationSettingsAuditTests: XCTestCase {
         XCTAssertEqual(found.map(\.bundleID), ["com.tinyspeck.slackmacgap"])
     }
 
+    // MARK: - The picker's list
+
+    /// The Apps pane is a picker, not a worklist: an app you silenced last
+    /// week still needs a row, or the app you came to tick isn't there.
+    func testThePickerListsQuietAppsToo() {
+        let quiet = decodeReal("com.apple.dt.Xcode", 0)
+        let noisy = decodeReal("com.tinyspeck.slackmacgap", 310_386_702)
+        XCTAssertFalse(quiet.isNoisy)
+        let listed = NotificationSettingsAudit.everyListedApp(
+            settings: keyed([quiet, noisy]), isInstalled: { _ in true }
+        )
+        XCTAssertEqual(listed.map(\.bundleID).sorted(),
+                       ["com.apple.dt.Xcode", "com.tinyspeck.slackmacgap"])
+    }
+
+    func testThePickerHidesRowsSystemSettingsDoesNotList() {
+        let listed = NotificationSettingsAudit.everyListedApp(
+            settings: keyed([
+                decodeReal("com.apple.clock", 8_917_622_934),
+                decodeReal("com.tinyspeck.slackmacgap", 310_386_702),
+            ]),
+            isInstalled: { _ in true }
+        )
+        XCTAssertEqual(listed.map(\.bundleID), ["com.tinyspeck.slackmacgap"])
+    }
+
+    func testThePickerHidesAppsThatArentInstalled() {
+        let listed = NotificationSettingsAudit.everyListedApp(
+            settings: keyed([decodeReal("com.tinyspeck.slackmacgap", 310_386_702)]),
+            isInstalled: { _ in false }
+        )
+        XCTAssertTrue(listed.isEmpty)
+    }
+
+    /// rules.json and the mirror's tick list are both case-insensitive
+    /// everywhere else in trill; the store spells each id the way its app
+    /// registered it. An exact match here audited a lowercase rules file as
+    /// though the app had no preferences at all.
+    func testAListedScopeMatchesWhateverCaseTheUserWrote() {
+        let found = NotificationSettingsAudit.findings(
+            scope: .only(["com.tinyspeck.SlackMacGap"]),
+            settings: keyed([decodeReal("com.tinyspeck.slackmacgap", 310_386_702)]),
+            isInstalled: { _ in true }
+        )
+        XCTAssertEqual(found.map(\.bundleID), ["com.tinyspeck.slackmacgap"])
+    }
+
+    private func keyed(
+        _ settings: [NativeNotificationSettings]
+    ) -> [String: NativeNotificationSettings] {
+        Dictionary(settings.map { ($0.bundleID, $0) }, uniquingKeysWith: { _, last in last })
+    }
+
     private func decodeReal(_ bundleID: String, _ flags: UInt64) -> NativeNotificationSettings {
         NotificationSettingsAudit.decode(bundleID: bundleID, flags: flags)
     }

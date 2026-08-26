@@ -232,8 +232,16 @@ Three lanes, in order of honesty:
    hurry it, and the number is here rather than hidden because it decides
    what the mirror is good for. Its *timestamp* is exact, so a late card
    still says when the thing happened.
+   **Which apps it draws is yours to pick** — Settings' **Apps** pane lists
+   every app System Settings itself lists, one tick each, and writes them to
+   `systemMirrorApps` in `config.json`. Leave it alone and the mirror draws
+   everything it sees, as it always has; tick a list and it draws exactly
+   that, including nothing if you untick everything.
 3. **Suppressing Apple's own banners** is Focus + per-app settings — trill
-   deep-links you there but never pretends to own that dial. It *reads* the
+   deep-links you there but never pretends to own that dial. The **Silence…**
+   button beside each ticked app on the Apps pane is that deep link plus a
+   walkthrough; it is offered only for apps trill draws, because silencing one
+   trill isn't drawing just loses the notification. It *reads* the
    Focus you're in (see `focus` in rules.json above) and routes accordingly;
    turning one on or off stays a click of yours, in Apple's pane or in
    whatever drives it on your desktop.

@@ -22,6 +22,34 @@ final class SystemMirrorTests: XCTestCase {
         )
     }
 
+    // MARK: - Which apps the mirror is allowed to draw
+
+    func testAnUnchosenListMirrorsEveryApp() {
+        XCTAssertTrue(SystemMirrorMapper.isAllowed("com.tinyspeck.slackmacgap", allowing: nil))
+    }
+
+    func testOnlyTickedAppsAreMirroredOnceAListExists() {
+        let ticked: Set<String> = ["com.apple.mobilesms"]
+        XCTAssertTrue(SystemMirrorMapper.isAllowed("com.apple.MobileSMS", allowing: ticked))
+        XCTAssertFalse(SystemMirrorMapper.isAllowed("com.tinyspeck.slackmacgap", allowing: ticked))
+    }
+
+    /// Unticking every app means the mirror draws nothing — not that it goes
+    /// back to drawing everything. That distinction is the whole reason the
+    /// list is optional rather than an array that means "all" when empty.
+    func testAnEmptyListMirrorsNothing() {
+        XCTAssertFalse(SystemMirrorMapper.isAllowed("com.apple.MobileSMS", allowing: []))
+    }
+
+    /// A tick is stored as a slug, and usernoted files some rows under its own
+    /// internal prefix — the same normalization rules.json gets.
+    func testATickMatchesThePrefixedFormOfTheSameApp() {
+        let ticked: Set<String> = ["com.apple.softwareupdatenotification"]
+        XCTAssertTrue(SystemMirrorMapper.isAllowed(
+            "_SYSTEM_CENTER_:com.apple.SoftwareUpdateNotification", allowing: ticked
+        ))
+    }
+
     // MARK: - The row
 
     func testDecodesAMessagesRow() throws {

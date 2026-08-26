@@ -41,7 +41,7 @@ final class AppRuntime {
     var onOpenInbox: ((InboxScope) -> Void)?
     /// The same door for trill's own Settings, on a named pane. Reached by a
     /// "Silence Native Banners" click whose apps macOS lists no row for —
-    /// nothing to walk through, so the Banners pane is the answer.
+    /// nothing to walk through, so the Apps pane is the answer.
     var onOpenSettings: ((SettingsPane) -> Void)?
     /// The live signal behind every inbox window: which database to read,
     /// when something landed, what is still on the ledge. Built here because

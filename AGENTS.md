@@ -47,6 +47,16 @@ never into a broken pipeline. Corollaries:
   without it. No usernoted type or column name may appear outside
   `Providers/SystemMirror/`; everything crossing out is a `UsernotedRecord`,
   and every decision about it is `SystemMirrorMapper`'s and pure.
+  **Which apps it draws is a list the user picks** (`systemMirrorApps` in
+  `config.json`, the ticks on Settings' Apps pane), and that key has **three**
+  states, not two: absent means nobody has narrowed it, so every app is
+  mirrored — what the switch has always done — while a present list means
+  *exactly these*, which makes `[]` the legitimate answer "none". Collapsing
+  the two would re-open the firehose the moment somebody cleared their list.
+  The decision itself is `SystemMirrorMapper.isAllowed` and pure, matched on
+  the same slug `rules.json` matches on, and unticked rows are dropped
+  **after** the watermark moves, so ticking an app later starts it from the
+  present rather than replaying what it missed.
   Two things measured in the M3 spike are load-bearing and must not be
   "optimised" away. **A mirrored card is ~5.1 s late and that is usernoted's
   batching, not ours** — say the number, don't chase it; watching the `-wal`
@@ -107,7 +117,7 @@ never into a broken pipeline. Corollaries:
   **An app macOS lists no row for is a notice, not a step** — bit 7, reached
   only by naming it in `rules.json` (`com.apple.SoftwareUpdateNotification` is
   the one a real rules file hits). It is still *reported*, because having no
-  switch doesn't make it quiet: `trill doctor` names it, and Settings' Banners
+  switch doesn't make it quiet: `trill doctor` names it, and Settings' Apps
   pane carries it in its own card, with the one lever that is actually theirs
   (route it to the inbox). What it never becomes is a thing to click.
   `NotificationSettingsAudit.walkable` is the door — the walkthrough, the
@@ -119,6 +129,19 @@ never into a broken pipeline. Corollaries:
   pane instead. A version of this shipped as a Skip step; a dead end you have
   to page through is still a dead end, and stating it once where the user came
   looking beats interrupting them with it.
+- **The Apps pane is one row per app, and the two halves never become one
+  click.** Mirroring and silencing are the two ends of one job — trill draws
+  the app, macOS stops drawing it — so they share a row, a list, and the one
+  Full Disk Access grant they both need. What they cannot share is a control:
+  trill writes no Apple setting, so the tick does trill's half and
+  **Silence…** hands the rest to the user in System Settings. Three rules hold
+  it together. The tick is a *request* and the line under it is a *reading* —
+  a row goes green because the audit says macOS is quiet, never because the
+  switch moved. **Silence… is offered only on apps trill draws**, because
+  silencing an app trill isn't drawing is not de-duplication, it is just
+  losing the notification. And the pane's list is `everyListedApp`, not
+  `findings`: a worklist drops what is already quiet, while a *picker* has to
+  show the app you silenced last week or the row you came to tick isn't there.
 - **A resolver is named on the wire and *declared* in `rules.json`.** An
   `ask` can clear itself — `trill resolve`, an event carrying `resolves`, or
   a `--until` poller — but what that poller runs lives in the user's own
@@ -253,7 +276,10 @@ Adding a switch means adding it to `AppConfig` in **both** directions —
 while the file never changes, so the value reverts the next time the file is
 read; miss `init(json:)` and what someone typed into the file is ignored. A key
 the file doesn't name is that key at its default; a partial config.json is the
-normal case, not a broken one. Keys trill doesn't know are preserved verbatim
+normal case, not a broken one. `systemMirrorApps` is the one key whose
+*absence* is itself a value, so it is written only once chosen and cleared
+through `AppConfig.absentKeys` when it isn't — don't tidy it into an array
+that is always there. Keys trill doesn't know are preserved verbatim
 across writes.
 
 The file is refused as read-only when it's a symlink into the Nix store —
@@ -278,7 +304,7 @@ Trill/
   Platform/      ActionRouter, SystemIntegration (all Apple hooks, one file),
                  ScreenWatch · PresenceWatch · FocusWatch (the ambient reads)
   UI/            BannerView, InboxView + InboxRowView, LedgeView,
-                 Settings (View · Panes · Chrome)
+                 Settings (View · Panes · Chrome) — Apps pane is the picker
 TrillTests/      geometry, policy, pipeline, inbox, presence — no display
 ```
 

@@ -47,15 +47,24 @@ struct SystemMirrorProvider: NotificationProvider {
     /// supervisor calls this off the main actor, and the toggle's only job
     /// here is yes/no.
     private let enabled: @Sendable () -> Bool
+    /// Which apps the user ticked, or nil when they never narrowed it. Read
+    /// from the file on every drain for the same reason `enabled` is: a tick
+    /// has to change what the *next* notification does, not what the next
+    /// launch does.
+    private let allowedApps: @Sendable () -> Set<String>?
 
     init(
         storePath: String = UsernotedStore.defaultPath(),
         enabled: @escaping @Sendable () -> Bool = {
             ConfigFileStore.shared.current().systemMirrorEnabled
+        },
+        allowedApps: @escaping @Sendable () -> Set<String>? = {
+            ConfigFileStore.shared.current().systemMirrorApps.map(Set.init)
         }
     ) {
         self.storePath = storePath
         self.enabled = enabled
+        self.allowedApps = allowedApps
     }
 
     /// Deliberately *not* gated on the toggle: Settings decides whether the
@@ -84,6 +93,7 @@ struct SystemMirrorProvider: NotificationProvider {
             let watcher = UsernotedWatcher(
                 storePath: storePath,
                 enabled: enabled,
+                allowedApps: allowedApps,
                 yield: { continuation.yield($0) },
                 finish: { continuation.finish() }
             )
@@ -120,6 +130,7 @@ final class UsernotedWatcher: @unchecked Sendable {
     private let queue = DispatchQueue(label: "com.hausfold.trill.system-mirror")
     private let storePath: String
     private let enabled: @Sendable () -> Bool
+    private let allowedApps: @Sendable () -> Set<String>?
     private let yield: @Sendable (NotificationEvent) -> Void
     private let finish: @Sendable () -> Void
 
@@ -136,11 +147,13 @@ final class UsernotedWatcher: @unchecked Sendable {
     init(
         storePath: String,
         enabled: @escaping @Sendable () -> Bool,
+        allowedApps: @escaping @Sendable () -> Set<String>? = { nil },
         yield: @escaping @Sendable (NotificationEvent) -> Void,
         finish: @escaping @Sendable () -> Void
     ) {
         self.storePath = storePath
         self.enabled = enabled
+        self.allowedApps = allowedApps
         self.yield = yield
         self.finish = finish
         self.store = UsernotedStore(path: storePath)
@@ -211,8 +224,15 @@ final class UsernotedWatcher: @unchecked Sendable {
         guard enabled() else { return }
         let now = Date()
         let running = Bundle.main.bundleIdentifier
+        // Read once per drain, not per row: it's a file read, and every row in
+        // one batch is being judged against the same answer anyway.
+        let allowed = allowedApps()
         for record in records {
             guard now.timeIntervalSince(record.deliveredAt) < Self.staleAfter else { continue }
+            // Unticked apps are dropped *after* the watermark moved, so
+            // ticking one later starts it from the present rather than
+            // replaying everything it missed while it was off.
+            guard SystemMirrorMapper.isAllowed(record.bundleID, allowing: allowed) else { continue }
             guard let event = SystemMirrorMapper.event(
                 for: record,
                 appName: appName(for: record.bundleID),

@@ -43,6 +43,16 @@ final class AppSettings: ObservableObject {
         }
     }
 
+    /// Which apps the mirror may draw, or nil while nobody has narrowed it.
+    /// The ticks on the Apps pane; see `AppConfig.systemMirrorApps` for why
+    /// the absent case is a value rather than an empty list.
+    @Published var systemMirrorApps: [String]? {
+        didSet {
+            guard !isApplyingFileChange, systemMirrorApps != oldValue else { return }
+            commit(\.systemMirrorApps, systemMirrorApps, revert: { self.systemMirrorApps = oldValue })
+        }
+    }
+
     @Published var githubBridgeEnabled: Bool {
         didSet {
             guard !isApplyingFileChange, githubBridgeEnabled != oldValue else { return }
@@ -124,6 +134,32 @@ final class AppSettings: ObservableObject {
         }
     }
 
+    /// Does the mirror draw this app as things stand? True for everything
+    /// while the list is unchosen.
+    func mirrors(_ bundleID: String) -> Bool {
+        SystemMirrorMapper.isAllowed(bundleID, allowing: systemMirrorApps.map(Set.init))
+    }
+
+    /// Tick or untick one app.
+    ///
+    /// `everyKnownApp` is what "all of them" means the first time somebody
+    /// unticks anything: until then the list is absent, so narrowing it has
+    /// to write down what it was narrowing *from*. Pass every app macOS holds
+    /// preferences for, not just the ones the pane is showing — a filtered
+    /// list would quietly stop mirroring the rows the pane hides (the
+    /// background agents with no settings row of their own).
+    func setMirrors(_ on: Bool, for bundleID: String, everyKnownApp: [String]) {
+        systemMirrorApps = AppConfig.mirrorList(
+            systemMirrorApps, setting: on, for: bundleID, everyKnownApp: everyKnownApp
+        )
+    }
+
+    /// Back to the default: every app the mirror sees, including ones
+    /// installed after today.
+    func mirrorEveryApp() {
+        systemMirrorApps = nil
+    }
+
     /// What `trill` resolves to right now — recomputed at launch and whenever
     /// the switch moves, because a *link* and a working *command* are not the
     /// same claim (see `SystemIntegration.CLILinkState`).
@@ -180,6 +216,7 @@ final class AppSettings: ObservableObject {
         launchAtLogin = config.launchAtLogin
         persistHistory = config.persistHistory
         systemMirrorEnabled = config.systemMirrorEnabled
+        systemMirrorApps = config.systemMirrorApps
         githubBridgeEnabled = config.githubBridgeEnabled
         shyWhenWatched = config.shyWhenWatched
         catchUpCard = config.catchUpCard
@@ -209,6 +246,7 @@ final class AppSettings: ObservableObject {
         launchAtLogin = config.launchAtLogin
         persistHistory = config.persistHistory
         systemMirrorEnabled = config.systemMirrorEnabled
+        systemMirrorApps = config.systemMirrorApps
         githubBridgeEnabled = config.githubBridgeEnabled
         shyWhenWatched = config.shyWhenWatched
         catchUpCard = config.catchUpCard

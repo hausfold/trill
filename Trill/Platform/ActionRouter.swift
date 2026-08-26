@@ -28,7 +28,7 @@ final class ActionRouter {
     /// Opens trill's own Settings on one pane. Same shape and same reason as
     /// `openInbox`. Used by `silenceNative` when every app the click was
     /// about is one macOS lists no row for: there is no walkthrough to run
-    /// and no pane to send anyone to, and the Banners pane is where trill
+    /// and no pane to send anyone to, and the Apps pane is where trill
     /// says so.
     var openSettings: ((SettingsPane) -> Void)?
 
@@ -145,12 +145,12 @@ final class ActionRouter {
             // lists no row for — a mirrored `SoftwareUpdateNotification` card
             // is how this is reached. There is no click to walk anyone
             // through, so don't open a walkthrough that would spend its one
-            // step saying "you can't": land on the Banners pane, which states
+            // step saying "you can't": land on the Apps pane, which states
             // it standing still and carries the one lever that *is* theirs.
             guard findings.isEmpty else {
                 Self.log.info("silence action for \(event.id, privacy: .public): no settings row to walk to")
                 if let openSettings {
-                    openSettings(.banners)
+                    openSettings(.apps)
                 } else {
                     SystemIntegration.openNotificationSettings()
                 }

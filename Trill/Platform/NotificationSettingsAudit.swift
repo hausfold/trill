@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import os
 import os.log
 
 /// What macOS itself will do with one app's notifications.
@@ -372,7 +373,18 @@ enum NotificationSettingsAudit {
             // Named explicitly, so it's reported even if nothing on this Mac
             // claims the id — an app you uninstalled still has a row, and
             // silently dropping it would look like the audit was broken.
-            candidates = ids.compactMap { all[$0] }
+            //
+            // Matched on the slug rather than the raw key: the ids come from
+            // `rules.json` and the mirror's tick list, both of which are
+            // case-insensitive everywhere else in trill (`RuleSet.Match`
+            // lowercases both sides), while the store spells each id the way
+            // its app registered it. An exact match here made a rules file
+            // written in lowercase audit as though the app had no row at all.
+            let bySlug = Dictionary(
+                all.map { (SystemMirrorMapper.source(for: $0.key), $0.value) },
+                uniquingKeysWith: { first, _ in first }
+            )
+            candidates = ids.compactMap { bySlug[SystemMirrorMapper.source(for: $0)] }
         case .everything:
             // A stock Mac holds preferences for dozens of things that are not
             // apps you can act on: invisible background agents, and rows
@@ -390,6 +402,45 @@ enum NotificationSettingsAudit {
                 if rank(lhs) != rank(rhs) { return rank(lhs) > rank(rhs) }
                 return lhs.bundleID < rhs.bundleID
             }
+    }
+
+    /// Every app System Settings itself lists under Application
+    /// Notifications — quiet ones included.
+    ///
+    /// This is the Apps pane's list, and it is a different question from
+    /// `findings`. A worklist wants only what's still wrong, so `findings`
+    /// drops anything already quiet; a *picker* has to show an app you
+    /// silenced last week, or the row you came to tick isn't there. Same two
+    /// filters `.everything` uses — has a row of its own, and something on
+    /// this Mac claims the id — because a row nobody can click and an app
+    /// that isn't installed are both dead ends here too.
+    static func everyListedApp(
+        settings: [String: NativeNotificationSettings],
+        isInstalled: (String) -> Bool = bundleIsInstalled
+    ) -> [NativeNotificationSettings] {
+        settings.values
+            .filter { $0.hasSettingsRow && isInstalled($0.bundleID) && $0.bundleID != ownBundleID }
+            .sorted { $0.bundleID < $1.bundleID }
+    }
+
+    /// The live version, or nil when the store can't be read — "can't tell",
+    /// same as everywhere else here.
+    static func liveEveryListedApp(
+        isInstalled: (String) -> Bool = bundleIsInstalled
+    ) -> [NativeNotificationSettings]? {
+        guard let all = readAll() else { return nil }
+        return everyListedApp(settings: all, isInstalled: isInstalled)
+    }
+
+    /// Every bundle id the store holds, unfiltered — background agents and
+    /// uninstalled apps included.
+    ///
+    /// Deliberately *not* the pane's list: this is what "every app" has to
+    /// mean when a first untick writes down the set it is narrowing from
+    /// (`AppSettings.setMirrors`). Filtering it there would silently stop
+    /// mirroring every row the pane hides.
+    static func liveKnownBundleIDs() -> [String]? {
+        readAll().map { Array($0.keys) }
     }
 
     // MARK: - Reporting as banners
@@ -502,10 +553,26 @@ enum NotificationSettingsAudit {
 
     /// A human name for a bundle id, or the id back when nothing on this Mac
     /// claims it (an app that was uninstalled still has a preferences row).
+    ///
+    /// Memoized, because the Apps pane asks for ninety of these every time it
+    /// re-polls and each answer costs a LaunchServices lookup plus a bundle
+    /// read. An app's name doesn't change under a running trill; if one is
+    /// installed mid-session its row simply arrives without needing this to
+    /// forget anything.
     static func displayName(for bundleID: String) -> String {
-        guard let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID)
-        else { return bundleID }
-        return FileManager.default.displayName(atPath: url.path)
-            .replacingOccurrences(of: ".app", with: "")
+        if let cached = nameCache.withLock({ $0[bundleID] }) { return cached }
+        let name: String
+        if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) {
+            name = FileManager.default.displayName(atPath: url.path)
+                .replacingOccurrences(of: ".app", with: "")
+        } else {
+            name = bundleID
+        }
+        nameCache.withLock { $0[bundleID] = name }
+        return name
     }
+
+    /// Guarded rather than main-actor: `bannerEvents` names apps from the
+    /// daemon's own task, and the pane asks from SwiftUI.
+    private static let nameCache = OSAllocatedUnfairLock(initialState: [String: String]())
 }
