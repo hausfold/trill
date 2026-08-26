@@ -81,74 +81,57 @@ final class WalkthroughTests: XCTestCase {
 
     /// An app named in `rules.json` that System Settings doesn't list (bit 7 —
     /// `com.apple.SoftwareUpdateNotification` is the one a real rules file hits
-    /// first). There's no click to make, so the step exists only to be stepped
-    /// past.
+    /// first). There's no click to make, so it never becomes a step.
     private func unlisted(_ id: String) -> NativeNotificationSettings {
         NotificationSettingsAudit.decode(bundleID: id, flags: 0b01110 | 1 << 7 | 1 << 25)
     }
 
-    func testASkippedAppStillMovesTheWalkthroughOn() {
-        var walk = Walkthrough()
-        walk.skipped.insert("com.a")
-        XCTAssertTrue(walk.isFinished("com.a"))
-        XCTAssertEqual(walk.current(in: worklist)?.bundleID, "com.b")
-        XCTAssertEqual(walk.done(in: worklist), 1)
-    }
-
-    /// The point of the third set: a skipped app was never fixed by anyone, so
-    /// it must take the "macOS has stopped drawing them" line away exactly as
-    /// a user-advanced one does.
-    func testASkippedAppIsNotAConfirmation() {
-        var walk = Walkthrough()
-        walk.confirmed.formUnion(["com.a", "com.b"])
-        walk.skipped.insert("com.c")
-        XCTAssertEqual(walk.remaining(in: worklist), 0)
-        XCTAssertFalse(
-            walk.everythingWasConfirmed,
-            "an app macOS gave no switch for is still drawing — it is not confirmed quiet"
-        )
-    }
-
     func testAnUnlistedAppIsStillNoisy() {
-        // It stays in the worklist: having no row doesn't make it quiet, and
+        // Reported, not hidden: having no row doesn't make it quiet, and
         // dropping it would be trill hiding a duplicate banner it can see.
         let finding = unlisted("com.apple.SoftwareUpdateNotification")
         XCTAssertFalse(finding.hasSettingsRow)
         XCTAssertTrue(finding.isNoisy)
     }
 
+    /// The door every walkthrough goes through. An app with no row has no
+    /// click to demo and no pane to open, so a step for it would spend itself
+    /// saying "you can't" — Settings states it standing still instead.
+    func testTheWalkthroughOnlyEverGetsAppsWithASwitch() {
+        let mixed = [noisy("com.a"), unlisted("com.apple.SoftwareUpdateNotification"), noisy("com.b")]
+        XCTAssertEqual(
+            NotificationSettingsAudit.walkable(mixed).map(\.bundleID),
+            ["com.a", "com.b"]
+        )
+        XCTAssertEqual(
+            NotificationSettingsAudit.unlisted(mixed).map(\.bundleID),
+            ["com.apple.SoftwareUpdateNotification"]
+        )
+    }
+
+    /// The banner's one action opens that walkthrough, so an app that can't be
+    /// walked through can't honestly be bannered about either: a click that
+    /// leads to "there is nothing you can do" is worse than the duplicate it
+    /// was complaining about.
+    func testNoBannerForAnAppWithNoSwitchToOffer() {
+        let unlisted = unlisted("com.apple.SoftwareUpdateNotification")
+        XCTAssertTrue(NotificationSettingsAudit.bannerEvents(for: [unlisted]).isEmpty)
+
+        let events = NotificationSettingsAudit.bannerEvents(for: [noisy("com.a"), unlisted])
+        XCTAssertEqual(events.count, 1)
+        XCTAssertEqual(events.first?.actions.first?.target, "com.a")
+    }
+
     // MARK: - The closing line
 
     func testTheClosingLineOnlyCreditsMacOSWhenMacOSConfirmed() {
         XCTAssertTrue(
-            OnboardingAssistantView.closingLine(confirmed: true, unfixable: 0, total: 3)
+            OnboardingAssistantView.closingLine(confirmed: true)
                 .contains("macOS has stopped drawing them")
         )
         XCTAssertFalse(
-            OnboardingAssistantView.closingLine(confirmed: false, unfixable: 0, total: 3)
+            OnboardingAssistantView.closingLine(confirmed: false)
                 .contains("macOS has stopped")
         )
-    }
-
-    func testTheClosingLineNamesWhatMacOSKeptDrawing() {
-        let some = OnboardingAssistantView.closingLine(confirmed: false, unfixable: 1, total: 3)
-        XCTAssertTrue(some.contains("one of them"))
-        XCTAssertTrue(some.contains("the rest"))
-
-        let many = OnboardingAssistantView.closingLine(confirmed: false, unfixable: 2, total: 3)
-        XCTAssertTrue(many.contains("2 of them"))
-    }
-
-    /// A worklist that was *entirely* unfixable has no "rest" to hand over,
-    /// and a closing card claiming one would be taking credit for a
-    /// walkthrough in which nothing changed.
-    func testTheClosingLinePromisesNoRestWhenThereIsNone() {
-        for total in 1...2 {
-            let line = OnboardingAssistantView.closingLine(
-                confirmed: false, unfixable: total, total: total
-            )
-            XCTAssertFalse(line.contains("the rest"), "total \(total)")
-            XCTAssertTrue(line.contains("no row, no switch"), "total \(total)")
-        }
     }
 }

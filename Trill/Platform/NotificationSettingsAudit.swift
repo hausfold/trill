@@ -423,6 +423,22 @@ enum NotificationSettingsAudit {
         return ids.isEmpty ? nil : .only(ids)
     }
 
+    /// The findings a user can actually do something about: the apps System
+    /// Settings draws a row for. Everything the walkthrough and the "Silence…"
+    /// button are offered on goes through here first — an app macOS lists no
+    /// row for has no click to demo, so offering the walk is offering a fix
+    /// that doesn't exist. Those apps are still *reported* (`trill doctor`
+    /// names them, Settings shows them as a notice); they're just never sold
+    /// as a step.
+    static func walkable(_ findings: [NativeNotificationSettings]) -> [NativeNotificationSettings] {
+        findings.filter(\.hasSettingsRow)
+    }
+
+    /// The other half: noisy, and macOS keeps the switch to itself.
+    static func unlisted(_ findings: [NativeNotificationSettings]) -> [NativeNotificationSettings] {
+        findings.filter { !$0.hasSettingsRow }
+    }
+
     /// The banner(s) `trill doctor --notify` puts on screen. Pure, so the
     /// wording and the collapse threshold are testable without a display.
     ///
@@ -430,7 +446,15 @@ enum NotificationSettingsAudit {
     /// "fix it for me" here and there can't be: Apple exposes no API to write
     /// another app's notification settings, so the honest offer is to open the
     /// right pane and show the user exactly which two boxes to clear.
+    ///
+    /// Which is why an app macOS lists no row for gets **no banner**: the one
+    /// action here opens a walkthrough it can't be walked through, and a
+    /// banner whose click leads to "there's nothing you can do" is worse than
+    /// the duplicate it was complaining about. `trill doctor`'s output still
+    /// names it, and Settings carries it as a standing notice — both places
+    /// the user went looking, rather than one that came to them.
     static func bannerEvents(for findings: [NativeNotificationSettings]) -> [NotificationEvent] {
+        let findings = walkable(findings)
         guard !findings.isEmpty else { return [] }
 
         func action(target: String) -> NotificationEvent.Action {

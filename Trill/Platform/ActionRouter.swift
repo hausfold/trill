@@ -25,6 +25,13 @@ final class ActionRouter {
     /// know nothing about windows beyond "someone will show one".
     var openInbox: ((InboxScope) -> Void)?
 
+    /// Opens trill's own Settings on one pane. Same shape and same reason as
+    /// `openInbox`. Used by `silenceNative` when every app the click was
+    /// about is one macOS lists no row for: there is no walkthrough to run
+    /// and no pane to send anyone to, and the Banners pane is where trill
+    /// says so.
+    var openSettings: ((SettingsPane) -> Void)?
+
     init(listedApps: @escaping () -> [String] = { [] }, askBroker: AskBroker? = nil) {
         self.listedApps = listedApps
         self.askBroker = askBroker
@@ -129,8 +136,24 @@ final class ActionRouter {
             // keeps the window honest about *now* — the user may have fixed
             // one of them while the banner sat on screen.
             let findings = NotificationSettingsAudit.findings(scope: scope, settings: store)
+            let walkable = NotificationSettingsAudit.walkable(findings)
+            guard walkable.isEmpty else {
+                SystemIntegration.presentNativeBannerAssistant(findings: walkable)
+                return
+            }
+            // Still noisy, but every one of them is an app System Settings
+            // lists no row for — a mirrored `SoftwareUpdateNotification` card
+            // is how this is reached. There is no click to walk anyone
+            // through, so don't open a walkthrough that would spend its one
+            // step saying "you can't": land on the Banners pane, which states
+            // it standing still and carries the one lever that *is* theirs.
             guard findings.isEmpty else {
-                SystemIntegration.presentNativeBannerAssistant(findings: findings)
+                Self.log.info("silence action for \(event.id, privacy: .public): no settings row to walk to")
+                if let openSettings {
+                    openSettings(.banners)
+                } else {
+                    SystemIntegration.openNotificationSettings()
+                }
                 return
             }
             // Fixed while the banner sat there. Open on those same apps

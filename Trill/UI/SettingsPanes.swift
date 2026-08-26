@@ -612,6 +612,19 @@ struct BannersPane: View {
         SystemIntegration.presentNativeBannerAssistant(findings: $0)
     }
 
+    /// The apps a user can actually do something about — the walkthrough and
+    /// the "Silence…" button are offered on these and nothing else.
+    private var actionable: [NativeNotificationSettings] {
+        NotificationSettingsAudit.walkable(findings)
+    }
+
+    /// The apps macOS keeps the switch to itself for. Reported, never offered
+    /// as a step: there is no row in System Settings to open, so a "Silence…"
+    /// button here would open a helper whose only content is "you can't".
+    private var unlisted: [NativeNotificationSettings] {
+        NotificationSettingsAudit.unlisted(findings)
+    }
+
     var body: some View {
         SettingsPaneLayout(title: SettingsPane.banners.title, subtitle: SettingsPane.banners.summary) {
             SettingsCard {
@@ -631,17 +644,31 @@ struct BannersPane: View {
                         // work didn't ask for an experimental provider.
                         Button("Grant…", action: onRequestAuditAccess)
                     }
-                } else if findings.isEmpty {
-                    SettingsRow(
-                        symbol: scopeIsEmpty ? "list.bullet" : "checkmark.circle.fill",
-                        tint: scopeIsEmpty ? .secondary : .green,
-                        title: scopeIsEmpty ? "Nothing listed yet" : "Nothing doubling up",
-                        subtitle: scopeIsEmpty
-                            ? "No apps in rules.json, so there is nothing to check."
-                            : "macOS is quiet for every listed app."
-                    ) {}
+                } else if actionable.isEmpty {
+                    // "Nothing doubling up" is only true when nothing is
+                    // noisy at all. An unlisted app *is* doubling up — it
+                    // just isn't something to click — so when that's all
+                    // there is, this card says nothing and the notice below
+                    // carries it.
+                    if unlisted.isEmpty {
+                        SettingsRow(
+                            symbol: scopeIsEmpty ? "list.bullet" : "checkmark.circle.fill",
+                            tint: scopeIsEmpty ? .secondary : .green,
+                            title: scopeIsEmpty ? "Nothing listed yet" : "Nothing doubling up",
+                            subtitle: scopeIsEmpty
+                                ? "No apps in rules.json, so there is nothing to check."
+                                : "macOS is quiet for every listed app."
+                        ) {}
+                    } else {
+                        SettingsRow(
+                            symbol: "checkmark.circle.fill",
+                            tint: .green,
+                            title: "Nothing left to click",
+                            subtitle: "Every app with a switch of its own is already quiet."
+                        ) {}
+                    }
                 } else {
-                    ForEach(Array(findings.enumerated()), id: \.element.bundleID) { index, finding in
+                    ForEach(Array(actionable.enumerated()), id: \.element.bundleID) { index, finding in
                         if index > 0 { SettingsDivider() }
                         SettingsRow(
                             symbol: "bell.badge.fill",
@@ -657,15 +684,50 @@ struct BannersPane: View {
                 }
             }
 
-            if findings.count > 1 {
+            if actionable.count > 1 {
                 Button {
-                    onSilenceNative(findings)
+                    onSilenceNative(actionable)
                 } label: {
-                    Label("Walk me through all \(findings.count)", systemImage: "bell.slash")
+                    Label("Walk me through all \(actionable.count)", systemImage: "bell.slash")
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.large)
+            }
+
+            // The other kind of finding: noisy, and macOS offers nobody a
+            // switch. It's stated here, once, standing still — not walked
+            // through, because a walkthrough step for it is a demo of two
+            // controls that aren't on the pane and a Done button asking the
+            // user to affirm a change nobody could make.
+            if !unlisted.isEmpty {
+                SettingsCard {
+                    SettingsRow(
+                        symbol: "exclamationmark.triangle.fill",
+                        tint: .orange,
+                        title: unlisted.count == 1
+                            ? "macOS draws this one itself"
+                            : "macOS draws \(unlisted.count) of these itself",
+                        subtitle: "System Settings lists no row for them under Application "
+                            + "Notifications, so there is nothing to untick — here or there."
+                    ) {}
+                    ForEach(unlisted, id: \.bundleID) { finding in
+                        SettingsDivider()
+                        SettingsRow(
+                            symbol: "bell.slash",
+                            title: NotificationSettingsAudit.displayName(for: finding.bundleID),
+                            subtitle: finding.complaint
+                        ) {}
+                    }
+                }
+
+                SettingsFootnote(
+                    """
+                    The one lever that is yours: route them to the inbox in ~/.config/trill/rules.json \
+                    — "delivery": "inbox" on the rule naming the app — and you’ll see macOS’s \
+                    banner once, with trill’s copy waiting in history instead of on screen.
+                    """
+                )
             }
 
             SettingsCard {

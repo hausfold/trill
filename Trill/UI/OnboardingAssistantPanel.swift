@@ -86,22 +86,20 @@ struct DraggableAppTile: NSViewRepresentable {
 /// Pulled out of the view because it decides two things worth testing: when
 /// the walkthrough ends, and which of two endings it shows. The distinction
 /// between the sets is the whole point — `confirmed` is macOS agreeing the app
-/// went quiet, `advanced` is the user saying so, `skipped` is nobody saying
-/// anything because macOS offers no switch — and only the first earns a green
-/// dot or the "macOS has stopped drawing them" line.
+/// went quiet, `advanced` is the user saying so — and only the first earns a
+/// green dot or the "macOS has stopped drawing them" line.
+///
+/// There is no third set. An app System Settings lists no row for never
+/// reaches a worklist (`NotificationSettingsAudit.walkable` is the door), so
+/// this walkthrough only ever holds apps with a switch to turn.
 struct Walkthrough: Equatable {
     /// Apps the audit has since read as quiet.
     var confirmed: Set<String> = []
     /// Apps the user marked done. trill never checked these.
     var advanced: Set<String> = []
-    /// Apps macOS lists no row for. Nothing was fixed and nothing will be —
-    /// they're stepped past so the worklist can finish, and counted at the
-    /// end so the closing card doesn't imply otherwise.
-    var skipped: Set<String> = []
 
     func isFinished(_ bundleID: String) -> Bool {
         confirmed.contains(bundleID) || advanced.contains(bundleID)
-            || skipped.contains(bundleID)
     }
 
     func current(in worklist: [NativeNotificationSettings]) -> NativeNotificationSettings? {
@@ -118,9 +116,8 @@ struct Walkthrough: Equatable {
 
     /// True only when macOS confirmed every one of them. A single
     /// user-advanced app is enough to make the closing card stop claiming
-    /// macOS stopped drawing anything — and so is a single skipped one, which
-    /// is an app trill *knows* is still drawing.
-    var everythingWasConfirmed: Bool { advanced.isEmpty && skipped.isEmpty }
+    /// macOS stopped drawing anything.
+    var everythingWasConfirmed: Bool { advanced.isEmpty }
 }
 
 // MARK: - Type scale
@@ -369,28 +366,19 @@ struct OnboardingAssistantView: View {
             // the same string macOS writes, and it shortens as they go.
             appRow(for: finding, appName: appName)
 
-            if finding.hasSettingsRow {
-                // `.init` so the bold markup is parsed — Text(String) renders
-                // it literally, Text(LocalizedStringKey) doesn't.
-                Text(.init(instruction(for: finding)))
-                    .font(HelperType.body)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .animation(.easeOut(duration: 0.2), value: finding)
+            // `.init` so the bold markup is parsed — Text(String) renders
+            // it literally, Text(LocalizedStringKey) doesn't.
+            Text(.init(instruction(for: finding)))
+                .font(HelperType.body)
+                .fixedSize(horizontal: false, vertical: true)
+                .animation(.easeOut(duration: 0.2), value: finding)
 
-                NativeBannerDemo(
-                    appName: appName,
-                    bundleID: finding.bundleID,
-                    needsDesktopChange: finding.showsOnDesktop,
-                    needsSoundChange: finding.playsSound
-                )
-            } else {
-                // Reached by naming an app explicitly — `--all` filters these
-                // out. There is no row, so there is no click, so the panel
-                // shows neither: a demo of two controls that aren't on the
-                // pane is trill teaching someone a gesture macOS won't accept,
-                // and a "Done" under it asks them to confirm they made it.
-                deadEndContent(for: finding, appName: appName)
-            }
+            NativeBannerDemo(
+                appName: appName,
+                bundleID: finding.bundleID,
+                needsDesktopChange: finding.showsOnDesktop,
+                needsSoundChange: finding.playsSound
+            )
 
             Spacer(minLength: 0)
 
@@ -398,87 +386,34 @@ struct OnboardingAssistantView: View {
                 // trill already opened the pane. This is only for the case
                 // where they closed it or wandered off — so it appears when
                 // System Settings isn't in front, and stays out of the way
-                // when it is. Nothing to look at for an unlisted app, so it
-                // isn't offered at all there.
-                if finding.hasSettingsRow {
-                    Button {
-                        SystemIntegration.openNotificationSettings(for: finding.bundleID)
-                    } label: {
-                        // Not "Open <App> Settings" — it can't do that, and a
-                        // button that overpromises by one step is what sends
-                        // someone hunting for a pane that never opened.
-                        Label("Open Settings", systemImage: "arrow.up.forward.app")
-                    }
-                    .opacity(settingsIsFrontmost ? 0 : 1)
-                    .disabled(settingsIsFrontmost)
-                    .animation(.easeInOut(duration: 0.2), value: settingsIsFrontmost)
+                // when it is.
+                Button {
+                    SystemIntegration.openNotificationSettings(for: finding.bundleID)
+                } label: {
+                    // Not "Open <App> Settings" — it can't do that, and a
+                    // button that overpromises by one step is what sends
+                    // someone hunting for a pane that never opened.
+                    Label("Open Settings", systemImage: "arrow.up.forward.app")
                 }
+                .opacity(settingsIsFrontmost ? 0 : 1)
+                .disabled(settingsIsFrontmost)
+                .animation(.easeInOut(duration: 0.2), value: settingsIsFrontmost)
 
                 Spacer(minLength: 0)
 
                 // The advance. macOS 26 doesn't tell anyone when the pane
                 // changes (see `walkthrough`), so the user does — a button that
                 // waits on a confirmation that never arrives is worse than
-                // one that trusts them. An unlisted app steps past instead:
-                // "Done" would be the user affirming a change nobody could
-                // make.
+                // one that trusts them.
                 Button {
-                    if finding.hasSettingsRow {
-                        markDone(finding.bundleID, in: findings)
-                    } else {
-                        markSkipped(finding.bundleID, in: findings)
-                    }
+                    markDone(finding.bundleID, in: findings)
                 } label: {
-                    Text(advanceLabel(for: finding, in: findings))
+                    Text(remaining(in: findings) > 1 ? "Done — Next" : "Done")
                 }
                 .buttonStyle(.borderedProminent)
                 .keyboardShortcut(.defaultAction)
             }
         }
-    }
-
-    private func advanceLabel(
-        for finding: NativeNotificationSettings,
-        in findings: [NativeNotificationSettings]
-    ) -> String {
-        let more = remaining(in: findings) > 1
-        if !finding.hasSettingsRow { return more ? "Skip — Next" : "Skip" }
-        return more ? "Done — Next" : "Done"
-    }
-
-    /// The step for an app System Settings gives no row: what macOS will keep
-    /// doing, and the one lever that is actually the user's. It does **not**
-    /// offer to fix anything — Apple exposes no writer for these, and trill
-    /// wouldn't use one if it did.
-    @ViewBuilder
-    private func deadEndContent(
-        for finding: NativeNotificationSettings,
-        appName: String
-    ) -> some View {
-        Label(
-            "macOS doesn't list \(appName) under Application Notifications — "
-                + "there's no row to change.",
-            systemImage: "exclamationmark.triangle.fill"
-        )
-        .font(HelperType.detail)
-        .foregroundStyle(.orange)
-        .fixedSize(horizontal: false, vertical: true)
-
-        // The honest consequence, then the only lever that's theirs: this is
-        // an app *they* listed, so the choice left is what trill does with it,
-        // not what macOS does.
-        Text("macOS keeps drawing this one itself, so trill's card is a second "
-            + "banner for the same thing.")
-            .font(HelperType.body)
-            .fixedSize(horizontal: false, vertical: true)
-
-        Text(.init("To see it once, route it to the inbox in "
-            + "`~/.config/trill/rules.json` — `\"delivery\": \"inbox\"` on the "
-            + "rule naming `\(finding.bundleID)`."))
-            .font(HelperType.detail)
-            .foregroundStyle(.secondary)
-            .textSelection(.enabled)
-            .fixedSize(horizontal: false, vertical: true)
     }
 
     private func remaining(in findings: [NativeNotificationSettings]) -> Int {
@@ -489,16 +424,6 @@ struct OnboardingAssistantView: View {
     private func markDone(_ bundleID: String, in findings: [NativeNotificationSettings]) {
         withAnimation(.easeOut(duration: 0.25)) {
             walkthrough.advanced.insert(bundleID)
-        }
-        guard remaining(in: findings) == 0 else { return }
-        finish()
-    }
-
-    /// Step past an app macOS lists no row for. Same movement, different
-    /// record: nothing was fixed here, and the closing card has to know it.
-    private func markSkipped(_ bundleID: String, in findings: [NativeNotificationSettings]) {
-        withAnimation(.easeOut(duration: 0.25)) {
-            walkthrough.skipped.insert(bundleID)
         }
         guard remaining(in: findings) == 0 else { return }
         finish()
@@ -557,9 +482,7 @@ struct OnboardingAssistantView: View {
                 Text(appName)
                     .font(HelperType.body)
                     .fontWeight(.medium)
-                Text(finding.hasSettingsRow
-                    ? finding.settingsSubtitle
-                    : "Not listed in Application Notifications")
+                Text(finding.settingsSubtitle)
                     .font(HelperType.detail)
                     .foregroundStyle(.secondary)
                     .contentTransition(.opacity)
@@ -598,7 +521,6 @@ struct OnboardingAssistantView: View {
                         // shouldn't claim otherwise.
                         .fill(
                             walkthrough.confirmed.contains(finding.bundleID) ? Color.green
-                                : walkthrough.skipped.contains(finding.bundleID) ? Color.orange
                                 : walkthrough.advanced.contains(finding.bundleID) ? Color.secondary.opacity(0.7)
                                 : isCurrent ? Color.accentColor
                                 : Color.secondary.opacity(0.3)
@@ -617,15 +539,12 @@ struct OnboardingAssistantView: View {
 
     @ViewBuilder
     private func allClearContent(total: Int) -> some View {
-        // Three different endings, because they're three different facts.
-        // macOS confirming every app is worth a green tick; the user telling
-        // trill they're done is worth thanks and nothing more — claiming
-        // "macOS has stopped drawing them" off a button press would be trill
-        // inventing a confirmation it never got. And an app macOS gave no row
-        // for is still drawing, which the last line has to say out loud rather
-        // than let a tick imply otherwise.
+        // Two endings, because they're two different facts. macOS confirming
+        // every app is worth a green tick; the user telling trill they're
+        // done is worth thanks and nothing more — claiming "macOS has stopped
+        // drawing them" off a button press would be trill inventing a
+        // confirmation it never got.
         let confirmed = walkthrough.everythingWasConfirmed
-        let unfixable = walkthrough.skipped.count
         HStack(spacing: 10) {
             Image(systemName: confirmed ? "checkmark.circle.fill" : "checkmark.circle")
                 .font(.title2)
@@ -634,7 +553,7 @@ struct OnboardingAssistantView: View {
                 Text(total > 1 ? "That's all \(total)" : "That's it")
                     .font(HelperType.title)
                     .fontWeight(.semibold)
-                Text(Self.closingLine(confirmed: confirmed, unfixable: unfixable, total: total))
+                Text(Self.closingLine(confirmed: confirmed))
                     .font(HelperType.body)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -647,23 +566,10 @@ struct OnboardingAssistantView: View {
     /// The closing sentence. Pure and `static` so the one claim trill must
     /// never make loosely — that macOS stopped drawing something — is pinned
     /// by a test rather than by reading the view.
-    nonisolated static func closingLine(confirmed: Bool, unfixable: Int, total: Int) -> String {
-        guard unfixable > 0 else {
-            return confirmed
-                ? "macOS has stopped drawing them. trill has it from here."
-                : "trill has it from here."
-        }
-        // Everything in the worklist was unlisted: there is no "rest", and
-        // promising one would be the panel taking credit for a walkthrough
-        // in which nothing changed.
-        if unfixable >= total {
-            return unfixable == 1
-                ? "macOS keeps drawing this one itself — no row, no switch."
-                : "macOS keeps drawing these itself — no row, no switch."
-        }
-        let subject = unfixable == 1 ? "one of them" : "\(unfixable) of them"
-        return "macOS keeps drawing \(subject) itself — no row, no switch. "
-            + "trill has the rest from here."
+    nonisolated static func closingLine(confirmed: Bool) -> String {
+        confirmed
+            ? "macOS has stopped drawing them. trill has it from here."
+            : "trill has it from here."
     }
 
     /// Re-reads Apple's own preferences once a second: it ticks an app off if
