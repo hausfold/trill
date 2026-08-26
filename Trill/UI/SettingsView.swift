@@ -51,7 +51,7 @@ struct SettingsView: View {
     @State private var auditUnreadable = false
     /// Which pane the window comes back to. Persisted, like every mac settings
     /// window: reopening lands where you left off, not on the first tab.
-    @AppStorage("settingsSelectedPane") private var selectedPaneID = SettingsPane.general.rawValue
+    @AppStorage(SettingsView.selectedPaneDefaultsKey) private var selectedPaneID = SettingsPane.general.rawValue
 
     private var currentStatus: [String: String?] {
         liveStatus ?? providerStatus
@@ -134,6 +134,9 @@ struct SettingsView: View {
     }
 
     static let windowTitle = "Trill Settings"
+    /// Where the selected pane is remembered. Named so the app can put the
+    /// window on a specific pane before building it (`presentSettings`).
+    static let selectedPaneDefaultsKey = "settingsSelectedPane"
     /// What the window opens at the first time, before anyone has resized it.
     static let defaultWindowSize = NSSize(width: 770, height: 560)
 

@@ -39,6 +39,10 @@ final class AppRuntime {
     /// by the app delegate, which owns the windows. The scope says which
     /// slice of history the window is for.
     var onOpenInbox: ((InboxScope) -> Void)?
+    /// The same door for trill's own Settings, on a named pane. Reached by a
+    /// "Silence Native Banners" click whose apps macOS lists no row for —
+    /// nothing to walk through, so the Banners pane is the answer.
+    var onOpenSettings: ((SettingsPane) -> Void)?
     /// The live signal behind every inbox window: which database to read,
     /// when something landed, what is still on the ledge. Built here because
     /// this is the only place that sees all three.
@@ -124,6 +128,7 @@ final class AppRuntime {
         // click — land on the same delegate. Set here rather than in `init`
         // because a closure over `self` needs a fully-initialized one.
         actionRouter.openInbox = { [weak self] scope in self?.onOpenInbox?(scope) }
+        actionRouter.openSettings = { [weak self] pane in self?.onOpenSettings?(pane) }
         digests.onCard = { [queue] card in queue.enqueue(card) }
         digests.start()
 

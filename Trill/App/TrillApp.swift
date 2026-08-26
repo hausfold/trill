@@ -54,6 +54,9 @@ final class TrillAppDelegate: NSObject, NSApplicationDelegate {
         runtime.onOpenInbox = { [weak self] scope in
             self?.presentInbox(scope: scope)
         }
+        runtime.onOpenSettings = { [weak self] pane in
+            self?.presentSettings(celebrateUnlock: false, pane: pane)
+        }
         runtime.start()
         installStatusItem()
 
@@ -159,9 +162,19 @@ final class TrillAppDelegate: NSObject, NSApplicationDelegate {
     /// Access assistant right after the grant landed — Settings then opens
     /// with the System Mirror row briefly highlighted, so the payoff is
     /// visible instead of just being "the card changed while you were away".
-    private func presentSettings(celebrateUnlock: Bool) {
+    ///
+    /// `pane` forces the window onto one pane instead of the one it was last
+    /// closed on, for the same reason the unlock hop does: a click that
+    /// answers a question ("why can't this app be silenced?") has to land on
+    /// the answer.
+    private func presentSettings(celebrateUnlock: Bool, pane: SettingsPane? = nil) {
         guard let runtime else { return }
         runtime.settings.reopenSettingsOnLaunch = false
+        if let pane {
+            // Written through the same defaults key the view reads its
+            // selection from, before the window is built.
+            UserDefaults.standard.set(pane.rawValue, forKey: SettingsView.selectedPaneDefaultsKey)
+        }
         Task { @MainActor in
             let status = await runtime.providerStatusSnapshot()
             settingsWindow?.close()

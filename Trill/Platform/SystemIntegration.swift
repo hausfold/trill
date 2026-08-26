@@ -495,10 +495,16 @@ enum SystemIntegration {
     /// preferences, and the private store this reads is opened read-only on
     /// purpose (see `NotificationSettingsAudit`) — quietly rewriting a pane
     /// the user believes only they control is not a trade this app makes.
+    ///
+    /// Only apps System Settings draws a row for get here. An app macOS lists
+    /// no row for has no click to demonstrate and no pane to send anyone to —
+    /// a step whose whole content is "you can't" — so the walkthrough never
+    /// carries one. Settings says so instead, in the pane, standing still.
     static func presentNativeBannerAssistant(
         findings: [NativeNotificationSettings],
         onDismiss: (() -> Void)? = nil
     ) {
+        let findings = NotificationSettingsAudit.walkable(findings)
         guard let first = findings.first else { return }
         openNotificationSettings(for: first.bundleID)
         OnboardingAssistantPanelController.shared.present(
