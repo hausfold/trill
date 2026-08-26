@@ -23,6 +23,13 @@ struct SettingsView: View {
     /// user who came here to make `doctor` work never asked to turn an
     /// experimental provider on.
     var onRequestAuditAccess: () -> Void = {}
+    /// Start the "silence Apple's own banners" walkthrough for these apps.
+    /// The app handles it rather than the pane, because the helper panel is
+    /// meant to be read next to System Settings and this window is in its
+    /// way — the same reason the Full Disk Access flow routes out here.
+    var onSilenceNative: ([NativeNotificationSettings]) -> Void = {
+        SystemIntegration.presentNativeBannerAssistant(findings: $0)
+    }
     /// The bundle ids trill is meant to keep macOS quiet for. Supplied by the
     /// caller (which owns the live rule set) so this view stays ignorant of
     /// where "listed" comes from.
@@ -152,7 +159,8 @@ struct SettingsView: View {
                 findings: auditFindings,
                 scopeIsEmpty: auditScopeIsEmpty,
                 unreadable: auditUnreadable,
-                onRequestAuditAccess: onRequestAuditAccess
+                onRequestAuditAccess: onRequestAuditAccess,
+                onSilenceNative: onSilenceNative
             )
         case .files:
             FilesPane(settings: settings)

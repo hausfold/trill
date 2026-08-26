@@ -591,6 +591,16 @@ struct BannersPane: View {
     let scopeIsEmpty: Bool
     let unreadable: Bool
     let onRequestAuditAccess: () -> Void
+    /// Hand the walkthrough back to the app rather than presenting it here,
+    /// for the same reason the Full Disk Access flow does: the helper panel
+    /// stands *beside* System Settings, and this window is what it would
+    /// otherwise stand in front of. Only the app owns that window, so only
+    /// the app can get it out of the way. Defaults to presenting it
+    /// unchanged, so a pane hosted without an app (previews, tests) still
+    /// works.
+    var onSilenceNative: ([NativeNotificationSettings]) -> Void = {
+        SystemIntegration.presentNativeBannerAssistant(findings: $0)
+    }
 
     var body: some View {
         SettingsPaneLayout(title: SettingsPane.banners.title, subtitle: SettingsPane.banners.summary) {
@@ -630,7 +640,7 @@ struct BannersPane: View {
                             subtitle: finding.complaint
                         ) {
                             Button("Silence…") {
-                                SystemIntegration.presentNativeBannerAssistant(findings: [finding])
+                                onSilenceNative([finding])
                             }
                         }
                     }
@@ -639,7 +649,7 @@ struct BannersPane: View {
 
             if findings.count > 1 {
                 Button {
-                    SystemIntegration.presentNativeBannerAssistant(findings: findings)
+                    onSilenceNative(findings)
                 } label: {
                     Label("Walk me through all \(findings.count)", systemImage: "bell.slash")
                         .frame(maxWidth: .infinity)
