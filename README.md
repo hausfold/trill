@@ -128,7 +128,8 @@ find. Whoever installs the bundle places it:
 | the release ZIP, dragged to /Applications | **the app itself**, at first launch |
 
 (A desktop that copies the bundle to a fixed path adds no fourth row. haus's
-`haus.trill.enable` room places the bundle at `/Applications/Trill.app` — grants
+`haus.notifications.compositor` room places the bundle at
+`/Applications/Trill.app` — grants
 are keyed per app path — and puts nothing on PATH itself: its own `trill`
 wrapper resolves that path at call time, which is the right shape when whether
 the bundle exists is a runtime fact.)
