@@ -58,6 +58,75 @@ final class ConfigFileStoreTests: XCTestCase {
         XCTAssertFalse(ConfigFileStore(file: file).current().shyWhenWatched)
     }
 
+    // MARK: - Which apps the mirror draws
+
+    /// The one key whose *absence* is a value: nobody has picked, so the
+    /// mirror draws everything. Writing it as `[]` would turn "not chosen"
+    /// into "chosen: none" the first time any unrelated switch moved.
+    func testTheMirrorAppListIsAbsentUntilSomebodyPicksOne() throws {
+        let store = ConfigFileStore(file: file)
+        XCTAssertNil(store.current().systemMirrorApps)
+        XCTAssertNil(store.update { $0.persistHistory = false })
+        XCTAssertNil(try contents()[AppConfig.Key.systemMirrorApps],
+                     "an unchosen list is a key the file doesn't name")
+    }
+
+    func testAnEmptyMirrorListIsAChoiceAndSurvivesAWrite() throws {
+        let store = ConfigFileStore(file: file)
+        XCTAssertNil(store.update { $0.systemMirrorApps = [] })
+        XCTAssertEqual(try contents()[AppConfig.Key.systemMirrorApps] as? [String], [])
+        XCTAssertEqual(ConfigFileStore(file: file).current().systemMirrorApps, [],
+                       "unticking the last app means none, not all of them again")
+    }
+
+    func testMirroringEveryAppAgainRemovesTheKey() throws {
+        try write(#"{ "systemMirrorApps": ["com.foo.bar"] }"#)
+        let store = ConfigFileStore(file: file)
+        XCTAssertEqual(store.current().systemMirrorApps, ["com.foo.bar"])
+        XCTAssertNil(store.update { $0.systemMirrorApps = nil })
+        XCTAssertNil(try contents()[AppConfig.Key.systemMirrorApps],
+                     "going back to every app has to clear the key, not blank it")
+    }
+
+    func testAHandWrittenMirrorListIsMatchedTheWayRulesAre() throws {
+        try write(#"{ "systemMirrorApps": ["com.apple.MobileSMS"] }"#)
+        XCTAssertEqual(ConfigFileStore(file: file).current().systemMirrorApps,
+                       ["com.apple.mobilesms"])
+    }
+
+    func testAMistypedMirrorListReadsAsUnchosenRatherThanEmpty() throws {
+        try write(#"{ "systemMirrorApps": "com.foo.bar" }"#)
+        XCTAssertNil(ConfigFileStore(file: file).current().systemMirrorApps,
+                     "a typo must not silently mirror nothing")
+    }
+
+    /// The first untick has nothing to remove from, so it writes down what it
+    /// is narrowing from — every app the store knows, not just the rows the
+    /// pane happened to be showing.
+    func testTheFirstUntickWritesDownEveryAppItIsNarrowingFrom() {
+        let list = AppConfig.mirrorList(
+            nil, setting: false, for: "com.tinyspeck.slackmacgap",
+            everyKnownApp: ["com.apple.MobileSMS", "com.tinyspeck.slackmacgap", "com.apple.clock"]
+        )
+        XCTAssertEqual(list, ["com.apple.clock", "com.apple.mobilesms"])
+    }
+
+    func testTickingAnAppAddsItToAnExistingList() {
+        let list = AppConfig.mirrorList(
+            ["com.apple.mobilesms"], setting: true, for: "com.tinyspeck.SlackMacGap",
+            everyKnownApp: []
+        )
+        XCTAssertEqual(list, ["com.apple.mobilesms", "com.tinyspeck.slackmacgap"])
+    }
+
+    func testUntickingTheLastAppLeavesAnEmptyListNotAnAbsentOne() {
+        let list = AppConfig.mirrorList(
+            ["com.apple.mobilesms"], setting: false, for: "com.apple.mobilesms",
+            everyKnownApp: ["com.apple.mobilesms", "com.tinyspeck.slackmacgap"]
+        )
+        XCTAssertEqual(list, [], "an existing list narrows to nothing — it does not reset to all")
+    }
+
     func testAWriteKeepsKeysTrillDoesNotKnow() throws {
         try write(#"{ "somethingNewer": 42, "persistHistory": false }"#)
         let store = ConfigFileStore(file: file)

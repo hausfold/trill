@@ -25,6 +25,23 @@ struct AppConfig: Equatable, Sendable {
     var persistHistory = true
     /// Experimental: always opt-in.
     var systemMirrorEnabled = false
+    /// Which apps System Mirror is allowed to draw — the tick boxes on the
+    /// Apps pane.
+    ///
+    /// **Three states, not two, and the third is the default.** `nil` (the
+    /// key absent) means nobody has picked yet, so the mirror draws every app
+    /// it sees — what it has always done, and what someone who just flipped
+    /// the switch on expects. A present list means *exactly these*, which
+    /// makes `[]` a legitimate answer: you unticked the last app, so the
+    /// mirror draws nothing. That is why this is optional rather than an
+    /// empty array standing in for "everything" — the difference between "not
+    /// chosen" and "chosen: none" is the whole point of the key, and
+    /// collapsing them would silently re-open the firehose the first time
+    /// someone cleared the list.
+    ///
+    /// Bundle ids, matched the way `rules.json` matches them: lowercased,
+    /// without usernoted's internal prefix (`SystemMirrorMapper.source(for:)`).
+    var systemMirrorApps: [String]?
     /// Needs `github.json` and a tunnel, so the switch alone promises
     /// nothing: opt-in.
     var githubBridgeEnabled = false
@@ -67,6 +84,7 @@ struct AppConfig: Equatable, Sendable {
         static let launchAtLogin = "launchAtLogin"
         static let persistHistory = "persistHistory"
         static let systemMirror = "systemMirror"
+        static let systemMirrorApps = "systemMirrorApps"
         static let githubBridge = "githubBridge"
         static let shyWhenWatched = "shyWhenWatched"
         static let catchUpCard = "catchUpCard"
@@ -91,6 +109,13 @@ struct AppConfig: Equatable, Sendable {
         if let value = json[Key.launchAtLogin] as? Bool { launchAtLogin = value }
         if let value = json[Key.persistHistory] as? Bool { persistHistory = value }
         if let value = json[Key.systemMirror] as? Bool { systemMirrorEnabled = value }
+        // Only an *array* narrows the mirror. A key holding anything else is
+        // a typo, and the safe reading of a typo here is "not chosen" — the
+        // firehose is noisy, but a mistyped line that silently mirrors
+        // nothing looks like the provider is broken.
+        if let value = json[Key.systemMirrorApps] as? [String] {
+            systemMirrorApps = value.map(SystemMirrorMapper.source(for:))
+        }
         if let value = json[Key.githubBridge] as? Bool { githubBridgeEnabled = value }
         if let value = json[Key.shyWhenWatched] as? Bool { shyWhenWatched = value }
         if let value = json[Key.catchUpCard] as? Bool { catchUpCard = value }
@@ -109,7 +134,7 @@ struct AppConfig: Equatable, Sendable {
     /// on a write. Written in full rather than as a delta so the file is
     /// self-documenting: open it and every switch trill has is in there.
     var json: [String: Any] {
-        [
+        var object: [String: Any] = [
             Key.launchAtLogin: launchAtLogin,
             Key.persistHistory: persistHistory,
             Key.systemMirror: systemMirrorEnabled,
@@ -121,6 +146,41 @@ struct AppConfig: Equatable, Sendable {
             Key.calendarLeadMinutes: calendarLeadMinutes,
             Key.cliLink: cliLink,
         ]
+        // The one key that is written only when it has been chosen. Everything
+        // else is written in full so the file documents itself; this one can't
+        // be, because its absence is a value (see `systemMirrorApps`).
+        if let systemMirrorApps { object[Key.systemMirrorApps] = systemMirrorApps }
+        return object
+    }
+
+    /// What the tick list becomes when one app is ticked or unticked.
+    ///
+    /// Pure, because the interesting case has nothing to do with SwiftUI: the
+    /// **first** untick has no list to remove from, so it has to write down
+    /// what it is narrowing *from* — every app macOS holds preferences for,
+    /// not just the ones the pane is showing. Narrowing from the visible rows
+    /// would quietly stop mirroring every row the pane hides (the background
+    /// agents with no settings row of their own), which reads as trill
+    /// breaking rather than as a list being written.
+    static func mirrorList(
+        _ current: [String]?,
+        setting on: Bool,
+        for bundleID: String,
+        everyKnownApp: [String]
+    ) -> [String] {
+        let slug = SystemMirrorMapper.source(for: bundleID)
+        var chosen = Set(current ?? everyKnownApp.map(SystemMirrorMapper.source(for:)))
+        if on { chosen.insert(slug) } else { chosen.remove(slug) }
+        // Sorted so the file's diff is about the app that changed rather than
+        // about set order.
+        return chosen.sorted()
+    }
+
+    /// Keys that must be *removed* from the file at the current values rather
+    /// than written. Only the mirror's app list has one: a merge that left a
+    /// previously-written list in place could never get back to "not chosen".
+    var absentKeys: Set<String> {
+        systemMirrorApps == nil ? [Key.systemMirrorApps] : []
     }
 }
 
@@ -265,6 +325,7 @@ final class ConfigFileStore: @unchecked Sendable {
         guard !isManagedExternally else { throw ConfigWriteError.managedExternally }
         var merged = raw
         for (key, value) in config.json { merged[key] = value }
+        for key in config.absentKeys { merged.removeValue(forKey: key) }
         let data = try JSONSerialization.data(
             withJSONObject: merged,
             options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]

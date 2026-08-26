@@ -41,11 +41,14 @@ struct SettingsView: View {
 
     @State private var liveStatus: [String: String?]? = nil
     @State private var celebrating = false
-    @State private var auditFindings: [NativeNotificationSettings] = []
-    /// True when there's nothing to audit *because nothing is listed* — a
-    /// different answer from "checked, all quiet", and the one that should
-    /// send the user to rules.json rather than reassure them.
-    @State private var auditScopeIsEmpty = true
+    /// Every app System Settings lists, quiet ones included — the Apps
+    /// pane's rows.
+    @State private var auditApps: [NativeNotificationSettings] = []
+    /// Every bundle id the store holds, unfiltered. What a first untick
+    /// narrows from; see `AppSettings.setMirrors`.
+    @State private var auditKnownIDs: [String] = []
+    /// Noisy, drawn by trill, and macOS lists no row to untick.
+    @State private var auditUnlisted: [NativeNotificationSettings] = []
     /// True when macOS's settings store couldn't be read at all — the answer
     /// is "can't tell", which is not the same as "nothing to fix".
     @State private var auditUnreadable = false
@@ -79,7 +82,7 @@ struct SettingsView: View {
                 SettingsSidebarFooter(version: Self.version)
             }
             // Outermost, and fixed: this is the width that has to hold
-            // "Apple’s Banners" without an ellipsis, and a settings sidebar
+            // the longest pane title without an ellipsis, and a settings sidebar
             // has no reason to be draggable.
             .navigationSplitViewColumnWidth(210)
         } detail: {
@@ -108,15 +111,23 @@ struct SettingsView: View {
         // is worse than no row at all.
         .task {
             while !Task.isCancelled {
-                let listed = listedApps()
-                let findings = NotificationSettingsAudit.liveFindings(scope: .only(listed))
+                // What trill draws: the apps rules.json names, plus the apps
+                // ticked on the pane. An *unnarrowed* mirror is deliberately
+                // not counted — it draws everything, and reporting every noisy
+                // app on the Mac as a duplicate is the storm this pane exists
+                // to avoid. Narrow the list and the report narrows with it.
+                let handled = Set(listedApps()).union(settings.systemMirrorApps ?? [])
+                let apps = NotificationSettingsAudit.liveEveryListedApp()
+                let known = NotificationSettingsAudit.liveKnownBundleIDs()
+                let findings = NotificationSettingsAudit.liveFindings(scope: .only(Array(handled)))
                 withAnimation(.easeOut(duration: 0.25)) {
-                    auditScopeIsEmpty = listed.isEmpty
                     // nil is "couldn't read", which is a third answer — not an
                     // empty worklist. Rendering it as "all quiet" would be
                     // trill reassuring someone about a file it never opened.
-                    auditUnreadable = findings == nil
-                    auditFindings = findings ?? []
+                    auditUnreadable = apps == nil
+                    auditApps = apps ?? []
+                    auditKnownIDs = known ?? []
+                    auditUnlisted = NotificationSettingsAudit.unlisted(findings ?? [])
                 }
                 try? await Task.sleep(nanoseconds: 2_000_000_000)
             }
@@ -157,11 +168,14 @@ struct SettingsView: View {
                 celebrating: celebrating,
                 onRequestFullDiskAccess: onRequestFullDiskAccess
             )
-        case .banners:
-            BannersPane(
-                findings: auditFindings,
-                scopeIsEmpty: auditScopeIsEmpty,
+        case .apps:
+            AppsPane(
+                apps: auditApps,
+                knownBundleIDs: auditKnownIDs,
+                ruleListed: Set(listedApps().map(SystemMirrorMapper.source(for:))),
+                unlisted: auditUnlisted,
                 unreadable: auditUnreadable,
+                settings: settings,
                 onRequestAuditAccess: onRequestAuditAccess,
                 onSilenceNative: onSilenceNative
             )

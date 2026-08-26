@@ -7,7 +7,7 @@ import SwiftUI
 enum SettingsPane: String, CaseIterable, Identifiable {
     case general
     case providers
-    case banners
+    case apps
     case files
 
     var id: String { rawValue }
@@ -16,7 +16,7 @@ enum SettingsPane: String, CaseIterable, Identifiable {
         switch self {
         case .general: return "General"
         case .providers: return "Sources"
-        case .banners: return "Apple’s Banners"
+        case .apps: return "Apps"
         case .files: return "Files"
         }
     }
@@ -28,8 +28,8 @@ enum SettingsPane: String, CaseIterable, Identifiable {
             return "How trill starts, and what it keeps."
         case .providers:
             return "Where trill's events come from, and whether each one is actually working."
-        case .banners:
-            return "What macOS itself still shows for the apps trill draws — trill reads this, it never writes it."
+        case .apps:
+            return "Which apps trill draws — and what macOS still draws for them itself."
         case .files:
             return "Every dial trill has is a file you can edit. This is where they live."
         }
@@ -39,7 +39,7 @@ enum SettingsPane: String, CaseIterable, Identifiable {
         switch self {
         case .general: return "gearshape.fill"
         case .providers: return "antenna.radiowaves.left.and.right"
-        case .banners: return "bell.slash.fill"
+        case .apps: return "square.grid.2x2.fill"
         case .files: return "doc.text.fill"
         }
     }
@@ -48,7 +48,7 @@ enum SettingsPane: String, CaseIterable, Identifiable {
         switch self {
         case .general: return .gray
         case .providers: return .blue
-        case .banners: return .orange
+        case .apps: return .orange
         case .files: return .purple
         }
     }
@@ -590,16 +590,47 @@ struct ProviderReason: View {
         .padding(.vertical, 11)
     }
 }
+// MARK: - Apps
 
-// MARK: - Apple's own per-app settings
-
-/// What macOS says right now about the apps trill is meant to be quiet for.
-/// Read-only by design — every button here opens System Settings, none of
-/// them writes a preference (see `NotificationSettingsAudit`).
-struct BannersPane: View {
-    let findings: [NativeNotificationSettings]
-    let scopeIsEmpty: Bool
+/// One row per app macOS lists, one tick: does trill draw this one.
+///
+/// **This is where System Mirror and the native-banner audit meet**, because
+/// they are two halves of one job. The tick makes trill draw an app; the
+/// **Silence…** beside it is how macOS stops drawing the same thing itself.
+/// They can never be one click — trill reads Apple's settings and never writes
+/// them (`NotificationSettingsAudit`), so the second half always ends in the
+/// user's own click in System Settings — but they can be one row, and one row
+/// is the whole difference between two features and one flow.
+///
+/// Two rules keep the pairing honest:
+///
+///   - **Silence… is offered only on apps trill draws.** Silencing an app trill
+///     doesn't draw isn't de-duplication, it's just losing the notification,
+///     and this pane has no business selling that.
+///   - **The tick is a request, the line under it is a reading.** A row goes
+///     green when the audit says macOS is quiet, never because the tick was
+///     clicked. A checkmark next to an app that is still doubling up is the
+///     one thing this pane must never draw.
+struct AppsPane: View {
+    /// Every app System Settings itself lists, quiet ones included — the
+    /// picker's rows, and the answer to "show me what I already have set up".
+    let apps: [NativeNotificationSettings]
+    /// Every bundle id the store holds, filtered by nothing: what a first
+    /// untick narrows *from* (`AppSettings.setMirrors`).
+    let knownBundleIDs: [String]
+    /// The source slugs `rules.json` names. trill draws these however the
+    /// mirror's list reads, so they carry a Silence… offer of their own and
+    /// say where they came from.
+    let ruleListed: Set<String>
+    /// Noisy, and macOS lists no row to untick. Reported once, standing still
+    /// — never walked, because the walk would be a demo of controls that
+    /// aren't on the pane.
+    let unlisted: [NativeNotificationSettings]
+    /// True when macOS's store couldn't be read at all. Not the same as
+    /// "nothing to fix": the pane says "can't tell" and shows no list, because
+    /// a picker built on an unreadable store would be a list of guesses.
     let unreadable: Bool
+    @ObservedObject var settings: AppSettings
     let onRequestAuditAccess: () -> Void
     /// Hand the walkthrough back to the app rather than presenting it here,
     /// for the same reason the Full Disk Access flow does: the helper panel
@@ -612,94 +643,100 @@ struct BannersPane: View {
         SystemIntegration.presentNativeBannerAssistant(findings: $0)
     }
 
-    /// The apps a user can actually do something about — the walkthrough and
-    /// the "Silence…" button are offered on these and nothing else.
-    private var actionable: [NativeNotificationSettings] {
-        NotificationSettingsAudit.walkable(findings)
+    @State private var search = ""
+
+    /// Does trill draw this app as things stand? Either the mirror is allowed
+    /// to (the tick) or a rule names it — a socket sender using the app's
+    /// bundle id, or Calendar with its own source switched on.
+    private func isDrawn(_ app: NativeNotificationSettings) -> Bool {
+        settings.mirrors(app.bundleID) || ruleListed.contains(slug(app))
     }
 
-    /// The apps macOS keeps the switch to itself for. Reported, never offered
-    /// as a step: there is no row in System Settings to open, so a "Silence…"
-    /// button here would open a helper whose only content is "you can't".
-    private var unlisted: [NativeNotificationSettings] {
-        NotificationSettingsAudit.unlisted(findings)
+    /// A rule outranks the tick: unticking the mirror doesn't stop a rule
+    /// firing, and a row that claimed otherwise would be lying about which
+    /// switch is in charge.
+    private func isRuleDriven(_ app: NativeNotificationSettings) -> Bool {
+        ruleListed.contains(slug(app))
     }
+
+    private func slug(_ app: NativeNotificationSettings) -> String {
+        SystemMirrorMapper.source(for: app.bundleID)
+    }
+
+    /// Worst first: apps trill draws that macOS is still drawing too, then the
+    /// rest of what trill draws, then everything else — each block by name, so
+    /// a row doesn't move when its state changes underneath a scroll.
+    private var rows: [NativeNotificationSettings] {
+        let matching = apps.filter { app in
+            guard !search.isEmpty else { return true }
+            let name = NotificationSettingsAudit.displayName(for: app.bundleID)
+            return name.localizedCaseInsensitiveContains(search)
+                || app.bundleID.localizedCaseInsensitiveContains(search)
+        }
+        return matching.sorted { lhs, rhs in
+            let rank = { (app: NativeNotificationSettings) -> Int in
+                guard isDrawn(app) else { return 2 }
+                return app.isNoisy ? 0 : 1
+            }
+            if rank(lhs) != rank(rhs) { return rank(lhs) < rank(rhs) }
+            return NotificationSettingsAudit.displayName(for: lhs.bundleID)
+                .localizedCaseInsensitiveCompare(
+                    NotificationSettingsAudit.displayName(for: rhs.bundleID)
+                ) == .orderedAscending
+        }
+    }
+
+    /// The apps a walkthrough could actually walk: drawn by trill, still drawn
+    /// by macOS, and owning a row in System Settings to untick.
+    private var doublingUp: [NativeNotificationSettings] {
+        NotificationSettingsAudit.walkable(apps.filter { isDrawn($0) && $0.isNoisy })
+    }
+
+    /// Has anybody narrowed the mirror yet? nil means no, which means every
+    /// app — see `AppConfig.systemMirrorApps`.
+    private var hasChosenList: Bool { settings.systemMirrorApps != nil }
 
     var body: some View {
-        SettingsPaneLayout(title: SettingsPane.banners.title, subtitle: SettingsPane.banners.summary) {
-            SettingsCard {
-                if unreadable {
-                    // The store lives in an Apple group container, which is
-                    // TCC-protected — the same grant System Mirror needs. Say
-                    // that rather than showing a reassuring green tick trill
-                    // can't stand behind.
+        SettingsPaneLayout(title: SettingsPane.apps.title, subtitle: SettingsPane.apps.summary) {
+            if unreadable {
+                // The store lives in an Apple group container, which is
+                // TCC-protected — the same grant System Mirror needs, which is
+                // why one button here unlocks both halves of this pane. Say
+                // that rather than showing a reassuring green tick trill can't
+                // stand behind.
+                SettingsCard {
                     SettingsRow(
                         symbol: "questionmark.circle",
                         title: "Can’t tell",
-                        subtitle: "trill needs Full Disk Access to read macOS’s notification settings."
+                        subtitle: "trill needs Full Disk Access to read macOS’s notification "
+                            + "settings — the same grant System Mirror reads notifications through."
                     ) {
-                        // Its own button, not a pointer at the System Mirror
-                        // one: that grant flips System Mirror on when it
-                        // lands, and a user who came here to make the audit
-                        // work didn't ask for an experimental provider.
                         Button("Grant…", action: onRequestAuditAccess)
                     }
-                } else if actionable.isEmpty {
-                    // "Nothing doubling up" is only true when nothing is
-                    // noisy at all. An unlisted app *is* doubling up — it
-                    // just isn't something to click — so when that's all
-                    // there is, this card says nothing and the notice below
-                    // carries it.
-                    if unlisted.isEmpty {
-                        SettingsRow(
-                            symbol: scopeIsEmpty ? "list.bullet" : "checkmark.circle.fill",
-                            tint: scopeIsEmpty ? .secondary : .green,
-                            title: scopeIsEmpty ? "Nothing listed yet" : "Nothing doubling up",
-                            subtitle: scopeIsEmpty
-                                ? "No apps in rules.json, so there is nothing to check."
-                                : "macOS is quiet for every listed app."
-                        ) {}
-                    } else {
-                        SettingsRow(
-                            symbol: "checkmark.circle.fill",
-                            tint: .green,
-                            title: "Nothing left to click",
-                            subtitle: "Every app with a switch of its own is already quiet."
-                        ) {}
-                    }
-                } else {
-                    ForEach(Array(actionable.enumerated()), id: \.element.bundleID) { index, finding in
-                        if index > 0 { SettingsDivider() }
-                        SettingsRow(
-                            symbol: "bell.badge.fill",
-                            tint: .orange,
-                            title: NotificationSettingsAudit.displayName(for: finding.bundleID),
-                            subtitle: finding.complaint
-                        ) {
-                            Button("Silence…") {
-                                onSilenceNative([finding])
-                            }
-                        }
-                    }
                 }
-            }
-
-            if actionable.count > 1 {
-                Button {
-                    onSilenceNative(actionable)
-                } label: {
-                    Label("Walk me through all \(actionable.count)", systemImage: "bell.slash")
+            } else {
+                mirrorScopeCard
+                if !doublingUp.isEmpty, hasChosenList, doublingUp.count > 1 {
+                    Button {
+                        onSilenceNative(doublingUp)
+                    } label: {
+                        Label(
+                            "Walk me through all \(doublingUp.count)",
+                            systemImage: "bell.slash"
+                        )
                         .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.large)
                 }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.large)
+                appList
             }
 
             // The other kind of finding: noisy, and macOS offers nobody a
-            // switch. It's stated here, once, standing still — not walked
-            // through, because a walkthrough step for it is a demo of two
-            // controls that aren't on the pane and a Done button asking the
-            // user to affirm a change nobody could make.
+            // switch. Stated here, once, standing still — not walked through,
+            // because a walkthrough step for it is a demo of two controls that
+            // aren't on the pane and a Done button asking the user to affirm a
+            // change nobody could make.
             if !unlisted.isEmpty {
                 SettingsCard {
                     SettingsRow(
@@ -750,14 +787,196 @@ struct BannersPane: View {
             SettingsFootnote(
                 """
                 trill can’t turn another app’s native banner off for you — that dial is Apple’s, \
-                and trill only ever reads it. Opening the pane and showing you the two clicks is \
-                the whole offer.
+                and trill only ever reads it. Ticking an app is trill’s half; opening the pane and \
+                showing you the two clicks is the whole of the other.
                 """
             )
         }
     }
+
+    // MARK: - The scope card
+
+    /// What the ticks currently add up to, and the one button that switches
+    /// between "every app" and "a list".
+    @ViewBuilder
+    private var mirrorScopeCard: some View {
+        SettingsCard {
+            if !settings.systemMirrorEnabled {
+                SettingsRow(
+                    symbol: "antenna.radiowaves.left.and.right.slash",
+                    tint: .secondary,
+                    title: "System Mirror is off",
+                    subtitle: "Ticks are saved, but trill won’t draw another app’s notifications "
+                        + "until the source is switched on under Sources."
+                ) {}
+                SettingsDivider()
+            }
+            if hasChosenList {
+                SettingsRow(
+                    symbol: "checklist",
+                    tint: .blue,
+                    title: chosenCountLabel,
+                    subtitle: "Only ticked apps are mirrored — an app installed later isn’t, "
+                        + "until you tick it."
+                ) {
+                    Button("Mirror every app") { settings.mirrorEveryApp() }
+                }
+            } else {
+                SettingsRow(
+                    symbol: "square.stack.3d.up.fill",
+                    tint: .blue,
+                    title: "Mirroring every app",
+                    subtitle: "trill draws whatever macOS shows, including apps installed later. "
+                        + "Untick one below to turn this into a list."
+                ) {
+                    // The shortcut for the other direction: start from the apps
+                    // already named in rules.json rather than unticking ninety.
+                    Button("Pick a list…") {
+                        settings.systemMirrorApps = ruleListed.sorted()
+                    }
+                }
+            }
+        }
+    }
+
+    private var chosenCountLabel: String {
+        let count = settings.systemMirrorApps?.count ?? 0
+        switch count {
+        case 0: return "No apps ticked"
+        case 1: return "Mirroring 1 app"
+        default: return "Mirroring \(count) apps"
+        }
+    }
+
+    // MARK: - The list
+
+    @ViewBuilder
+    private var appList: some View {
+        let rows = rows
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
+                Image(systemName: "magnifyingglass")
+                    .foregroundStyle(.secondary)
+                TextField("Search apps", text: $search)
+                    .textFieldStyle(.plain)
+                if !search.isEmpty {
+                    Button {
+                        search = ""
+                    } label: {
+                        Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 7)
+            .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+
+            SettingsCard {
+                if rows.isEmpty {
+                    SettingsPlaceholderRow(
+                        text: apps.isEmpty
+                            ? "macOS lists no apps here yet."
+                            : "No app matches “\(search)”."
+                    )
+                } else {
+                    ForEach(Array(rows.enumerated()), id: \.element.bundleID) { index, app in
+                        if index > 0 { SettingsDivider() }
+                        AppRow(
+                            app: app,
+                            isDrawn: isDrawn(app),
+                            isRuleDriven: isRuleDriven(app),
+                            isMirrored: settings.mirrors(app.bundleID),
+                            onSilence: { onSilenceNative([app]) },
+                            onToggle: { on in
+                                settings.setMirrors(
+                                    on, for: app.bundleID, everyKnownApp: knownBundleIDs
+                                )
+                            }
+                        )
+                    }
+                }
+            }
+        }
+    }
 }
 
+/// One app: what trill does with it, what macOS still does with it, and the
+/// two controls that move each.
+struct AppRow: View {
+    let app: NativeNotificationSettings
+    let isDrawn: Bool
+    let isRuleDriven: Bool
+    let isMirrored: Bool
+    let onSilence: () -> Void
+    let onToggle: (Bool) -> Void
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 11) {
+            icon
+            VStack(alignment: .leading, spacing: 2) {
+                Text(NotificationSettingsAudit.displayName(for: app.bundleID))
+                Text(state)
+                    .font(.subheadline)
+                    .foregroundStyle(stateTint)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 12)
+            // Only on rows trill draws: silencing an app trill isn't drawing
+            // is not de-duplication, it's just losing the notification.
+            if isDrawn, app.isNoisy, app.hasSettingsRow {
+                Button("Silence…", action: onSilence)
+            }
+            Toggle("", isOn: Binding(get: { isMirrored }, set: onToggle))
+                .labelsHidden()
+                .toggleStyle(.switch)
+                .controlSize(.small)
+                // A rule names this app, so trill draws it whatever the mirror
+                // is told. The switch still moves — it decides whether the
+                // *mirror* adds to that — and the line below says which is
+                // which.
+                .help(isRuleDriven
+                    ? "rules.json names this app, so trill draws it either way."
+                    : "Draw this app’s notifications as trill cards.")
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 9)
+    }
+
+    @ViewBuilder
+    private var icon: some View {
+        if let image = NotificationSettingsAudit.icon(for: app.bundleID) {
+            Image(nsImage: image)
+                .resizable()
+                .frame(width: 20, height: 20)
+        } else {
+            Image(systemName: "app.dashed")
+                .font(.system(size: 14))
+                .foregroundStyle(.secondary)
+                .frame(width: 20)
+        }
+    }
+
+    /// The reading, never the request: green means the audit says macOS is
+    /// quiet, not that the tick is on.
+    private var state: String {
+        if isDrawn, let complaint = app.complaint {
+            return complaint + " too"
+        }
+        if isDrawn {
+            return isRuleDriven && !isMirrored
+                ? "Named in rules.json — trill draws it, macOS is quiet"
+                : "trill draws this one — macOS is quiet"
+        }
+        return app.isNoisy ? app.settingsSubtitle : "Off"
+    }
+
+    private var stateTint: Color {
+        if isDrawn, app.isNoisy { return .orange }
+        if isDrawn { return .green }
+        return .secondary
+    }
+}
 // MARK: - Files
 
 /// Where every dial actually lives. A file-backed app that never tells you
