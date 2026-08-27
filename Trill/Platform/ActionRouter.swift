@@ -229,11 +229,30 @@ final class ActionRouter {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: binary)
         process.arguments = ["focus", lane]
+        // Built, never inherited: this desktop starts trill from a rebuild's
+        // activation script through `sudo --user=…`, and the app ends up
+        // holding *root's* `HOME`. See `SystemIntegration.childEnvironment`
+        // — that variable is the whole reason a lane banner's click did
+        // nothing at all for a day.
+        process.environment = SystemIntegration.childEnvironment()
         process.standardOutput = FileHandle.nullDevice
         process.standardError = FileHandle.nullDevice
+        // Forgotten, but no longer unwatched. Waiting on the raise would
+        // block the main actor on another process, so the exit code comes
+        // back on holt's own thread instead — an id and a number, which is
+        // no more content than the lines above and the difference between
+        // this failing out loud and failing the way it failed all day.
+        // Read here rather than inside: the handler runs off the main actor,
+        // and both of these are values by the time it does.
+        let id = event.id
+        let log = Self.log
+        process.terminationHandler = { finished in
+            guard finished.terminationStatus != 0 else { return }
+            log.info(
+                "holt focus exited \(finished.terminationStatus, privacy: .public) for \(id, privacy: .public)"
+            )
+        }
         do {
-            // Launched and forgotten: the raise is holt's to finish, and
-            // waiting on it would block the main actor on another process.
             try process.run()
         } catch {
             Self.log.info("holt focus wouldn't launch for \(event.id, privacy: .public)")

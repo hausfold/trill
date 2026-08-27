@@ -320,12 +320,50 @@ enum SystemIntegration {
     /// reporting rather than to failing.
     private static let shellProbeTimeout: TimeInterval = 10
 
+    /// The environment a process trill spawns is given — *built*, never
+    /// simply inherited.
+    ///
+    /// trill does not choose how it is launched, and on this desktop it is
+    /// launched badly: the notifications room relaunches the bundle from a
+    /// rebuild's activation script (`launchctl asuser … sudo --user=… open
+    /// -g Trill.app`), and macOS's sudoers keeps `HOME` across that `sudo`,
+    /// so the app runs as the user carrying **root's** home. Nothing trill
+    /// reads for itself notices — `NSHomeDirectory()` and
+    /// `homeDirectoryForCurrentUser` both answer from the password database
+    /// rather than the variable — but a child believes what it is handed.
+    ///
+    /// holt keeps its registry under `$HOME/.cache`, so a lane banner's
+    /// click spawned `holt focus`, which hit `/var/root`, failed
+    /// `permission denied` in five milliseconds and raised nothing: no
+    /// window, no message, and nothing in `ps` slow enough to catch. The
+    /// login-shell probe below has the same exposure for a worse reason —
+    /// with root's home it would source **root's** rc files and answer
+    /// "where does `trill` resolve" for an environment nobody types in.
+    /// (Both MEASURED 2026-08-26.)
+    ///
+    /// Only `HOME` is corrected, and everything else passes through on
+    /// purpose: holt shells out to `git` and `gh` and execs the desktop's
+    /// own hooks, so a PATH invented here would be trill guessing at a
+    /// machine it has no business knowing. `Resolver` builds its poller's
+    /// environment for the same reason — a child of trill is never handed
+    /// the environment trill happens to be standing in.
+    nonisolated static func childEnvironment(
+        inheriting environment: [String: String] = ProcessInfo.processInfo.environment,
+        home: String = FileManager.default.homeDirectoryForCurrentUser.path
+    ) -> [String: String] {
+        var child = environment
+        child["HOME"] = home
+        return child
+    }
+
     private static func loginShellReading() async -> (resolved: String?, path: [String]) {
         let shell = ProcessInfo.processInfo.environment["SHELL"] ?? "/bin/zsh"
         let timeout = shellProbeTimeout
+        let environment = childEnvironment()
         return await Task.detached(priority: .utility) { () -> (String?, [String]) in
             let task = Process()
             task.executableURL = URL(fileURLWithPath: shell)
+            task.environment = environment
             task.arguments = [
                 "-l", "-c",
                 """
