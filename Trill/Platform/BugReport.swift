@@ -8,7 +8,7 @@ import Foundation
 /// issue form is not one feedback channel among several — it is the only one
 /// (workshop `docs/bug-reports.md`). A form nobody can reach from inside the
 /// app is a channel that exists on paper, and "open github.com/hausfold, pick
-/// the right repo of nine, find its Issues tab" is three steps somebody whose
+/// the right repo of several, find its Issues tab" is three steps somebody whose
 /// banners stopped working has agreed to none of.
 ///
 /// **Why `?template=bug.yml` and not `?title=&body=`.** A `body=` prefill opens

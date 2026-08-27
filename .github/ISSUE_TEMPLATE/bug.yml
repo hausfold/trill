@@ -49,7 +49,7 @@ body:
       label: |-
         trill doctor
       description: |-
-        Paste the output of `trill doctor`. It only reads — it changes nothing and sends nothing anywhere. If it says it needs Full Disk Access, paste that too; it's an answer.
+        **Trill's menu bar ▸ Report a Bug…, or `trill report`, fills this in for you** — version, macOS build, Mac model, and whether Full Disk Access is granted. Nothing is sent until you press Submit. If your problem is a banner arriving *twice*, add the output of `trill doctor` as well: it only reads — it changes nothing and sends nothing anywhere. If it says it needs Full Disk Access, paste that too; it's an answer.
       render: text
     validations:
       required: false
