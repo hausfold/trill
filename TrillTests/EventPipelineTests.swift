@@ -285,7 +285,7 @@ final class EventPipelineTests: XCTestCase {
     }
 
     func testLaneTargetsAreWhitelistedNotEscaped() {
-        // The target goes straight into an argv for `holt focus`. There is no
+        // The target goes straight into an argv for `scruff focus`. There is no
         // shell in that path, but the predicate is still the only thing
         // standing between a sender's string and another process's arguments,
         // so it refuses everything that isn't shaped like a lane name.
@@ -297,7 +297,7 @@ final class EventPipelineTests: XCTestCase {
         XCTAssertFalse(NotificationEvent.Action.focusesLane(""))
         XCTAssertFalse(
             NotificationEvent.Action.focusesLane("--json"),
-            "a leading dash would read as a flag to holt, whatever followed it"
+            "a leading dash would read as a flag to scruff, whatever followed it"
         )
         XCTAssertFalse(NotificationEvent.Action.focusesLane("lane; rm -rf ~"))
         XCTAssertFalse(NotificationEvent.Action.focusesLane("lane $(whoami)"))
@@ -322,7 +322,7 @@ final class EventPipelineTests: XCTestCase {
     }
 
     func testAnUnknownActionKindCostsTheActionNotTheEvent() throws {
-        // holt and trill update independently — trill is deliberately not a
+        // scruff and trill update independently — trill is deliberately not a
         // flake input — so a newer sender naming a kind this build has never
         // heard of is routine. The banner must still be drawn.
         let wire = Data(#"""

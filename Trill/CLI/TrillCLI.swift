@@ -158,7 +158,7 @@ enum TrillCLI {
                 actions.append(.init(id: "url", label: "Open", kind: .openURL, target: raw))
             case "--action":
                 // "Label=target": a web/file URL, app:BUNDLE.ID to activate
-                // an app, or lane:REPO/LANE to go to a holt lane's window.
+                // an app, or lane:REPO/LANE to go to a scruff lane's window.
                 // The label is what the pill says, so the `=` split takes the
                 // *first* one — labels keep their own.
                 guard let raw = value(), let eq = raw.firstIndex(of: "="),
@@ -761,8 +761,8 @@ enum TrillCLI {
 
     --action adds a button (up to 3 drawn; the first is also what clicking
     the banner body does). --url is shorthand for --action "Open=URL".
-    A lane: target goes to the window running that holt lane — it runs
-    `holt focus <name>` and nothing else, and does nothing where holt
+    A lane: target goes to the window running that scruff lane — it runs
+    `scruff focus <name>` and nothing else, and does nothing where scruff
     isn't installed.
 
     ask is the two-way verb: it puts the question on screen and *blocks*

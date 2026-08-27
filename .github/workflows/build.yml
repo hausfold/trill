@@ -53,7 +53,7 @@ jobs:
       # An instrumented binary is invisible until it runs — the app binary IS
       # the trill CLI, and LLVM's profile runtime then writes `default.profraw`
       # into whatever directory it exits in. That put one untracked file in
-      # every agent worktree `holt notify` fired from and made them unreapable.
+      # every agent worktree `scruff notify` fired from, making them unreapable.
       #
       # Through the script rather than inline so this and the release workflow
       # run the SAME guard: a check that only the PR build does is a check the

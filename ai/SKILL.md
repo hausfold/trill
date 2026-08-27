@@ -43,7 +43,7 @@ not history. A bare `42` is refused — say which unit. Swatting a bar hushes it
 `--urgency` (`low`/`normal`/`critical`) is loudness, a different axis: a fault can be low, a note
 critical. `--thread` groups banners; `--source <slug>` is what rules match on; `--redact` keeps body
 and subtitle off it. `--action "Label=https://…"` (also `Label=app:ID`, `Label=lane:repo/name` for a
-holt lane's window; repeatable) adds buttons; the first is what clicking the card does.
+scruff lane's window; repeatable) adds buttons; the first is what clicking the card does.
 
 ## Exit codes — check these, they mean different recoveries
 

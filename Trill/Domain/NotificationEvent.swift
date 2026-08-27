@@ -85,7 +85,7 @@ struct NotificationEvent: Codable, Sendable, Identifiable, Equatable {
             /// never by a sender.
             case reply
             /// Bring the terminal lane the event came from to the front.
-            /// `target` names it the way holt does — `<repo>/<lane>`, or a
+            /// `target` names it the way scruff does — `<repo>/<lane>`, or a
             /// bare `<lane>` where that is unambiguous. trill knows nothing
             /// about windows or tilers; see `ActionRouter.focusLane`.
             case focusLane = "focus_lane"
@@ -104,7 +104,7 @@ struct NotificationEvent: Codable, Sendable, Identifiable, Equatable {
             /// An action kind this build has never heard of — a newer sender
             /// talking to an older trill. Inert by construction, and the
             /// reason an unknown kind costs the *action* rather than the
-            /// whole event: holt and trill update independently (trill is
+            /// whole event: scruff and trill update independently (trill is
             /// deliberately not a flake input), so version skew between them
             /// is the normal case, not the broken one.
             case unsupported
@@ -133,7 +133,7 @@ struct NotificationEvent: Codable, Sendable, Identifiable, Equatable {
         }
 
         /// Characters a lane name may contain. A whitelist rather than an
-        /// escape: lane names are slugs holt itself wrote (`<repo>/<lane>`),
+        /// escape: lane names are slugs scruff itself wrote (`<repo>/<lane>`),
         /// so anything outside this set is a bug in the sender and refusing
         /// it is the honest answer. It is also what keeps `ActionRouter`
         /// free of quoting questions — the name goes into an argv, never a

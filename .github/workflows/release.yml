@@ -95,7 +95,7 @@ jobs:
       # Before signing, notarizing, stapling and publishing: a coverage-
       # instrumented build passes every one of those steps and still drops a
       # `default.profraw` into the working directory of every user who runs
-      # `trill` — which `holt notify` does from every agent pane. Fail here,
+      # `trill` — which `scruff notify` does from every agent pane. Fail here,
       # where the only cost is a red release run.
       - name: Released binaries carry no profiling instrumentation
         run: scripts/assert-no-instrumentation.sh dd/Build/Products/Release/Trill.app

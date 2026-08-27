@@ -26,7 +26,7 @@ final class EventKindTests: XCTestCase {
     }
 
     func testKindRoundTripsThroughTheWire() throws {
-        let event = NotificationEvent(source: "holt", title: "lane blocked", kind: .ask)
+        let event = NotificationEvent(source: "scruff", title: "lane blocked", kind: .ask)
         let data = try JSONEncoder.trill.encode(event)
         XCTAssertEqual(try JSONDecoder.trill.decode(NotificationEvent.self, from: data).kind, .ask)
     }
