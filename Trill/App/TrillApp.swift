@@ -81,7 +81,8 @@ final class TrillAppDelegate: NSObject, NSApplicationDelegate {
         runtime?.stop()
     }
 
-    /// Quiet by default: a template glyph, an inbox, settings, quit.
+    /// Quiet by default: a template glyph, an inbox, settings, a way to report
+    /// a bug, quit.
     private func installStatusItem() {
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         item.button?.image = NSImage(
@@ -92,6 +93,14 @@ final class TrillAppDelegate: NSObject, NSApplicationDelegate {
         let menu = NSMenu()
         menu.addItem(withTitle: "Inbox", action: #selector(showInbox), keyEquivalent: "i").target = self
         menu.addItem(withTitle: "Settings…", action: #selector(showSettings), keyEquivalent: ",").target = self
+        menu.addItem(.separator())
+        // The only feedback channel trill has. There is no telemetry in
+        // anything we ship, so a banner that misbehaves on somebody else's Mac
+        // is invisible to us until they tell us — and "find the right repo of
+        // several, find its Issues tab" is three steps they have agreed to none
+        // of. This row is one, and it answers the form's environment field
+        // itself, Full Disk Access state included. See BugReport.swift.
+        menu.addItem(withTitle: "Report a Bug…", action: #selector(reportBug), keyEquivalent: "").target = self
         menu.addItem(.separator())
         menu.addItem(withTitle: "Quit Trill", action: #selector(quitTrill), keyEquivalent: "q").target = self
         item.menu = menu
@@ -104,6 +113,10 @@ final class TrillAppDelegate: NSObject, NSApplicationDelegate {
     @objc private func quitTrill() {
         SystemIntegration.disarmRelaunchWatchdog()
         NSApp.terminate(nil)
+    }
+
+    @objc private func reportBug() {
+        BugReport.open()
     }
 
     @objc private func showInbox() {

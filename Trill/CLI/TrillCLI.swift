@@ -21,13 +21,15 @@ import Foundation
 /// answer.
 enum TrillCLI {
     static let subcommands: Set<String> = [
-        "send", "ask", "ping", "doctor", "inbox", "resolve", "help", "--help", "-h",
+        "send", "ask", "ping", "doctor", "inbox", "resolve", "report", "help", "--help", "-h",
     ]
 
     static func run(arguments: [String]) -> Int32 {
         switch arguments.first {
         case "ping":
             return roundTrip(SocketProvider.Request(v: 1, verb: "ping", event: nil))
+        case "report":
+            return runReport(Array(arguments.dropFirst()))
         case "doctor":
             switch parseDoctor(Array(arguments.dropFirst())) {
             case .success(let invocation):
@@ -655,6 +657,47 @@ enum TrillCLI {
         return codes.refused
     }
 
+    // MARK: - report
+
+    /// `trill report` — the terminal's half of the menu bar's *Report a Bug…*.
+    ///
+    /// Same five lines, same form. It exists because half of trill's users meet
+    /// it as a command and never open the menu, and because a report filed from
+    /// a terminal is a report filed with the version of trill that is actually
+    /// on PATH — which is not always the one in /Applications.
+    ///
+    /// The block is always printed, not just handed to the browser: on a Mac
+    /// reached over ssh there is no browser to hand it to, and a reporter who
+    /// can see the lines can paste them anywhere.
+    static func runReport(_ args: [String]) -> Int32 {
+        // 1, not AskExit.usage: 64/69/70/75 are `ask`'s alone, and they exist
+        // only because `ask` spends the low numbers on which pill was pressed.
+        // Every other verb's contract is the one at the top of this file —
+        // 0 ok · 1 bad usage — and `report` is every other verb.
+        // One spelling, no `-n` alias: an alias nobody documents is surface you
+        // cannot remove later, because you can't know who found it.
+        for flag in args where flag != "--print" {
+            FileHandle.standardError.write(Data("trill: report takes no \(flag)\n".utf8))
+            return 1
+        }
+        let diagnostics = BugReport.diagnostics()
+        let destination = BugReport.destination(diagnostics: diagnostics)
+
+        print(diagnostics)
+        print("")
+        print(destination.url.absoluteString)
+        // Nothing goes on the pasteboard from here — the block is already on
+        // stdout, where a terminal user can select it. That branch is the menu
+        // row's, which has nowhere else to put it.
+        if destination.pasteboard != nil {
+            print("")
+            print("Too long to prefill — paste the lines above into the form's diagnostics field.")
+        }
+        guard !args.contains("--print") else { return 0 }
+        BugReport.openInBrowser(destination.url)
+        return 0
+    }
+
     static let usage = """
     trill — a quiet, scriptable notification compositor for macOS
 
@@ -675,6 +718,7 @@ enum TrillCLI {
       trill ping                 # is the daemon up?
       trill doctor [--all] [--notify] [--json] [BUNDLE_ID …]
       trill inbox [--asks]       # open the inbox window (--asks: asks only)
+      trill report [--print]     # file a bug, with this Mac's details filled in
       trill help
 
     --kind says what the event asks of the reader and colors the banner:

@@ -25,6 +25,7 @@ sound, ever — don't promise one.
 | send a fully-formed event | `echo '{"title":"Backup complete"}' \| trill send --json` |
 | which apps still banner themselves? | `trill doctor` (`--all --json` for every app) |
 | open the inbox window | `trill inbox [--asks]` · everything: `trill help` |
+| **trill itself is broken — file it** | `trill report` · `--print` for the block and URL without a browser |
 
 `--kind` colors the banner by what it asks of the user: `ask` (blocked on them), `fault` (broke),
 `chat` (a human), `pulse` (in flight), `done` (finished well), `note` (fyi, the default). An `ask`
@@ -39,11 +40,10 @@ card gets its seconds on screen, then keeps filling as a fin on the edge, so **s
 under the same key** (`--kind done`/`fault`) — that is what takes the fin down. Ticks are live,
 not history. A bare `42` is refused — say which unit. Swatting a bar hushes its ticks, not its end.
 
-`--urgency` (`low`/`normal`/`critical`) is the loudness, a different axis: a fault can be low, a
-note critical. `--thread` groups banners; `--source <slug>` is what rules match on; `--redact`
-keeps body and subtitle off it. `--action "Label=https://…"` (also `Label=app:ID`, and
-`Label=lane:repo/name` for a holt lane's window, repeatable) adds buttons — the first is what
-clicking the card does too.
+`--urgency` (`low`/`normal`/`critical`) is loudness, a different axis: a fault can be low, a note
+critical. `--thread` groups banners; `--source <slug>` is what rules match on; `--redact` keeps body
+and subtitle off it. `--action "Label=https://…"` (also `Label=app:ID`, `Label=lane:repo/name` for a
+holt lane's window; repeatable) adds buttons; the first is what clicking the card does.
 
 ## Exit codes — check these, they mean different recoveries
 

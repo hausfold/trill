@@ -8,7 +8,8 @@ macOS 14 or newer. One app bundle, about a megabyte, no runtime and no account.
 unzip, drag `Trill.app` to `/Applications`, launch it once. It's
 Developer-ID signed and notarized by Apple, so Gatekeeper opens it without a
 right-click dance. There's no Dock icon: a small dotted circle in the menu bar —
-Inbox, Settings, Quit — is the whole chrome, and the banners are the app.
+Inbox, Settings, Report a Bug, Quit — is the whole chrome, and the banners are
+the app.
 
 ## Nix
 
