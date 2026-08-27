@@ -77,23 +77,37 @@ final class BugReportTests: XCTestCase {
     // the app filled in for them — which is a weaker kind of consent than
     // typing it. So: no paths, no usernames, nothing off their inbox.
 
-    func testTheBlockIsFiveLinesAndNamesTheGrantState() {
+    func testTheBlockIsFiveLinesAndNamesWhatWasObserved() {
         XCTAssertEqual(
             BugReport.diagnostics(
                 version: "2026.08.25",
                 operatingSystem: "26.0.1 (25A354)",
                 model: "Mac16,10",
                 install: .homebrew,
-                fullDiskAccess: false
+                settingsStore: .readable
             ),
             """
             trill 2026.08.25
             macOS 26.0.1 (25A354)
             Mac16,10
             installed: Homebrew cask
-            Full Disk Access: not granted
+            Full Disk Access: granted (notification settings readable)
             """
         )
+    }
+
+    /// The unreadable case must NOT read as a verdict on the grant.
+    ///
+    /// `unreadableReason()` is nil-or-not on a read that fails for either
+    /// reason — grant missing, or the store absent/reshaped. "Full Disk
+    /// Access: not granted" would be a wrong answer printed confidently, on
+    /// the exact report class where the grant is the commonest right answer.
+    /// Same collapse AGENTS.md forbids the audit itself.
+    func testAnUnreadableStoreIsNotReportedAsADeniedGrant() {
+        let line = BugReport.SettingsStoreReading.unreadable.description
+        XCTAssertFalse(line.contains("not granted"), line)
+        XCTAssertTrue(line.contains("unreadable"), line)
+        XCTAssertTrue(line.contains("Full Disk Access"), "…while still naming the likeliest cause")
     }
 
     func testTheLiveBlockCarriesNoHomeDirectory() {

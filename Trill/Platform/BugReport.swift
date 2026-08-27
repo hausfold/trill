@@ -22,9 +22,10 @@ import Foundation
 /// Access to answer it at all. It is the right paste for a double-banner report
 /// and the wrong one for every other kind, and a door that stalls on a
 /// permission the reporter may not have granted is a door that doesn't open. So
-/// the prefill is the environment, including *whether* that grant is in place,
-/// which is itself one of the commonest answers. The form still asks for
-/// `trill doctor` on top, for the reports where it means something.
+/// the prefill is the environment, including whether the store the audit reads
+/// could be read at all — which is itself one of the commonest answers. The
+/// form still asks for `trill doctor` on top, for the reports where it means
+/// something.
 enum BugReport {
     static let repository = "hausfold/trill"
     static let formURL = "https://github.com/\(repository)/issues/new"
@@ -48,15 +49,43 @@ enum BugReport {
         operatingSystem: String,
         model: String,
         install: InstallLocation,
-        fullDiskAccess: Bool
+        settingsStore: SettingsStoreReading
     ) -> String {
         """
         trill \(version)
         macOS \(operatingSystem)
         \(model)
         installed: \(install.description)
-        Full Disk Access: \(fullDiskAccess ? "granted" : "not granted")
+        \(settingsStore.description)
         """
+    }
+
+    /// What trill can say about `group.com.apple.usernoted`, which is three
+    /// answers and not two.
+    ///
+    /// `NotificationSettingsAudit.unreadableReason()` is nil-or-not on a read
+    /// that fails for **either** reason: the grant is missing, or the file is
+    /// absent or reshaped. Rendering that as "Full Disk Access: not granted"
+    /// puts a wrong verdict in a bug report on the exact class of report where
+    /// the grant is the commonest answer — and sends whoever reads it to check
+    /// a setting that was already on.
+    ///
+    /// It is the same collapse AGENTS.md forbids the audit itself: noisy,
+    /// quiet and *can't tell* are three states, and can't-tell rendered as a
+    /// clean verdict is the bug that must never come back. So the line says
+    /// what was actually observed and leaves the diagnosis to a human.
+    enum SettingsStoreReading: Equatable {
+        /// The store read back. Trill can audit, so the grant is in place.
+        case readable
+        /// It didn't. Usually Full Disk Access; not always.
+        case unreadable
+
+        var description: String {
+            switch self {
+            case .readable: return "Full Disk Access: granted (notification settings readable)"
+            case .unreadable: return "notification settings unreadable — Full Disk Access, or the store moved"
+            }
+        }
     }
 
     /// The live one. Cheap and synchronous on purpose — a menu row that has to
@@ -67,7 +96,7 @@ enum BugReport {
             operatingSystem: currentOperatingSystem,
             model: currentModel,
             install: InstallLocation.detectLive(),
-            fullDiskAccess: NotificationSettingsAudit.unreadableReason() == nil
+            settingsStore: NotificationSettingsAudit.unreadableReason() == nil ? .readable : .unreadable
         )
     }
 

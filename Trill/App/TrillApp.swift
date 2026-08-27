@@ -81,7 +81,8 @@ final class TrillAppDelegate: NSObject, NSApplicationDelegate {
         runtime?.stop()
     }
 
-    /// Quiet by default: a template glyph, an inbox, settings, quit.
+    /// Quiet by default: a template glyph, an inbox, settings, a way to report
+    /// a bug, quit.
     private func installStatusItem() {
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         item.button?.image = NSImage(
