@@ -765,6 +765,38 @@ sender can't write a banner whose Deny answers 0. The ledge's restore path
 strips them: a fin that outlived its daemon outlived the socket its answer
 would have gone down.
 
+### A click spawns a process, and trill was launched by somebody else
+
+**Every process trill starts gets an environment trill built, never the one it
+happens to be standing in** — `SystemIntegration.childEnvironment`, used by
+`ActionRouter.focusLane`'s `holt focus` and by the login-shell probe behind
+`ensureCLILink`, and matched by `Resolver`, which has always assembled its
+poller's env from scratch.
+
+The variable that forces it is `HOME`. trill does not choose how it is
+launched, and a desktop may launch it badly: haus's notifications room
+relaunches the bundle from a rebuild's activation script through
+`launchctl asuser … sudo --user=… open -g Trill.app`, and macOS's sudoers keeps
+`HOME` across that `sudo`, so the app runs as the user carrying **root's**
+home. Nothing trill reads for itself notices — `NSHomeDirectory()` and
+`homeDirectoryForCurrentUser` both answer from the password database rather
+than from the variable — but a child believes what it is handed, and holt keeps
+its registry under `$HOME/.cache`.
+
+What that cost, measured 2026-08-26: clicking a lane banner spawned
+`holt focus`, which hit `/var/root`, failed `permission denied` in five
+milliseconds, and raised nothing. No window, no log line, and nothing in `ps`
+slow enough to catch — the click read as a dead button on a card that was
+drawing its action label correctly. Hence the second half of the fix: a
+non-zero exit from `holt focus` is now logged from the process's own
+termination handler (an event id and a number, no notification content), so the
+next failure of a fire-and-forget child says so instead of vanishing.
+
+Only `HOME` is corrected. The rest of the environment passes through on
+purpose — holt shells out to `git` and `gh` and execs the desktop's own hooks,
+so a PATH invented here would be trill guessing at a machine it has no business
+knowing.
+
 ## Planned extensions that fit existing seams
 
 - Per-digest schedules: `DigestSchedule` is one pure function over `now`;
