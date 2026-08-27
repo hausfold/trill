@@ -165,6 +165,14 @@ final class BugReportTests: XCTestCase {
         XCTAssertTrue(TrillCLI.subcommands.contains("report"))
     }
 
+    func testReportRejectsUnknownFlagsWithTheOrdinaryUsageCode() {
+        // Not 64. `AskExit`'s 64/69/70/75 belong to `ask` alone — they exist
+        // because `ask` spends 0,1,2 on which pill was pressed. Every other
+        // verb answers 1 for bad usage, and `report` is every other verb.
+        XCTAssertEqual(TrillCLI.runReport(["--bogus"]), 1)
+        XCTAssertNotEqual(TrillCLI.runReport(["--bogus"]), 64)
+    }
+
     func testHelpMentionsReport() {
         XCTAssertTrue(TrillCLI.usage.contains("trill report"), "usage is the only place the verb is discoverable")
     }

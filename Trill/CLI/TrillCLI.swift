@@ -670,9 +670,13 @@ enum TrillCLI {
     /// reached over ssh there is no browser to hand it to, and a reporter who
     /// can see the lines can paste them anywhere.
     static func runReport(_ args: [String]) -> Int32 {
+        // 1, not AskExit.usage: 64/69/70/75 are `ask`'s alone, and they exist
+        // only because `ask` spends the low numbers on which pill was pressed.
+        // Every other verb's contract is the one at the top of this file —
+        // 0 ok · 1 bad usage — and `report` is every other verb.
         for flag in args where !["--print", "-n"].contains(flag) {
             FileHandle.standardError.write(Data("trill: report takes no \(flag)\n".utf8))
-            return AskExit.usage
+            return 1
         }
         let diagnostics = BugReport.diagnostics()
         let destination = BugReport.destination(diagnostics: diagnostics)
