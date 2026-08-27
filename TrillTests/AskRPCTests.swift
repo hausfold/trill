@@ -138,9 +138,13 @@ final class AskRPCTests: XCTestCase {
 
     private func broker(
         claimGrace: TimeInterval = 60,
-        recorder: Recorder? = nil
+        recorder: Recorder? = nil,
+        onRetract: (@Sendable (String) -> Void)? = nil
     ) -> AskBroker {
-        AskBroker(claimGrace: claimGrace) { id in recorder?.retract(id) }
+        AskBroker(claimGrace: claimGrace) { id in
+            recorder?.retract(id)
+            onRetract?(id)
+        }
     }
 
     func testAPressedPillAnswersWithItsIndexAndItsLabel() {
@@ -234,14 +238,19 @@ final class AskRPCTests: XCTestCase {
 
     func testAClockRunningOutEndsTheQuestionAndTakesTheBannerDown() {
         let recorder = Recorder()
-        let broker = broker(recorder: recorder)
+        // Both halves get their own expectation because the broker does them
+        // in that order on its timer queue: the caller is unblocked first, the
+        // banner comes down after. Waiting only on the answer reads the
+        // retraction while it is still in flight.
         let resolved = expectation(description: "resolved")
+        let retracted = expectation(description: "retracted")
+        let broker = broker(recorder: recorder) { _ in retracted.fulfill() }
         broker.register(id: "q", peer: 1, labels: ["Ok"], timeout: 0.05) { answer in
             recorder.record(answer)
             resolved.fulfill()
         }
         broker.claim(id: "q")
-        wait(for: [resolved], timeout: 2)
+        wait(for: [resolved, retracted], timeout: 2)
 
         XCTAssertEqual(recorder.outcomes, [.timeout])
         XCTAssertEqual(recorder.retractions, ["q"], "a question with no one behind it can't stay up")
@@ -425,7 +434,10 @@ final class AskRPCTests: XCTestCase {
         close(fd)
 
         let gone = expectation(description: "the question ended with its asker")
-        Self.poll(until: { !broker.isPending(id) }, fulfilling: gone)
+        // Poll for the retraction itself, not for the entry leaving `pending`:
+        // the broker drops the entry first and retracts after, so the latter
+        // is a green light one step early.
+        Self.poll(until: { !recorder.retractions.isEmpty }, fulfilling: gone)
         await fulfillment(of: [gone], timeout: 3)
         // The outcome itself has nowhere to go — the socket it would have been
         // written to is the one that just closed — so what is observable here
