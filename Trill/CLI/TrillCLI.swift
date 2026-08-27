@@ -674,7 +674,9 @@ enum TrillCLI {
         // only because `ask` spends the low numbers on which pill was pressed.
         // Every other verb's contract is the one at the top of this file —
         // 0 ok · 1 bad usage — and `report` is every other verb.
-        for flag in args where !["--print", "-n"].contains(flag) {
+        // One spelling, no `-n` alias: an alias nobody documents is surface you
+        // cannot remove later, because you can't know who found it.
+        for flag in args where flag != "--print" {
             FileHandle.standardError.write(Data("trill: report takes no \(flag)\n".utf8))
             return 1
         }
@@ -691,7 +693,7 @@ enum TrillCLI {
             print("")
             print("Too long to prefill — paste the lines above into the form's diagnostics field.")
         }
-        guard !args.contains(where: { ["--print", "-n"].contains($0) }) else { return 0 }
+        guard !args.contains("--print") else { return 0 }
         BugReport.openInBrowser(destination.url)
         return 0
     }
