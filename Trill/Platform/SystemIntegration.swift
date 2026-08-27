@@ -199,7 +199,7 @@ enum SystemIntegration {
     /// and for a long time nothing created it. Every install source dropped a
     /// bundle and stopped: `trill send` failed on a Mac with trill live in the
     /// menu bar, and the callers that worked worked by hunting for the bundle
-    /// themselves (`holt notify` still carries that fallback list). That hunt
+    /// themselves (`scruff notify` still carries that fallback list). That hunt
     /// is a reasonable thing for one Go program to do and an unreasonable
     /// thing to document as the way to use a CLI.
     ///
@@ -332,8 +332,8 @@ enum SystemIntegration {
     /// `homeDirectoryForCurrentUser` both answer from the password database
     /// rather than the variable — but a child believes what it is handed.
     ///
-    /// holt keeps its registry under `$HOME/.cache`, so a lane banner's
-    /// click spawned `holt focus`, which hit `/var/root`, failed
+    /// scruff keeps its registry under `$HOME/.cache`, so a lane banner's
+    /// click spawned `scruff focus`, which hit `/var/root`, failed
     /// `permission denied` in five milliseconds and raised nothing: no
     /// window, no message, and nothing in `ps` slow enough to catch. The
     /// login-shell probe below has the same exposure for a worse reason —
@@ -342,7 +342,7 @@ enum SystemIntegration {
     /// (Both MEASURED 2026-08-26.)
     ///
     /// Only `HOME` is corrected, and everything else passes through on
-    /// purpose: holt shells out to `git` and `gh` and execs the desktop's
+    /// purpose: scruff shells out to `git` and `gh` and execs the desktop's
     /// own hooks, so a PATH invented here would be trill guessing at a
     /// machine it has no business knowing. `Resolver` builds its poller's
     /// environment for the same reason — a child of trill is never handed

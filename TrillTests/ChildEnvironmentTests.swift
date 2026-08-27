@@ -7,7 +7,7 @@ import XCTest
 /// activation script, through `sudo --user=…`, and macOS keeps `HOME` across
 /// that sudo — so the app runs as the user with `/var/root` in its
 /// environment. trill's own reads are immune (they ask the password database,
-/// not the variable), but `holt focus` inherited it, couldn't reach a
+/// not the variable), but `scruff focus` inherited it, couldn't reach a
 /// registry under `/var/root/.cache`, and exited in five milliseconds. The
 /// banner click did nothing, said nothing, and left nothing to find.
 final class ChildEnvironmentTests: XCTestCase {
@@ -24,7 +24,7 @@ final class ChildEnvironmentTests: XCTestCase {
         XCTAssertEqual(child["HOME"], "/Users/someone")
     }
 
-    /// Everything else rides along: holt shells out to `git` and `gh` and
+    /// Everything else rides along: scruff shells out to `git` and `gh` and
     /// execs the desktop's own hooks, so inventing a PATH here would be
     /// trill guessing at a machine it knows nothing about.
     func testEverythingElsePassesThrough() {

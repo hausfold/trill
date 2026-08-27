@@ -14,8 +14,8 @@
 # `default.profraw` into whatever directory the process exits in.
 #
 # For trill that is worse than for most: the app binary IS the `trill` CLI, and
-# `holt notify` execs it from every agent-pane hook. So one release would drop
-# an untracked file into every agent worktree on the machine, and `holt reap`
+# `scruff notify` execs it from every agent-pane hook. So one release would drop
+# an untracked file into every agent worktree on the machine, and `scruff reap`
 # refuses to reap a checkout with uncommitted work in it — lanes pile up until
 # someone deletes files by hand. That is hausfold/trill#14, and it shipped once.
 #
@@ -74,9 +74,9 @@ if (( ${#dirty[@]} > 0 )); then
   cat >&2 <<'WHY'
 
 Shipping these would drop a `default.profraw` into the working directory of
-every process that runs them — and the trill binary is run by `holt notify`
+every process that runs them — and the trill binary is run by `scruff notify`
 from every agent pane, so that is one untracked file per agent worktree, after
-which `holt reap` refuses to sweep the checkout.
+which `scruff reap` refuses to sweep the checkout.
 
 Check that ENABLE_CODE_COVERAGE is still NO in both project-level build
 configurations, and that nothing reintroduced it via an xcconfig or the

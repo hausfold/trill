@@ -203,16 +203,16 @@ final class ActionRouter {
     private static let unreserved = CharacterSet.alphanumerics
         .union(CharacterSet(charactersIn: "-._~"))
 
-    /// Bring a holt lane's window to the front.
+    /// Bring a scruff lane's window to the front.
     ///
     /// trill knows nothing about terminals, tilers or window ids, and must
     /// not learn: which window is a lane is the desktop layer's join, and it
     /// already owns a careful answer. So this runs exactly one binary with
     /// exactly one validated argument and no shell in between — the mirror of
-    /// how holt reaches `trill send` — and `holt focus` delegates onward from
-    /// there. That narrowness is why this is a named capability rather than
-    /// the general command hook the PRD defers: the router can still say, in
-    /// one line, everything a banner click is able to run.
+    /// how scruff reaches `trill send` — and `scruff focus` delegates onward
+    /// from there. That narrowness is why this is a named capability rather
+    /// than the general command hook the PRD defers: the router can still say,
+    /// in one line, everything a banner click is able to run.
     ///
     /// It moves focus to the lane's terminal, never to trill — the "never
     /// steal focus" rule is about windows the user didn't summon, and a click
@@ -222,8 +222,8 @@ final class ActionRouter {
             Self.log.info("refused a malformed lane target for \(event.id, privacy: .public)")
             return
         }
-        guard let binary = Self.holtBinary() else {
-            Self.log.info("no holt on this Mac — can't focus a lane (\(event.id, privacy: .public))")
+        guard let binary = Self.scruffBinary() else {
+            Self.log.info("no scruff on this Mac — can't focus a lane (\(event.id, privacy: .public))")
             return
         }
         let process = Process()
@@ -239,7 +239,7 @@ final class ActionRouter {
         process.standardError = FileHandle.nullDevice
         // Forgotten, but no longer unwatched. Waiting on the raise would
         // block the main actor on another process, so the exit code comes
-        // back on holt's own thread instead — an id and a number, which is
+        // back on scruff's own thread instead — an id and a number, which is
         // no more content than the lines above and the difference between
         // this failing out loud and failing the way it failed all day.
         // Read here rather than inside: the handler runs off the main actor,
@@ -249,47 +249,64 @@ final class ActionRouter {
         process.terminationHandler = { finished in
             guard finished.terminationStatus != 0 else { return }
             log.info(
-                "holt focus exited \(finished.terminationStatus, privacy: .public) for \(id, privacy: .public)"
+                "scruff focus exited \(finished.terminationStatus, privacy: .public) for \(id, privacy: .public)"
             )
         }
         do {
             try process.run()
         } catch {
-            Self.log.info("holt focus wouldn't launch for \(event.id, privacy: .public)")
+            Self.log.info("scruff focus wouldn't launch for \(event.id, privacy: .public)")
         }
     }
 
-    /// Where `holt` is, from inside a GUI app. A bundle inherits
+    /// Where `scruff` is, from inside a GUI app. A bundle inherits
     /// `/usr/bin:/bin:/usr/sbin:/sbin` and nothing else, so a PATH search
-    /// alone finds nothing on a nix machine — the same reason holt's own
-    /// `trillBinary()` walks known locations to find Trill.app. `TRILL_HOLT`
+    /// alone finds nothing on a nix machine — the same reason scruff's own
+    /// `trillBinary()` walks known locations to find Trill.app. `TRILL_SCRUFF`
     /// is authoritative when set, including set to something missing, which
-    /// is how a machine (or a test) says "no lane focus here".
-    private static func holtBinary() -> String? {
+    /// is how a machine (or a test) says "no lane focus here"; `TRILL_HOLT`
+    /// is the same switch under its pre-rename name and is read only when
+    /// the new one is unset.
+    ///
+    /// ⏳ Both binary NAMES are searched, new one first, and both env names
+    /// are honoured — scruff was `holt` until 2026-08-27 and ships a `holt`
+    /// symlink through its `1.0.x` line before deleting it at `1.1.0`. So a
+    /// Mac in this window may have either name on disk, or both, and a Trill
+    /// built today has to keep working on a Mac that never updated its
+    /// worktree tool. Drop the `holt` rungs once `1.1.0` is the floor.
+    private static func scruffBinary() -> String? {
         let fm = FileManager.default
         func usable(_ path: String) -> Bool {
             var isDir: ObjCBool = false
             return fm.fileExists(atPath: path, isDirectory: &isDir)
                 && !isDir.boolValue && fm.isExecutableFile(atPath: path)
         }
-        if let override = ProcessInfo.processInfo.environment["TRILL_HOLT"], !override.isEmpty {
+        let env = ProcessInfo.processInfo.environment
+        for name in ["TRILL_SCRUFF", "TRILL_HOLT"] {
+            guard let override = env[name], !override.isEmpty else { continue }
             return usable(override) ? override : nil
         }
         let home = fm.homeDirectoryForCurrentUser.path
-        let candidates = [
-            "/run/current-system/sw/bin/holt",
-            "/etc/profiles/per-user/\(NSUserName())/bin/holt",
-            "\(home)/.nix-profile/bin/holt",
-            "/opt/homebrew/bin/holt",
-            "/usr/local/bin/holt",
+        let dirs = [
+            "/run/current-system/sw/bin",
+            "/etc/profiles/per-user/\(NSUserName())/bin",
+            "\(home)/.nix-profile/bin",
+            "/opt/homebrew/bin",
+            "/usr/local/bin",
         ]
-        if let path = ProcessInfo.processInfo.environment["PATH"] {
-            for dir in path.split(separator: ":") where !dir.isEmpty {
-                let candidate = "\(dir)/holt"
-                if usable(candidate) { return candidate }
+        // PATH first, then the known locations — and within each, the new
+        // name before the old, so a Mac carrying both reaches for `scruff`.
+        for name in ["scruff", "holt"] {
+            if let path = env["PATH"] {
+                for dir in path.split(separator: ":") where !dir.isEmpty {
+                    let candidate = "\(dir)/\(name)"
+                    if usable(candidate) { return candidate }
+                }
             }
+            let known = dirs.map { "\($0)/\(name)" }
+            if let hit = known.first(where: usable) { return hit }
         }
-        return candidates.first(where: usable)
+        return nil
     }
 
     private func openApp(bundleID: String) {

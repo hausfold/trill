@@ -378,9 +378,9 @@ with `__llvm_prf_cnts` in it.** This project ships no *shared* scheme, so
 `-scheme Trill` resolves whatever Xcode autocreated in `xcuserdata/`, whose
 coverage default is YES — and that leaks past the test action into a plain
 `build`. The consequence is not a slower binary: the app binary **is** the
-`trill` CLI, `holt notify` execs it from every agent-pane hook, and LLVM's
+`trill` CLI, `scruff notify` execs it from every agent-pane hook, and LLVM's
 profile runtime writes `default.profraw` into whatever cwd the process exits
-in. That is one untracked file per agent worktree, and `holt reap` refuses to
+in. That is one untracked file per agent worktree, and `scruff reap` refuses to
 reap a checkout with uncommitted work in it — so lanes pile up until someone
 deletes files by hand. Want coverage for a run? Ask for it explicitly:
 `xcodebuild test -enableCodeCoverage YES` overrides the setting. Don't turn it

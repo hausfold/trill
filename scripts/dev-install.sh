@@ -92,14 +92,14 @@ say "building Release…"
 # `-scheme Trill` resolves the per-user autocreated one, whose coverage default
 # is YES — and that leaks into a plain `build`, not just `test`:
 # CLANG_COVERAGE_MAPPING comes out YES and the Release binary ships
-# __llvm_prf_cnts. The app binary IS the trill CLI, `holt notify` execs it from
-# every agent-pane hook, and the LLVM profile runtime writes `default.profraw`
-# into whatever cwd it exits in — i.e. one untracked file per lane checkout,
-# which `holt reap` then refuses to reap over. `ENABLE_CODE_COVERAGE = NO` in
-# project.pbxproj is the real repair; this flag makes it explicit at the one
-# call site that installs, and the guard below is what notices if either
-# regresses. Coverage stays reachable on demand: `xcodebuild test
-# -enableCodeCoverage YES` overrides both.
+# __llvm_prf_cnts. The app binary IS the trill CLI and `scruff notify` execs it
+# from every agent-pane hook, and the LLVM profile runtime writes
+# `default.profraw` into whatever cwd it exits in — i.e. one untracked file per
+# lane checkout, which `scruff reap` then refuses to reap over.
+# `ENABLE_CODE_COVERAGE = NO` in project.pbxproj is the real repair; this flag
+# makes it explicit at the one call site that installs, and the guard below is
+# what notices if either regresses. Coverage stays reachable on demand:
+# `xcodebuild test -enableCodeCoverage YES` overrides both.
 xcodebuild \
   -project "$REPO_ROOT/Trill.xcodeproj" \
   -scheme Trill \
@@ -135,7 +135,7 @@ LOAD_COMMANDS="$(otool -l "$BUILT_BIN")" || die "otool could not read $BUILT_BIN
 if [[ "$LOAD_COMMANDS" == *__llvm_prf_cnts* ]]; then
   die "the build is coverage-instrumented (__llvm_prf_cnts in the binary).
 Installing it would drop a default.profraw in the cwd of every process that
-runs the CLI — including every agent worktree \`holt notify\` fires from, which
+runs the CLI — including every agent worktree \`scruff notify\` fires from, which
 then can't be reaped. Check ENABLE_CODE_COVERAGE is still NO in
 Trill.xcodeproj/project.pbxproj, and that nothing put it back via an xcconfig
 or a shared scheme:
@@ -211,7 +211,7 @@ fi
 # The app binary IS the CLI, and until this line nothing ever gave it a name a
 # shell could find: every install source dropped a bundle and stopped there, so
 # `trill send` failed on a Mac with trill running in the menu bar. Callers
-# papered over it by hunting for the bundle themselves (`holt notify` still
+# papered over it by hunting for the bundle themselves (`scruff notify` still
 # carries that fallback list), which is fine for one Go program and hopeless as
 # an instruction to anybody else.
 #
