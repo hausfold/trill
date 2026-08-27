@@ -25,6 +25,7 @@ sound, ever — don't promise one.
 | send a fully-formed event | `echo '{"title":"Backup complete"}' \| trill send --json` |
 | which apps still banner themselves? | `trill doctor` (`--all --json` for every app) |
 | open the inbox window | `trill inbox [--asks]` · everything: `trill help` |
+| **trill itself is broken — file it** | `trill report` (`--print` to see the details and the URL without opening a browser) |
 
 `--kind` colors the banner by what it asks of the user: `ask` (blocked on them), `fault` (broke),
 `chat` (a human), `pulse` (in flight), `done` (finished well), `note` (fyi, the default). An `ask`

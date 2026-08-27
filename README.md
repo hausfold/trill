@@ -51,6 +51,7 @@ trill send --key haus --progress 42% --title "haus rebuild" --body "12 of 30"
 trill send --key haus --progress 1 --kind done --title "haus rebuilt"
 
 trill ping    # is the daemon up?
+trill report  # something's wrong — file it, with this Mac's details filled in
 trill help    # every verb, every flag
 ```
 
