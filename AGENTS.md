@@ -9,7 +9,10 @@ like pounce and perch.
 **This file is the one set of instructions, for every agent** — Claude Code,
 Codex, OpenCode, Cursor, Copilot alike, directly or through a one-line pointer.
 Per-client wiring lives in that client's own file; the content stays here or in
-[`.agents/`](./.agents/README.md).
+[`.agents/`](./.agents/README.md). Beside it: [`ARCHITECTURE.md`](./ARCHITECTURE.md)
+for the invariants and the measurements they stand on, and [`PRD.md`](./PRD.md)
+for the milestones and the v1 gate. The PRD is a plan rather than a doc, which
+is why the README links the first and not the second.
 
 ## Am I in the right repo? (routing)
 

@@ -28,18 +28,8 @@ On [haus](https://github.com/hausfold/haus) it's one line —
 would drop Full Disk Access on the rebuild that installed the fix) and installs
 the agent skill into every AI client on the machine.
 
-## from this checkout
-
-```sh
-scripts/dev-install.sh          # --reset-permissions once, if coming from an ad-hoc build
-```
-
-Use the script rather than a bare `xcodebuild`. macOS pins Full Disk Access to
-an ad-hoc bundle's *cdhash*, so the grant revokes itself on every rebuild; the
-script signs with a Developer ID (team-anchored, survives rebuilds),
-unregisters stale copies, and installs one bundle at `~/Applications/Trill.app`.
-
-Tests are headless: `xcodebuild -project Trill.xcodeproj -scheme Trill test`.
+Building and feel-testing from a checkout is `AGENTS.md` ▸ Verifying, which is
+where that decision is stated once.
 
 ## what puts `trill` on your PATH
 
