@@ -1,10 +1,16 @@
 # Visual assets
 
 Trill's mark is the family's paired cat-ears sitting over its own detail: a
-speech bubble with three dots — the banner trill draws. Flat geometry in the
-[nebelung](https://github.com/hausfold/nebelung) palette, sky against graphite,
-so it reads at 16 px and sits next to perch's green cards and pounce's peach
-input bar.
+speech bubble with three dots — the banner trill draws. Flat geometry in three
+[nebelung](https://github.com/hausfold/nebelung) tokens — `sky` (#91DBE8) for
+the ears and dots, `surface0` (#343434) for the tile, `surface1` (#494949) for
+the bubble — so it reads at 16 px and sits next to perch's `green` cards and
+pounce's `peach` input bar.
+
+Those hexes are **baked into the PNGs**. Nothing here follows
+`~/.config/trill/theme.json`, which retints the banners at runtime: the icon is
+the one trill surface a theme cannot reach. A palette change in nebelung means
+re-rendering the master and every slot by hand.
 
 | file | what it is |
 |---|---|
@@ -24,7 +30,14 @@ done
 ```
 
 Keep the master rather than upscaling a slot — 2048 is the only size the mark
-exists at above 512, and `512x512@2x` already wants 1024.
+exists at above 512, and `512x512@2x` already wants 1024. There is no vector
+master: if hausfold.co, a cask, or Icon Composer ever needs one, it has to be
+drawn, not exported.
+
+The tile is **full-bleed** — its squircle spans the whole canvas rather than
+sitting inside Apple's ~824/1024 inset with a shadow. That is deliberate: perch
+ships the same way, and the three marks are meant to read as one set. Insetting
+is a family-wide change (perch included), not a trill one.
 
 Trill is `LSUIElement`, so this icon never reaches the Dock. Where it *is*
 seen: System Settings' Notifications / Login Items / Privacy rows, Finder, and
