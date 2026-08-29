@@ -1,5 +1,11 @@
 # Rules and settings — two files
 
+**Exit 0 from `trill send` means the daemon *took* the event, not that a card
+appeared.** A rule, a digest, quiet hours or a Focus may have sent it somewhere
+better, and the two files below are where that was decided. (`trill ask` is the
+exception: there the exit code is the pill pressed, and **75 means nobody
+answered, which is never consent.**)
+
 Everything trill decides is decided from two JSON files in
 `~/.config/trill/`. Both are hot-reloaded on save, and Settings is a *view*
 onto them: anything you can click you can type, and vice versa, without a
