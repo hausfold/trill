@@ -264,16 +264,7 @@ final class ActionRouter {
     /// alone finds nothing on a nix machine — the same reason scruff's own
     /// `trillBinary()` walks known locations to find Trill.app. `TRILL_SCRUFF`
     /// is authoritative when set, including set to something missing, which
-    /// is how a machine (or a test) says "no lane focus here"; `TRILL_HOLT`
-    /// is the same switch under its pre-rename name and is read only when
-    /// the new one is unset.
-    ///
-    /// ⏳ Both binary NAMES are searched, new one first, and both env names
-    /// are honoured — scruff was `holt` until 2026-08-27 and ships a `holt`
-    /// symlink through its `1.0.x` line before deleting it at `1.1.0`. So a
-    /// Mac in this window may have either name on disk, or both, and a Trill
-    /// built today has to keep working on a Mac that never updated its
-    /// worktree tool. Drop the `holt` rungs once `1.1.0` is the floor.
+    /// is how a machine (or a test) says "no lane focus here".
     private static func scruffBinary() -> String? {
         let fm = FileManager.default
         func usable(_ path: String) -> Bool {
@@ -282,8 +273,7 @@ final class ActionRouter {
                 && !isDir.boolValue && fm.isExecutableFile(atPath: path)
         }
         let env = ProcessInfo.processInfo.environment
-        for name in ["TRILL_SCRUFF", "TRILL_HOLT"] {
-            guard let override = env[name], !override.isEmpty else { continue }
+        if let override = env["TRILL_SCRUFF"], !override.isEmpty {
             return usable(override) ? override : nil
         }
         let home = fm.homeDirectoryForCurrentUser.path
@@ -294,19 +284,14 @@ final class ActionRouter {
             "/opt/homebrew/bin",
             "/usr/local/bin",
         ]
-        // PATH first, then the known locations — and within each, the new
-        // name before the old, so a Mac carrying both reaches for `scruff`.
-        for name in ["scruff", "holt"] {
-            if let path = env["PATH"] {
-                for dir in path.split(separator: ":") where !dir.isEmpty {
-                    let candidate = "\(dir)/\(name)"
-                    if usable(candidate) { return candidate }
-                }
+        // PATH first, then the known locations.
+        if let path = env["PATH"] {
+            for dir in path.split(separator: ":") where !dir.isEmpty {
+                let candidate = "\(dir)/scruff"
+                if usable(candidate) { return candidate }
             }
-            let known = dirs.map { "\($0)/\(name)" }
-            if let hit = known.first(where: usable) { return hit }
         }
-        return nil
+        return dirs.map { "\($0)/scruff" }.first(where: usable)
     }
 
     private func openApp(bundleID: String) {
