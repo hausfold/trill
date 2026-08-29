@@ -1,6 +1,7 @@
 <div align="center">
 
-# 🔔 trill
+<!-- identity banner — yellow wordmark on graphite (assets/trill-banner.png) -->
+<img src="./assets/trill-banner.png" alt="trill" width="480">
 
 **no noise, just a trill**
 
