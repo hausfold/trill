@@ -11,11 +11,15 @@ and sits next to perch's `green` cards and pounce's `peach` input bar.
 | file | what it is |
 |---|---|
 | `trill-icon-master.png` | 2048×2048 source for the macOS app-icon slots. |
+| `trill-banner.png` | 1200×348 identity banner — the yellow wordmark beside the mark on a rounded graphite tile, on the family's shared banner lockup. What the README opens with. |
 
 Those hexes are **baked into the PNGs**. Nothing here follows
-`~/.config/trill/theme.json`, which retints the banners at runtime: the icon is
-the one trill surface a theme cannot reach. A palette change in nebelung means
-re-rendering the master and every slot by hand.
+`~/.config/trill/theme.json`, which retints the cards trill *draws* at runtime:
+these files are the trill surfaces a theme cannot reach. A palette change in
+nebelung means re-rendering the icon master and every slot by hand — and
+redrawing `trill-banner.png` from the brand kit, which the `sips` loop below
+cannot do for you: it derives square slots from the 2048² master and there is
+no source for the wordmark lockup in this repo.
 
 `Trill/Assets.xcassets/AppIcon.appiconset/*.png` are mechanically scaled from
 the master; `actool` compiles them into `Assets.car` and writes
