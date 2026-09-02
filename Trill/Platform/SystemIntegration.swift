@@ -18,7 +18,7 @@ import os.log
 ///
 /// What is deliberately NOT here: any attempt to suppress or intercept other
 /// apps' banners programmatically. Suppression is Focus + per-app settings
-/// (the Hush lane in the rice); capture is System Mirror's quarantined job.
+/// (the Hush lane in haus); capture is System Mirror's quarantined job.
 @MainActor
 enum SystemIntegration {
     private static let log = Logger(subsystem: "com.hausfold.trill", category: "system")

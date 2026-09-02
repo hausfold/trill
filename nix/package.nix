@@ -10,7 +10,7 @@
   prebuilt,
 }:
 
-# Package Trill.app so the rice (and anyone) can install it through Nix instead
+# Package Trill.app so haus (and anyone) can install it through Nix instead
 # of Homebrew — trill's handle in the flake-lock chain.
 #
 # Normally we fetch the CI-built release ZIP rather than compiling: trill is an
@@ -19,7 +19,7 @@
 # resolution (pounce dodges this only by being plain `swiftc` with zero
 # packages). The ZIP is already Developer-ID signed + Apple notarized, which is
 # exactly what a stable permissions grant wants — so unpack it verbatim and let
-# the rice place it at a fixed path (no re-sign dance).
+# haus place it at a fixed path (no re-sign dance).
 #
 # The one exception is `bench try` feel-testing a source branch: it builds the
 # app in your login session (where xcodebuild works) and overrides `prebuilt` to
@@ -33,7 +33,7 @@ in
 
 stdenvNoCC.mkDerivation {
   pname = "trill";
-  # Tag the dev build so its store path (and the rice's install marker) differ
+  # Tag the dev build so its store path (and haus's install marker) differ
   # from the release — activation then re-copies when you flip between them.
   version = if useDev then "${version}-dev" else version;
 

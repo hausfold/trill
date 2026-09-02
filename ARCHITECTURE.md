@@ -534,7 +534,7 @@ pane, stop.
 
 There is no public "become the notification renderer" entitlement, so trill
 does not claim the capability. The supported route is the Hush-backed mode:
-a Focus profile (owned by the rice) silences Apple's rendering while
+a Focus profile (owned by haus) silences Apple's rendering while
 providers still see events; trill deep-links to Notification and Focus
 settings via `SystemIntegration` — the one file allowed to touch Apple's
 notification machinery.
