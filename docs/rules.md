@@ -82,7 +82,8 @@ its default:
   "systemMirror": false, "githubBridge": false, "calendar": false,
   "calendarLeadMinutes": 10,
   "shyWhenWatched": true, "catchUpCard": true, "focusAware": true,
-  "cliLink": true
+  "cliLink": true,
+  "fontFamily": ""
 }
 ```
 
@@ -90,6 +91,14 @@ its default:
 written down, so `trill history` says "can't tell" and exits 5 rather than
 reporting an empty list as a quiet night. Same for the inbox window, which
 empties the moment you switch it off.
+
+`fontFamily` is the proportional family every card, row and pane is set in —
+banners, the ledge, the inbox and Settings alike. Empty, the default, means
+whatever macOS is using. It is a family *name*, not a file: trill installs
+nothing, and CoreText answers a name this Mac doesn't have with the system face
+and no complaint, so Settings ▸ General says which of the two happened. Runs
+that are monospaced on purpose — a source slug, a timestamp — stay monospaced,
+and an SF Symbol keeps Apple's metrics.
 
 `systemMirrorApps` is the one key with no default, because its *absence* is
 itself a value: absent, the mirror draws every app it sees; a list means exactly

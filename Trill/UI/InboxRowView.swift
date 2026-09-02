@@ -53,13 +53,13 @@ struct InboxRowView: View {
             VStack(alignment: .leading, spacing: 3) {
                 meta
                 Text(event.title)
-                    .font(.headline)
+                    .font(AppFont.headline)
                     .foregroundStyle(row.isUnread ? AnyShapeStyle(.primary) : AnyShapeStyle(.secondary))
                     .lineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)
                 if let body = event.body ?? event.subtitle {
                     Text(body)
-                        .font(.subheadline)
+                        .font(AppFont.subheadline)
                         .foregroundStyle(.secondary)
                         .lineLimit(3)
                         .fixedSize(horizontal: false, vertical: true)
@@ -122,7 +122,7 @@ struct InboxRowView: View {
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
             Text(BannerView.age(of: event.timestamp, at: now))
-                .font(.caption)
+                .font(AppFont.caption)
                 .foregroundStyle(.tertiary)
             if row.isThread {
                 countPill
@@ -132,7 +132,7 @@ struct InboxRowView: View {
             }
             if let label = deliveryLabel {
                 Text(label)
-                    .font(.caption2.weight(.medium))
+                    .font(AppFont.caption2.weight(.medium))
                     .foregroundStyle(.tertiary)
                     .padding(.horizontal, 5)
                     .padding(.vertical, 1)
@@ -148,7 +148,7 @@ struct InboxRowView: View {
     /// can't see into.
     private var countPill: some View {
         Text("\(row.entries.count)")
-            .font(.caption.weight(.semibold))
+            .font(AppFont.caption.weight(.semibold))
             .foregroundStyle(kindColor)
             .padding(.horizontal, 6)
             .padding(.vertical, 1)
@@ -166,7 +166,7 @@ struct InboxRowView: View {
                 .fill(kindColor.opacity(0.9))
                 .frame(width: 4, height: 11)
             Text("on the ledge")
-                .font(.caption2.weight(.medium))
+                .font(AppFont.caption2.weight(.medium))
                 .foregroundStyle(.secondary)
         }
         .accessibilityElement()
@@ -197,7 +197,7 @@ struct InboxRowView: View {
             ForEach(Array(InboxList.pills(for: event).enumerated()), id: \.element.id) { index, action in
                 Button { onAction(action, event) } label: {
                     Text(action.label)
-                        .font(.caption.weight(.semibold))
+                        .font(AppFont.caption.weight(.semibold))
                         .lineLimit(1)
                         .foregroundStyle(index == 0 ? kindColor : Color.secondary)
                         .padding(.horizontal, 10)
@@ -240,16 +240,16 @@ struct InboxRowView: View {
                     VStack(alignment: .leading, spacing: 2) {
                         HStack(spacing: 6) {
                             Text(mate.event.title)
-                                .font(.subheadline)
+                                .font(AppFont.subheadline)
                                 .lineLimit(1)
                             Text(BannerView.age(of: mate.event.timestamp, at: now))
-                                .font(.caption)
+                                .font(AppFont.caption)
                                 .foregroundStyle(.tertiary)
                             Spacer(minLength: 0)
                         }
                         if let body = mate.event.body ?? mate.event.subtitle {
                             Text(body)
-                                .font(.caption)
+                                .font(AppFont.caption)
                                 .foregroundStyle(.secondary)
                                 .lineLimit(2)
                         }

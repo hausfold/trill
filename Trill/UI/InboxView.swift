@@ -100,6 +100,7 @@ struct InboxView: View {
         // again if history is switched off underneath it.
         .onReceive(feed.$database) { entries = fetch(from: $0) }
         .onReceive(clock) { now = $0 }
+        .trillType()
     }
 
     /// The window's own chrome rather than an `NSToolbar`: this window is a
@@ -142,7 +143,7 @@ struct InboxView: View {
                     unreadCount > 0 ? "Unread (\(unreadCount))" : "Unread",
                     systemImage: unreadOnly ? "largecircle.fill.circle" : "circle"
                 )
-                .font(.caption)
+                .font(AppFont.caption)
             }
             .toggleStyle(.button)
             .help("Show only what trill never put in front of you")
@@ -150,7 +151,7 @@ struct InboxView: View {
             Button("Mark All Read", systemImage: "checkmark.circle") {
                 markAllRead()
             }
-            .font(.caption)
+            .font(AppFont.caption)
             .labelStyle(.titleOnly)
             .disabled(visibleUnreadCount == 0)
             .help("Marks what this window is showing — not what a search is hiding")
@@ -186,7 +187,7 @@ struct InboxView: View {
                 // history: the window reads a bounded slice, and a search
                 // that finds nothing past it should say why.
                 Text("Showing the most recent \(InboxList.fetchLimit) events.")
-                    .font(.caption)
+                    .font(AppFont.caption)
                     .foregroundStyle(.tertiary)
                     .frame(maxWidth: .infinity, alignment: .center)
                     .listRowSeparator(.hidden)

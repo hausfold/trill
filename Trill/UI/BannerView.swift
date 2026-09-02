@@ -143,14 +143,14 @@ struct BannerView: View {
                         .lineLimit(1)
                     TimelineView(.periodic(from: .now, by: 30)) { context in
                         Text(Self.age(of: event.timestamp, at: context.date))
-                            .font(.footnote)
+                            .font(AppFont.footnote)
                             .foregroundStyle(.tertiary)
                     }
                     if entry.coalescedCount > 0 {
                         // Collapsed this is the whole receipt; expanded it is
                         // the label on the list underneath.
                         Text("+\(entry.coalescedCount)")
-                            .font(.caption.weight(.semibold))
+                            .font(AppFont.caption.weight(.semibold))
                             .foregroundStyle(kindColor)
                             .padding(.horizontal, 6)
                             .padding(.vertical, 1)
@@ -175,7 +175,7 @@ struct BannerView: View {
                     // adding a pill row: one action doesn't pay for a row.
                     if let action = event.actions.first, pills.isEmpty, event.actions.count == 1 {
                         Text(action.label)
-                            .font(.caption.weight(.medium))
+                            .font(AppFont.caption.weight(.medium))
                             .foregroundStyle(kindColor)
                             .lineLimit(1)
                             .padding(.horizontal, 5)
@@ -195,13 +195,13 @@ struct BannerView: View {
                 }
 
                 Text(event.title)
-                    .font(.title2.weight(event.urgency == .critical ? .bold : .semibold))
+                    .font(AppFont.title2.weight(event.urgency == .critical ? .bold : .semibold))
                     .foregroundStyle(event.urgency == .low ? AnyShapeStyle(.secondary) : AnyShapeStyle(.primary))
                     .lineLimit(1)
 
                 if !redacted, let body = event.body ?? event.subtitle {
                     Text(body)
-                        .font(.callout)
+                        .font(AppFont.callout)
                         .foregroundStyle(.secondary)
                         .lineLimit(2)
                 }
@@ -281,7 +281,7 @@ struct BannerView: View {
                     .frame(height: 4)
                 }
             Text(Self.percent(fraction))
-                .font(.caption.weight(.medium))
+                .font(AppFont.caption.weight(.medium))
                 .monospacedDigit()
                 .foregroundStyle(.secondary)
                 // Fixed so the track doesn't twitch shorter as the label
@@ -310,7 +310,7 @@ struct BannerView: View {
             ForEach(Array(pills.enumerated()), id: \.element.id) { index, action in
                 Button { onAction(action) } label: {
                     Text(action.label)
-                        .font(.caption.weight(.semibold))
+                        .font(AppFont.caption.weight(.semibold))
                         .lineLimit(1)
                         .foregroundStyle(index == 0 ? kindColor : Color.secondary)
                         .padding(.horizontal, 10)
@@ -362,7 +362,7 @@ struct BannerView: View {
                 // Not a button: it stands for several events, so there is no
                 // single thing for a click to do.
                 Text("and \(entry.coalescedCount - listedFolds.count) earlier")
-                    .font(.caption)
+                    .font(AppFont.caption)
                     .foregroundStyle(.tertiary)
                     .frame(height: BannerGeometry.foldRowHeight)
                     .padding(.horizontal, 12)
@@ -382,14 +382,14 @@ struct BannerView: View {
         let live = folded.hasDefaultAction
         let content = HStack(spacing: 6) {
             Text(folded.title)
-                .font(.footnote)
+                .font(AppFont.footnote)
                 .lineLimit(1)
             // Privacy is per event, so a redacted thread-mate keeps
             // its body to itself even when the face is visible — and
             // shyness covers the whole list at once.
             if !shy, folded.privacy != .redacted, let body = folded.body ?? folded.subtitle {
                 Text(body)
-                    .font(.footnote)
+                    .font(AppFont.footnote)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
             }

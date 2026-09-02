@@ -128,10 +128,10 @@ it; `focus` does the same per kind in a Focus, naming one kind leaving the rest 
 
 ## Settings file — `~/.config/trill/config.json`
 
-The app's own switches, and the truth for them — Settings reads and writes this same file, live. Every key at its
-default, each optional: `{"launchAtLogin": true, "persistHistory": true, "systemMirror": false, "githubBridge":
-false, "shyWhenWatched": true, "catchUpCard": true, "focusAware": true, "calendar": false, "calendarLeadMinutes": 10,
-"cliLink": true}` — and `persistHistory: false` is what makes `history` exit 5. `systemMirrorApps` has no default:
+The app's own switches, and the truth for them — Settings reads and writes this same file, live. Every key at its default,
+each optional: `{"launchAtLogin": true, "persistHistory": true, "systemMirror": false, "githubBridge": false,
+"shyWhenWatched": true, "catchUpCard": true, "focusAware": true, "calendar": false, "calendarLeadMinutes": 10, "cliLink":
+true, "fontFamily": ""}` — and `persistHistory: false` is what makes `history` exit 5. `systemMirrorApps` has no default:
 absent mirrors every app, a list exactly those, `[]` none. Don't write the file if it symlinks into `/nix/store`.
 
 ## Traps

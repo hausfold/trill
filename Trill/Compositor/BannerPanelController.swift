@@ -33,6 +33,7 @@ final class BannerPanelController {
         let card: BannerView
         var body: some View {
             card.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .trillType()
         }
     }
 

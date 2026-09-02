@@ -130,18 +130,24 @@ struct Walkthrough: Equatable {
 /// which is the size you reach for when text sits *beside* the thing it
 /// describes; here the text **is** the product, so everything moved up a
 /// couple of steps and the panel widened to carry it.
+/// The helper's own scale, one step up from the rest of the app: it is read
+/// at arm's length beside System Settings rather than leaned into.
+///
+/// Computed rather than stored, because `AppFont` reads the family out of
+/// `config.json` — a `static let` would freeze whatever was configured the
+/// first time a panel opened.
 private enum HelperType {
     /// The panel's own header.
-    static let title = Font.title3
+    static var title: Font { AppFont.title3 }
     /// The sentences that carry the instruction — the ones that have to be
     /// readable without leaning in.
-    static let body = Font.body
+    static var body: Font { AppFont.body }
     /// Supporting detail beside an instruction: step labels, warnings,
     /// the status line.
-    static let detail = Font.callout
+    static var detail: Font { AppFont.callout }
     /// Incidentals inside the System Settings replica, where matching Apple's
     /// own row proportions matters more than legibility.
-    static let micro = Font.caption
+    static var micro: Font { AppFont.caption }
 }
 
 // MARK: - Onboarding Assistant View
@@ -252,6 +258,7 @@ struct OnboardingAssistantView: View {
         .onDisappear {
             pollTimer?.invalidate()
         }
+        .trillType()
     }
 
     private var modeIcon: String {
@@ -770,6 +777,12 @@ private struct TrillSwitchDemo: View {
 /// It only demonstrates the steps this app actually needs — an app whose
 /// sound is already off never sees the sound step, so the loop can't teach a
 /// click that isn't there.
+///
+/// **It draws in macOS's face, not trill's.** Everything else in this panel
+/// goes through `AppFont` and is set in whatever family `config.json` names;
+/// this box is a *picture of the pane the user is about to look at*, and a
+/// picture in somebody's own reading font is a worse likeness. The strings in
+/// here name `.system(…)` deliberately.
 private struct NativeBannerDemo: View {
     let appName: String
     let bundleID: String
@@ -822,7 +835,9 @@ private struct NativeBannerDemo: View {
 
             HStack {
                 Text("Play sound for notification")
-                    .font(HelperType.detail)
+                    // System face, like every other string in this box — see
+                    // the note on `NativeBannerDemo`.
+                    .font(.callout)
                 Spacer()
                 Toggle("", isOn: .constant(soundIsOn))
                     .labelsHidden()

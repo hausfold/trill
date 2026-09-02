@@ -94,6 +94,7 @@ struct SettingsView: View {
             minHeight: 400, maxHeight: .infinity
         )
         .navigationTitle(Self.windowTitle)
+        .trillType()
         .task {
             guard let fetchProviderStatus else { return }
             while !Task.isCancelled {
@@ -214,9 +215,9 @@ private struct SettingsSidebarFooter: View {
                     .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 1) {
                     Text("Trill")
-                        .font(.system(size: 12, weight: .semibold))
+                        .font(AppFont.size(12, weight: .semibold))
                     Text(version)
-                        .font(.system(size: 11))
+                        .font(AppFont.size(11))
                         .foregroundStyle(.secondary)
                 }
                 Spacer(minLength: 0)
