@@ -211,6 +211,18 @@ never into a broken pipeline. Corollaries:
   from both the inbox's unread count and the catch-up card — and it can only
   be recorded at ingest, because nothing can work out afterwards who was
   sitting there.
+- **`trill history` is the read half of `send`, and it is a query.** `inbox`
+  opens a *window*, which is not a listing anything can parse — that gap was
+  trill's last A1 hole against the family agent surface, and the verb closes it
+  over rows `EventRepository` already writes. So it adds **no persistence**: it
+  is the same bounded fetch the window makes plus `HistoryQuery.filter`, which
+  is pure, so the two can never answer one question two ways. Three things it
+  must keep saying. **"Unread" is the inbox's word** — trill never put this in
+  front of you — not "you haven't looked". It reports the rows **unfolded**,
+  because a thread is folded for eyes and a script wants the fifteen. And with
+  `persistHistory` off it is the **doctor's third verdict, not an empty list**:
+  a `historyUnavailable` reply and exit **5**, because "nothing fired" is a lie
+  about a night trill never recorded.
 - **The inbox is where the overflow goes, so it holds no state of its own.**
   The ledge evicts a sixth ask, a digest card is a count and quiet hours route
   events past the screen — all three land in `AppDatabase`, and the window is a
@@ -296,9 +308,10 @@ moving a switch that won't stick.
 ```text
 Trill/
   App/           entry, composition root, settings (config.json-backed)
-  CLI/           `trill send/ping` — same binary, CLI personality
+  CLI/           `trill send/ask/history/skill/…` — same binary, CLI personality
+                 (EmbeddedSkills.swift is GENERATED — scripts/generate-skills.sh)
   Domain/        NotificationEvent, RuleSet (+ FocusPolicy), PolicyEngine,
-                 InboxList, Digest, CatchUp (all pure)
+                 InboxList, HistoryQuery, Digest, CatchUp (all pure)
   Providers/     protocol + Socket · GitHub webhook · Calendar (EventKit)
                  + SystemMirror (quarantined)
   Repositories/  EventRepository actor: supervise, normalize, dedupe, fan out
@@ -309,7 +322,7 @@ Trill/
                  ScreenWatch · PresenceWatch · FocusWatch (the ambient reads)
   UI/            BannerView, InboxView + InboxRowView, LedgeView,
                  Settings (View · Panes · Chrome) — Apps pane is the picker
-TrillTests/      geometry, policy, pipeline, inbox, presence — no display
+TrillTests/      geometry, policy, pipeline, inbox, history, presence — no display
 ```
 
 ## The agent surface (`ai/SKILL.md`)
@@ -334,16 +347,31 @@ noisy apps and the clicking stays the user's. The third is exit **5**: *can't
 tell* is a verdict, and an agent that renders it as "all quiet" reproduces the
 bug that already shipped once.
 
-`nix/skill.nix` ships it as `pkgs.trill-skill` (`$out/trill/SKILL.md`); the
-build fails if the frontmatter is missing, because a skill without it is
-installed, listed, and never loaded. **haus installs it** —
+**The binary ships it too, and that is A3.** `trill skill` prints it, `trill
+skill install` writes it into every agent client found — the standalone user's
+door, since a release ZIP dragged to /Applications has no layer to install
+anything for them. The bytes are **embedded, not read off disk**: Swift has no
+`go:embed`, and `nix/package.nix` compiles nothing (it unpacks the notarized CI
+build), so there is exactly one build that could generate them and it is
+Xcode's. `scripts/generate-skills.sh` bakes `ai/**/SKILL.md` into
+`Trill/CLI/EmbeddedSkills.swift` as raw string literals, that file is
+**committed**, and `scripts/check-skills.sh` regenerates into a temp file and
+diffs — so editing the Markdown without regenerating is a red CI run rather than
+a binary confidently printing last week's prose. `install` never clobbers: a
+file that differs is somebody's edit, and a **symlink is haus's**, refused by
+name rather than by `EPERM`.
+
+`nix/skill.nix` ships the prose as `pkgs.trill-skill` (`$out/trill/SKILL.md`)
+and runs the same guard script — the frontmatter half only, because it has no
+Swift to compare against. The build fails if the frontmatter is missing, because
+a skill without it is installed, listed, and never loaded. **haus installs it** —
 `modules/ai/tool-skills.nix` names `trill`, and `modules/ai/default.nix` passes
 `trillEnabled = config.haus.notifications.compositor`, so the skill lands in
 every client's skills directory on a machine that has the app and on no other:
 a skill teaching an agent to drive an app this Mac doesn't have is worse than
-none. There is no
-`trill skill install` verb and no need for one. Two consequences for anyone
-renaming the skill: the name is a promise haus's `.#tool-skills` check proves at
+none — which is why `trill skill install` is for the *other* audience and stops
+dead at a store symlink rather than fighting the layer for the path. Two
+consequences for anyone renaming the skill: the name is a promise haus's `.#tool-skills` check proves at
 build time, so **a rename here is a red rebuild there** until haus's list moves
 with the lock bump — and that proof only runs on a **Mac**, because trill's flake
 outputs darwin systems only and haus's Linux CI drops the entry to `null`.
@@ -365,6 +393,12 @@ confidently-wrong instruction with a nice format.
 Geometry, policy, queue, and wire-format logic are all testable headless —
 keep it that way: anything that *can* be a pure function with a test should
 be. Feel-testing banners needs a real session: build, run, `trill send`.
+
+**Edited a SKILL.md? Run `scripts/generate-skills.sh` and commit both files.**
+The guard is `scripts/check-skills.sh ai Trill/CLI/EmbeddedSkills.swift
+scripts/generate-skills.sh`, and `build.yml` runs it before the build because
+its failures are the cheapest in the repo and two of them are invisible at
+runtime.
 
 **Debug builds carry their own bundle id (`com.hausfold.trill.debug`) — leave
 it that way.** TCC keys Full Disk Access by *bundle id*, one row per id, and

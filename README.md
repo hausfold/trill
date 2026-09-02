@@ -35,6 +35,9 @@ trill ask "Push to origin?" --pill Allow --pill Deny --timeout 300 && git push
 # one card for a whole build, not fifty banners
 trill send --key haus --progress 42% --title "haus rebuild" --body "12 of 30"
 
+# the read half: what did it actually fire? (--json for a script)
+trill history --since 2h --unread
+
 trill ping     # is the daemon up?
 trill report   # something's wrong — file it, with this Mac's details filled in
 ```
@@ -85,9 +88,9 @@ signed and notarized, no Dock icon, no account. On
   EventKit pushes, so a meeting moved on your phone moves the card. trill reads
   your calendar and holds no access to write to it.
 - **the overflow has somewhere to go** — digest cards, evicted fins, anything
-  quiet hours held back: it's all in the inbox, live and searchable. Unread
-  means trill never actually put it in front of you — including the banners it
-  drew at a locked screen.
+  quiet hours held back: it's all in the inbox, live and searchable, and
+  readable from a script with `trill history`. Unread means trill never actually
+  put it in front of you — including the banners it drew at a locked screen.
 - **other apps, if you want them** — System Mirror redraws other apps' banners
   in trill's language, off by default and quarantined behind a schema probe,
   and `trill doctor` names the ones macOS is now drawing twice.
@@ -106,7 +109,7 @@ can type. → [rules and settings](docs/rules.md)
 - [Install](docs/install.md) — the release, Nix, haus, and what puts `trill` on your PATH
 - [Rules & settings](docs/rules.md) — `rules.json`, `config.json`, resolvers, displays
 - [Other apps](docs/other-apps.md) — System Mirror, `trill doctor`, and the silence walkthrough
-- [`ai/SKILL.md`](ai/SKILL.md) — the agent surface: drop it in and *"tell me when this finishes"* works first try
+- [`ai/SKILL.md`](ai/SKILL.md) — the agent surface: drop it in and *"tell me when this finishes"* works first try. `trill skill install` puts it there for you
 - [Architecture](ARCHITECTURE.md) — the invariants, and the measurements they stand on
 - [`AGENTS.md`](AGENTS.md) — building it, testing it, shipping it
 - `trill help` — every verb, every flag

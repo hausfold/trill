@@ -17,6 +17,16 @@ jobs:
       - uses: actions/checkout@v4
       - name: Show toolchain
         run: xcodebuild -version && swift --version
+
+      # Before the build, because these are the cheapest failures in the repo
+      # and two of them are invisible at runtime: a SKILL.md whose frontmatter
+      # is broken installs, lists and is never loaded, and an embedded copy that
+      # has drifted makes `trill skill` print last week's prose with this week's
+      # version number. The three-argument form is the one that checks the
+      # embed; nix/skill.nix runs the same script over the prose alone, because
+      # it has no Swift to compare against.
+      - name: Agent skills are well-formed and still embedded
+        run: scripts/check-skills.sh ai Trill/CLI/EmbeddedSkills.swift scripts/generate-skills.sh
       - name: Test
         run: |
           xcodebuild \

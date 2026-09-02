@@ -9,7 +9,13 @@ import Foundation
 /// (see `AppDatabase.insert`). So "unread" here does not mean "you haven't
 /// looked at this list"; it means "this never interrupted you", which is the
 /// only reading that makes the count worth putting in a title bar.
-struct InboxEntry: Sendable, Identifiable, Equatable {
+///
+/// `Codable` because it is also the wire shape of `trill history`: one row is
+/// `{"event": …, "decision": …, "readAt": …}`, where the event half is
+/// byte-for-byte what `trill send --json` accepts. That round trip is the
+/// point — the read verb hands back the thing the write verb took, so an agent
+/// can pipe one into the other rather than reconstruct it.
+struct InboxEntry: Codable, Sendable, Identifiable, Equatable {
     let event: NotificationEvent
     /// `banner`, `inbox`, or `digest:<name>` — what `PolicyEngine` decided.
     let decision: String

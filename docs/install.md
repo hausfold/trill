@@ -11,6 +11,13 @@ right-click dance. There's no Dock icon: a small dotted circle in the menu bar �
 Inbox, Settings, Report a Bug, Quit — is the whole chrome, and the banners are
 the app.
 
+Then, if you use a coding agent, `trill skill install` — it writes trill's
+[agent skill](../ai/SKILL.md) into every client it finds (Claude Code, Codex,
+OpenCode, pi), so *"tell me when this build finishes"* works first try. It never
+overwrites: anything already there and different is named and left alone. On a
+haus machine you can skip it — the layer installed the same file already, and
+the command will tell you so rather than fighting it for the path.
+
 ## Nix
 
 ```nix

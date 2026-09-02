@@ -195,6 +195,23 @@ ARCHITECTURE.md, "The undocumented mirror"; the short form:
 plainly rather than designed around. Still open: behaviour under an active
 Focus, and a second macOS version to confirm the schema probe earns its keep.
 
+### M3.5 — the agent surface (shipped)
+
+The family standard is the workshop's `docs/agent-surface.md`; trill held its
+last A1 gap. **`trill history [--limit N] [--source SLUG] [--kind KIND]
+[--unread] [--since 2h] [--search TEXT] [--json]`** is the read half of `send`:
+`inbox` opens a *window*, which no script can parse, so nothing answered *what
+fired*. It is a query and not a store — the same bounded fetch the inbox window
+makes, then `HistoryQuery.filter`, which is pure — and `persistHistory: false`
+answers **exit 5, "can't tell"**, never an empty list.
+
+**`trill skill [NAME]` / `trill skill install [--client ID] [--dir PATH]`** is
+A3: the prose is embedded in the binary (`scripts/generate-skills.sh` →
+`Trill/CLI/EmbeddedSkills.swift`, guarded against drift by
+`scripts/check-skills.sh` in CI), so the version that answers `--help` is the
+version that answers `skill`. `install` serves the standalone user, never
+clobbers, and refuses at a Nix symlink by name rather than by `EPERM`.
+
 ### M4 — provider actions
 
 Chat open-conversation/reply, calendar open-event, GitHub open-PR, shell
