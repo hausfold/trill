@@ -742,6 +742,11 @@ enum TrillCLI {
         var refused: Int32
 
         static let standard = ExitCodes(encode: 1, unreachable: 2, refused: 3)
+        /// Most replies are tens of bytes; `history --limit 1000` is a
+        /// megabyte of events, and legitimately so. This is a backstop against
+        /// a socket that never stops talking, not a size the CLI expects to
+        /// meet — hitting it says so rather than looking like a dead daemon.
+        static let replyLimit = 8 * 1024 * 1024
         static let ask = ExitCodes(
             encode: AskExit.usage,
             unreachable: AskExit.unreachable,
@@ -801,12 +806,27 @@ enum TrillCLI {
         // own — the *daemon* owns `--timeout`, because only it can also take
         // the banner down when the clock runs out.
         var buffer = Data()
-        var chunk = [UInt8](repeating: 0, count: 4096)
-        while !buffer.contains(0x0A) {
+        var chunk = [UInt8](repeating: 0, count: 16 * 1024)
+        var complete = false
+        var overflowed = false
+        while !complete {
             let n = read(fd, &chunk, chunk.count)
             guard n > 0 else { break }
+            // The *chunk*, not the whole buffer: scanning everything received
+            // so far on every pass turns a megabyte of history into hundreds
+            // of megabytes of searching for one byte.
+            complete = chunk[0..<n].contains(0x0A)
             buffer.append(contentsOf: chunk[0..<n])
-            if buffer.count > 64 * 1024 { break }
+            if buffer.count > ExitCodes.replyLimit {
+                overflowed = true
+                break
+            }
+        }
+        if overflowed {
+            FileHandle.standardError.write(Data(
+                "trill: the daemon's reply passed \(ExitCodes.replyLimit) bytes without ending — ask for fewer rows\n".utf8
+            ))
+            return codes.unreachable
         }
         guard let nl = buffer.firstIndex(of: 0x0A),
               let response = try? JSONDecoder.trill.decode(
