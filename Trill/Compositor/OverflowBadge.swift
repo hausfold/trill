@@ -73,7 +73,7 @@ struct OverflowBadgeView: View {
             Image(systemName: "chevron.down")
                 .font(.system(size: 8, weight: .bold))
             Text("\(count) waiting")
-                .font(.caption2.weight(.semibold))
+                .font(AppFont.caption2.weight(.semibold))
         }
         .foregroundStyle(.secondary)
         .padding(.horizontal, 8)
@@ -84,5 +84,6 @@ struct OverflowBadgeView: View {
         )
         .frame(maxWidth: .infinity, alignment: .trailing)
         .accessibilityLabel("\(count) notifications waiting")
+        .trillType()
     }
 }

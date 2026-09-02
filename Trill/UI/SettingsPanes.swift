@@ -137,10 +137,20 @@ struct GeneralPane: View {
                         .labelsHidden()
                         .toggleStyle(.switch)
                 }
+                SettingsDivider()
+                SettingsRow(
+                    symbol: "textformat",
+                    title: "Draw text in",
+                    subtitle: "The family every card, row and pane is set in. Leave it empty for whatever macOS is using. Timestamps and source slugs stay monospaced — a column that shifts is harder to read, not easier."
+                ) {
+                    FontFamilyField(settings: settings)
+                }
             }
             .disabled(settings.isManagedExternally)
 
             CLILinkNote(state: settings.cliLinkState)
+
+            FontFamilyNote(family: settings.fontFamily, installed: settings.fontFamilyIsInstalled)
 
             ScreenWatchNote()
 
@@ -191,12 +201,74 @@ struct CLILinkNote: View {
                 .font(.system(size: 12))
                 .foregroundStyle(tint)
             Text(text)
-                .font(.subheadline)
+                .font(AppFont.subheadline)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 4)
+    }
+}
+
+/// The family name, committed when you have finished typing rather than per
+/// keystroke.
+///
+/// Every commit rewrites `config.json` and every rewrite wakes the watcher, so
+/// a field that wrote through on each character would turn one decision into
+/// eleven file replacements — and, on the way, leave the app rendering in
+/// "Atkinso" for a frame. Submit or click away and it lands.
+private struct FontFamilyField: View {
+    @ObservedObject var settings: AppSettings
+    @State private var draft = ""
+    @FocusState private var editing: Bool
+
+    var body: some View {
+        TextField("System", text: $draft)
+            .textFieldStyle(.roundedBorder)
+            .frame(width: 190)
+            .focused($editing)
+            .onSubmit { commit() }
+            .onChange(of: editing) { if !editing { commit() } }
+            .onAppear { draft = settings.fontFamily }
+            // The file is the truth in both directions: a family typed into
+            // config.json while this window is open moves the field too —
+            // unless somebody is mid-word in it, which their keystrokes own.
+            .onChange(of: settings.fontFamily) { if !editing { draft = settings.fontFamily } }
+    }
+
+    private func commit() {
+        guard draft != settings.fontFamily else { return }
+        settings.fontFamily = draft
+    }
+}
+
+/// Whether the family named above is one this Mac can actually draw.
+///
+/// The switch is a *request* and this line is the *reading*, the same split
+/// the Apps pane keeps between a tick and what macOS says: CoreText answers an
+/// unresolvable name with the system face and no complaint, so a typo looks
+/// exactly like a setting that didn't take. This is the only place it can be
+/// said, because a render pass has nowhere to say it.
+struct FontFamilyNote: View {
+    let family: String
+    let installed: Bool
+
+    var body: some View {
+        if let named = AppFont.resolve(family) {
+            if installed {
+                SettingsNote(
+                    symbol: "checkmark.circle",
+                    tint: .green,
+                    text: "trill is drawing in \(named)."
+                )
+            } else {
+                SettingsNote(
+                    symbol: "exclamationmark.triangle",
+                    tint: .orange,
+                    text: "No font family called \(named) is installed, so trill is drawing in the system font. Install it, or check the spelling against Font Book."
+                )
+            }
+        }
     }
 }
 
@@ -483,10 +555,10 @@ struct ProvidersPane: View {
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text("System Mirror")
-                        .font(.subheadline)
+                        .font(AppFont.subheadline)
                         .fontWeight(.semibold)
                     Text("Locked · experimental")
-                        .font(.caption2)
+                        .font(AppFont.caption2)
                         .foregroundStyle(.secondary)
                 }
 
@@ -494,7 +566,7 @@ struct ProvidersPane: View {
             }
 
             Text("Unlock it and trill redraws **every other app’s** banners in its own quiet style — Messages, Mail, Calendar, the lot, about five seconds after macOS gets them. macOS keeps that store behind Full Disk Access, so it has to be granted once.")
-                .font(.subheadline)
+                .font(AppFont.subheadline)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
 
@@ -512,7 +584,7 @@ struct ProvidersPane: View {
 
             if let reason = status["system-mirror"].flatMap({ $0 }) {
                 Text(reason)
-                    .font(.caption)
+                    .font(AppFont.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -536,11 +608,11 @@ struct ProvidersPane: View {
                     .fill(isCurrent ? Color.accentColor : Color.secondary.opacity(0.22))
                     .frame(width: 17, height: 17)
                 Text("\(number)")
-                    .font(.system(size: 10, weight: .bold))
+                    .font(AppFont.size(10, weight: .bold))
                     .foregroundStyle(isCurrent ? Color.white : Color.secondary)
             }
             Text(text)
-                .font(.subheadline)
+                .font(AppFont.subheadline)
                 .foregroundStyle(isCurrent ? .primary : .secondary)
         }
     }
@@ -555,12 +627,12 @@ struct ProviderHealthBadge: View {
         if reason == nil {
             Label("Ready", systemImage: "checkmark.circle.fill")
                 .labelStyle(.titleAndIcon)
-                .font(.subheadline)
+                .font(AppFont.subheadline)
                 .foregroundStyle(.green)
         } else {
             Label("Off", systemImage: "exclamationmark.circle.fill")
                 .labelStyle(.titleAndIcon)
-                .font(.subheadline)
+                .font(AppFont.subheadline)
                 .foregroundStyle(.orange)
         }
     }
@@ -581,7 +653,7 @@ struct ProviderReason: View {
                 .foregroundStyle(.orange)
                 .frame(width: 18)
             Text(reason)
-                .font(.subheadline)
+                .font(AppFont.subheadline)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 0)
@@ -917,7 +989,7 @@ struct AppRow: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(NotificationSettingsAudit.displayName(for: app.bundleID))
                 Text(state)
-                    .font(.subheadline)
+                    .font(AppFont.subheadline)
                     .foregroundStyle(stateTint)
                     .fixedSize(horizontal: false, vertical: true)
             }

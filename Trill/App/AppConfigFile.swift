@@ -76,6 +76,19 @@ struct AppConfig: Equatable, Sendable {
     /// it is a number rather than a switch because "enough time to walk
     /// there" is different for everyone.
     var calendarLeadMinutes = 10
+    /// The proportional family every card, row and pane is set in. Empty —
+    /// the default — means SwiftUI's `.system(…)`, i.e. whatever macOS is
+    /// using, which is what trill drew before this key existed.
+    ///
+    /// A *name*, not a file: trill installs nothing and validates nothing at
+    /// render time, because CoreText already falls back to the system face for
+    /// a family this Mac doesn't have. Settings says which of the two
+    /// happened, the way it does for the `trill` shim — a name that resolves
+    /// and a name that is merely spelled right are not the same claim.
+    /// Monospaced runs (a source slug, a timestamp) are unaffected: they are
+    /// mono because a shifting column is harder to read, not because nobody
+    /// picked a face.
+    var fontFamily = ""
 
     /// The JSON key for each field. Spelled the way someone typing the file by
     /// hand would spell it — these names are user-facing surface, so renaming
@@ -92,6 +105,7 @@ struct AppConfig: Equatable, Sendable {
         static let calendar = "calendar"
         static let calendarLeadMinutes = "calendarLeadMinutes"
         static let cliLink = "cliLink"
+        static let fontFamily = "fontFamily"
     }
 
     /// What a lead time may be. Zero is legitimate ("tell me when it starts");
@@ -122,6 +136,7 @@ struct AppConfig: Equatable, Sendable {
         if let value = json[Key.focusAware] as? Bool { focusAware = value }
         if let value = json[Key.calendar] as? Bool { calendarEnabled = value }
         if let value = json[Key.cliLink] as? Bool { cliLink = value }
+        if let value = json[Key.fontFamily] as? String { fontFamily = value }
         // Clamped rather than refused: a file is a place people typo, and the
         // honest recovery for "600000" is the nearest legal lead, not a
         // silently ignored key.
@@ -145,6 +160,7 @@ struct AppConfig: Equatable, Sendable {
             Key.calendar: calendarEnabled,
             Key.calendarLeadMinutes: calendarLeadMinutes,
             Key.cliLink: cliLink,
+            Key.fontFamily: fontFamily,
         ]
         // The one key that is written only when it has been chosen. Everything
         // else is written in full so the file documents itself; this one can't

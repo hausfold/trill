@@ -27,6 +27,7 @@ it's launched, themed at the source, or packaged.
 | how trill is *installed* on the system (flake wiring, launchd) | `haus` (the layer) |
 | whether `trill` resolves on PATH | **shared, by install source** — `nix/package.nix` ships `bin/trill`; `scripts/dev-install.sh` links into a directory on the real login PATH; the app itself covers an install that runs no script (`SystemIntegration.ensureCLILink`), and defers to anything already answering the name. Change the one that matches the source you're fixing, and keep [`docs/install.md`](./docs/install.md)'s table honest. ⚠️ A desktop that copies the bundle to a fixed path adds **no fourth link** — haus's `haus.notifications.compositor` room places the bundle at `/Applications/Trill.app` and lets its own `trill` wrapper find it there, because whether the bundle exists is a runtime fact and a second `bin/trill` would collide with the wrapper. This row used to predict the opposite; the room exists now and chose the other way |
 | the palette trill is themed with (source hex) | `nebelung` |
+| the family trill's **text** is set in | **here** — `fontFamily` in `config.json`, turned into a `Font` in one place (`Trill/UI/AppFont.swift`). The family *name* comes from the desktop (`haus.fonts.sans.name` on a haus Mac); trill installs no font and validates none at render time, because CoreText already answers an unknown family with the system face. Not nebelung — a palette is hex, and this is a family this Mac either has or falls back from |
 | trill's **mark** — the app icon in Finder, Login Items and every Privacy row, and the README's wordmark banner | here, `assets/trill-icon-master.png` and `assets/trill-banner.png`. The four hexes in both are nebelung's `yellow` / `surface0` / `surface1` / `surface2` baked into a PNG, so a palette change does **not** reach them — re-render the master and the ten `Trill/Assets.xcassets/AppIcon.appiconset` slots from it (recipe in [`assets/README.md`](./assets/README.md)); the banner has no source here and is redrawn from the brand kit. These are the trill surfaces `~/.config/trill/theme.json` cannot retint, and the icon is deliberately flat: macOS 26 adds the inset, shadow and gloss itself |
 | DND / Focus toggling ("Hush") | `haus` (the layer) — trill only deep-links there. *Reading* which Focus is on is here (`Platform/FocusWatch`), and it is read-only by rule |
 | the tunnel fronting the GitHub bridge (cloudflared, DNS, the org webhook) | `haus` (the layer) — trill only listens on localhost |
@@ -298,6 +299,17 @@ through `AppConfig.absentKeys` when it isn't — don't tidy it into an array
 that is always there. Keys trill doesn't know are preserved verbatim
 across writes.
 
+One key is not a switch but a rendering rule: **`fontFamily` names the
+proportional family everything trill draws is set in**, and `Trill/UI/AppFont.swift`
+is the only place it becomes a `Font`. So a new `Text` takes `AppFont.caption`,
+never `.caption` — a call site that reaches for SwiftUI's own is a string that
+silently ignores the setting. Three things keep `.system(…)`, and each is a
+decision rather than an oversight: an `Image(systemName:)`, because an SF Symbol
+handed a text face is scaled by that face's metrics; a run that is
+`.monospaced()` on purpose, because a column that shifts is harder to read, not
+easier; and the System Settings replica in the native-banner helper, because it
+is a *picture* of the pane the user is about to look at.
+
 The file is refused as read-only when it's a symlink into the Nix store —
 i.e. this Mac's desktop generated it, and a rebuild would revert a click. Same
 rule pounce applies to its own `config.json`; Settings says so rather than
@@ -322,6 +334,7 @@ Trill/
                  ScreenWatch · PresenceWatch · FocusWatch (the ambient reads)
   UI/            BannerView, InboxView + InboxRowView, LedgeView,
                  Settings (View · Panes · Chrome) — Apps pane is the picker
+                 + AppFont, the one seam between `fontFamily` and a `Font`
 TrillTests/      geometry, policy, pipeline, inbox, history, presence — no display
 ```
 

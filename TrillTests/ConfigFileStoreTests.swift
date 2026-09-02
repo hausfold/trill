@@ -51,6 +51,15 @@ final class ConfigFileStoreTests: XCTestCase {
                        "every switch is written, not just the changed one")
     }
 
+    /// The default is "whatever macOS is using", which is an empty string
+    /// rather than a family name — and it is written like every other switch,
+    /// so opening the file shows you the key you were looking for.
+    func testTheProportionalFamilyIsEmptyUntilSomebodyNamesOne() throws {
+        XCTAssertEqual(ConfigFileStore(file: file).current().fontFamily, "")
+        try write(#"{ "fontFamily": "Atkinson Hyperlegible" }"#)
+        XCTAssertEqual(ConfigFileStore(file: file).current().fontFamily, "Atkinson Hyperlegible")
+    }
+
     func testShynessIsOnUnlessTheFileSaysOtherwise() throws {
         XCTAssertTrue(ConfigFileStore(file: file).current().shyWhenWatched,
                       "a privacy default that has to be switched on is a default nobody has on")

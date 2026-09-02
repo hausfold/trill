@@ -134,6 +134,26 @@ final class AppSettings: ObservableObject {
         }
     }
 
+    /// The proportional family every card, row and pane is set in — empty for
+    /// macOS's own. Nothing else has to be told: `AppFont` reads the same file
+    /// on the next render, so a card already on screen keeps the face it was
+    /// drawn in and the next one arrives in the new one.
+    @Published var fontFamily: String {
+        didSet {
+            guard !isApplyingFileChange, fontFamily != oldValue else { return }
+            commit(\.fontFamily, fontFamily, revert: { self.fontFamily = oldValue })
+        }
+    }
+
+    /// Whether this Mac can actually draw the family that's named. A
+    /// *reading*, not the switch: an unresolvable name renders in the system
+    /// face and looks like nothing happened, which is exactly the failure a
+    /// settings window exists to explain.
+    var fontFamilyIsInstalled: Bool {
+        guard let family = AppFont.resolve(fontFamily) else { return true }
+        return AppFont.isInstalled(family)
+    }
+
     /// Does the mirror draw this app as things stand? True for everything
     /// while the list is unchosen.
     func mirrors(_ bundleID: String) -> Bool {
@@ -224,6 +244,7 @@ final class AppSettings: ObservableObject {
         calendarEnabled = config.calendarEnabled
         calendarLeadMinutes = config.calendarLeadMinutes
         cliLink = config.cliLink
+        fontFamily = config.fontFamily
         reopenSettingsOnLaunch = defaults.bool(forKey: Keys.reopenSettingsOnLaunch)
 
         store.start { [weak self] config in
@@ -255,6 +276,7 @@ final class AppSettings: ObservableObject {
         calendarLeadMinutes = config.calendarLeadMinutes
         let cliLinkChanged = config.cliLink != cliLink
         cliLink = config.cliLink
+        fontFamily = config.fontFamily
         writeError = nil
         // The file is the truth here too, in BOTH directions: typing
         // `"cliLink": true` has to place the shim exactly as clicking the

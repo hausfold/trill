@@ -51,6 +51,7 @@ struct LedgeItemView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .trailing)
         .contentShape(Rectangle()) // the panel is sized to exactly one state
         .onHover(perform: onHover)
+        .trillType()
     }
 
     /// The parked state: a kind-hued tab against the screen edge. No text,
