@@ -37,6 +37,17 @@ final class SocketServer: @unchecked Sendable {
         let source: DispatchSourceRead
         let peerID: UInt64
         var buffer = Data()
+        /// What is still owed to this peer. Every descriptor here is
+        /// `O_NONBLOCK`, so a reply larger than the socket's send buffer —
+        /// 8 KB on macOS, and `trill history` is the first verb that can
+        /// exceed it — comes back `EAGAIN` half-written. The rest waits here
+        /// until the kernel says there is room, rather than being dropped.
+        var outbox = Data()
+        /// Created only when there is something in `outbox`, cancelled the
+        /// moment it drains. A source per connection kept alive for the
+        /// common case (every reply fits in one write) would be a suspend /
+        /// resume balance to get wrong for no gain.
+        var writeSource: DispatchSourceWrite?
         init(source: DispatchSourceRead, peerID: UInt64) {
             self.source = source
             self.peerID = peerID
@@ -60,7 +71,11 @@ final class SocketServer: @unchecked Sendable {
             acceptSource?.cancel()
             acceptSource = nil
             let gone = connections.values.map(\.peerID)
-            connections.values.forEach { $0.source.cancel() }
+            connections.values.forEach {
+                $0.writeSource?.cancel()
+                $0.writeSource = nil
+                $0.source.cancel()
+            }
             connections.removeAll()
             gone.forEach(onClose)
             if listenFD >= 0 { close(listenFD); listenFD = -1 }
@@ -153,23 +168,71 @@ final class SocketServer: @unchecked Sendable {
         }
     }
 
+    /// Queue a reply and push as much of it as the kernel will take.
+    ///
+    /// **A short write is the normal case, not an error.** The connection is
+    /// non-blocking, macOS gives a unix socket an 8 KB send buffer, and a
+    /// caller that has not started reading yet fills it immediately — so a
+    /// long reply returns `EAGAIN` part-way through. Giving up there (which
+    /// this did) truncates the line: the peer never sees the newline it is
+    /// blocking on, and `trill history` hangs forever against a daemon that
+    /// believes it answered. Every verb before it replied in tens of bytes,
+    /// which is why the bug sat here unreachable.
     private func write(_ data: Data, to fd: Int32, peer: UInt64) {
         // The peer check, not just the descriptor: a late reply (an ask
         // answered after its caller hung up) would otherwise land on whoever
         // the kernel handed that number to next.
-        guard connections[fd]?.peerID == peer else { return }
-        data.withUnsafeBytes { raw in
-            var offset = 0
-            while offset < raw.count {
-                let n = Foundation.write(fd, raw.baseAddress! + offset, raw.count - offset)
-                if n <= 0 { return }
-                offset += n
+        guard let connection = connections[fd], connection.peerID == peer else { return }
+        connection.outbox.append(data)
+        flush(fd)
+    }
+
+    /// Drain `outbox` until the kernel pushes back, then wait for it to say
+    /// there is room. Never blocks: this runs on the one queue that owns every
+    /// descriptor, so spinning here on a peer that stopped reading would stall
+    /// the whole socket — including the accept loop.
+    private func flush(_ fd: Int32) {
+        guard let connection = connections[fd] else { return }
+
+        while !connection.outbox.isEmpty {
+            let written = connection.outbox.withUnsafeBytes { raw in
+                Foundation.write(fd, raw.baseAddress!, raw.count)
             }
+            if written > 0 {
+                connection.outbox.removeFirst(written)
+                continue
+            }
+            // EAGAIN (or EINTR): come back when the socket is writable. Any
+            // other error means the peer is gone, and so is what it was owed.
+            if written < 0, errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR {
+                armWriteSource(fd, connection: connection)
+            } else {
+                connection.outbox.removeAll()
+                cancelWriteSource(connection)
+            }
+            return
         }
+        cancelWriteSource(connection)
+    }
+
+    private func armWriteSource(_ fd: Int32, connection: Connection) {
+        guard connection.writeSource == nil else { return }
+        let source = DispatchSource.makeWriteSource(fileDescriptor: fd, queue: queue)
+        // No cancel handler closing the fd: the *read* source owns that, and
+        // two closers would hand a live descriptor number to the next accept.
+        source.setEventHandler { [weak self] in self?.flush(fd) }
+        connection.writeSource = source
+        source.resume()
+    }
+
+    private func cancelWriteSource(_ connection: Connection) {
+        connection.writeSource?.cancel()
+        connection.writeSource = nil
     }
 
     private func drop(_ fd: Int32) {
         guard let connection = connections.removeValue(forKey: fd) else { return }
+        cancelWriteSource(connection)
         connection.source.cancel()
         onClose(connection.peerID)
     }

@@ -251,6 +251,44 @@ final class HistoryTests: XCTestCase {
         XCTAssertNil(response.historyUnavailable)
     }
 
+    /// **The reply is the first one in this app that doesn't fit in a socket
+    /// buffer, and that is a regression test, not a stress test.**
+    ///
+    /// macOS gives a unix socket an 8 KB send buffer and `SocketServer` makes
+    /// every connection non-blocking, so a long reply comes back `EAGAIN`
+    /// part-written. Treating that as failure (which the server did) truncates
+    /// the line: the caller never sees the newline it blocks on, and `trill
+    /// history` hangs against a daemon that believes it answered. Every verb
+    /// before this one replied in tens of bytes, so nothing had ever reached
+    /// the bug — measured live at exactly 8192 bytes and then silence.
+    func testALongReplyArrivesWholeRatherThanOneSocketBufferOfIt() async throws {
+        let path = Self.temporarySocketPath()
+        defer { unlink(path) }
+        // Comfortably past 8 KB, and past it by enough that the drain has to
+        // survive several rounds of the kernel pushing back.
+        let rows = (0..<200).map {
+            entry(id: "row-\($0)", title: "event \($0)", body: String(repeating: "x", count: 500))
+        }
+        let provider = SocketProvider(path: path, history: { _, done in
+            done(HistoryPage(entries: rows, scanned: rows.count))
+        })
+        let stream = await provider.events()
+        defer { withExtendedLifetime(stream) {} }
+
+        let fd = try Self.connect(to: path)
+        defer { close(fd) }
+        try Self.write(Data(#"{"v":1,"verb":"history"}"#.utf8) + Data([0x0A]), to: fd)
+
+        let reply = try XCTUnwrap(
+            Self.readLine(from: fd),
+            "the reply stopped at a socket buffer and the newline never came"
+        )
+        XCTAssertGreaterThan(reply.count, 64 * 1024, "the point of this test is a reply that can't fit")
+        let response = try JSONDecoder.trill.decode(SocketProvider.Response.self, from: reply)
+        XCTAssertEqual(response.history?.count, 200)
+        XCTAssertEqual(response.history?.last?.id, "row-199", "the tail is what a short write loses")
+    }
+
     /// History is a switch, so "nothing fired" and "trill wasn't writing any
     /// of it down" are different answers — the same third verdict `doctor` has.
     /// An empty list here would report a night trill never recorded as a quiet
