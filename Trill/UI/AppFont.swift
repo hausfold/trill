@@ -17,7 +17,9 @@ import SwiftUI
 /// `.font(.system(size:))` all over this app, and an SF Symbol handed a text
 /// face is scaled by that face's metrics instead of Apple's — a chevron that
 /// grows when you change your reading font. Those call sites keep `.system`;
-/// this type is for `Text`.
+/// this type is for `Text`. A `Label`'s icon is the exception that proves it:
+/// it takes the family with its text, because an icon that no longer matches
+/// the size of the words beside it reads as broken.
 ///
 /// **Monospaced type stays monospaced.** A source slug and a timestamp carry
 /// `.monospaced()` because a column that shifts under a proportional face is
@@ -163,6 +165,11 @@ extension View {
     /// A no-op while no family is named: `EnvironmentValues.font` is optional,
     /// and pushing `.body` into it would flatten the per-control defaults
     /// SwiftUI picks for a settings window that nobody asked to restyle.
+    ///
+    /// When somebody *has* named one, that flattening is the deal rather than
+    /// an oversight: a `Toggle`'s label or a `.controlSize(.small)` button's
+    /// title is unreachable any other way, and it renders at body size as the
+    /// price. Naming a family means everything is in it.
     func trillType() -> some View {
         environment(\.font, AppFont.family == nil ? nil : AppFont.body)
     }
