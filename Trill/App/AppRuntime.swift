@@ -230,6 +230,27 @@ final class AppRuntime {
                         done(self?.queue.resolve(keys: keys) ?? 0)
                     }
                 },
+                // `trill history` — the read half of `send`. Read on the main
+                // actor and through the same bounded fetch the inbox window
+                // uses, so the two can never disagree about what history says;
+                // `HistoryQuery.filter` is pure and does the rest.
+                //
+                // `self.database` at call time rather than a captured handle,
+                // like the ledge mirror below: history is a live switch, and a
+                // captured handle would keep answering out of a database the
+                // user just turned off. No handle is `nil` — "can't tell" —
+                // never an empty page.
+                history: { [weak self] query, done in
+                    Task { @MainActor in
+                        guard let database = self?.database else { return done(nil) }
+                        let fetched = query.since.map {
+                            database.events(since: $0, limit: HistoryQuery.scanLimit)
+                        } ?? database.recent(limit: HistoryQuery.scanLimit)
+                        done(HistoryPage(
+                            entries: query.filter(fetched), scanned: fetched.count
+                        ))
+                    }
+                },
                 askBroker: askBroker
             ))
             // Always probed, regardless of the toggle: Settings gates the

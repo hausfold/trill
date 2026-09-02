@@ -86,6 +86,11 @@ its default:
 }
 ```
 
+`persistHistory` is the one switch a *verb* answers for: with it off, nothing is
+written down, so `trill history` says "can't tell" and exits 5 rather than
+reporting an empty list as a quiet night. Same for the inbox window, which
+empties the moment you switch it off.
+
 `systemMirrorApps` is the one key with no default, because its *absence* is
 itself a value: absent, the mirror draws every app it sees; a list means exactly
 those; `[]` means none. See [other apps' notifications](other-apps.md).

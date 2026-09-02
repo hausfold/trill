@@ -729,6 +729,21 @@ someone, and `--redact` is documented as keeping a body off the banner. This
 window exists only because the user summoned it, and hiding what they came to
 read would break it in exactly the moment they opened it on purpose.
 
+**And a window is not a listing.** `trill inbox` asks the daemon to *open* one,
+which no script and no agent can read — the last A1 gap against the family's
+agent surface. `trill history` closes it over the same rows, and deliberately
+adds no storage: the daemon runs the identical bounded fetch
+(`HistoryQuery.scanLimit == InboxList.fetchLimit`, so the verb and the window
+see one slice of history), then `HistoryQuery.filter`, which is pure and lives
+beside `InboxList.matches` rather than reimplementing it. Three differences from
+the window, each on purpose. It **does not fold threads** — folding is for eyes,
+and a caller wants the fifteen rows with their `thread` key on them. It says how
+many rows it **scanned**, because a filtered answer out of a capped fetch may
+have a match just past the cap and a listing that hid that would be claiming a
+completeness it never had. And with `persistHistory` off it answers
+`historyUnavailable` and exits **5**, the same third verdict `doctor` has: an
+empty array would report a night trill never recorded as a quiet one.
+
 ### A caller is blocked on the answer
 
 `trill ask` turns a banner into a return value: the CLI writes one request and

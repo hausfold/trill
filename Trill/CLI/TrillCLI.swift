@@ -10,6 +10,8 @@ import Foundation
 ///              [--urgency low|normal|critical] [--redact] [--url https://…]
 ///              [--action "Label=https://…"] [--action "Label=lane:repo/name"]…
 ///   echo '{"title":"Backup complete"}' | trill send --json
+///   trill history [--since 2h] [--unread] [--json]
+///   trill skill [install]
 ///   trill ping
 ///
 /// One JSON line out, one JSON line back, exit code says what happened:
@@ -21,7 +23,8 @@ import Foundation
 /// answer.
 enum TrillCLI {
     static let subcommands: Set<String> = [
-        "send", "ask", "ping", "doctor", "inbox", "resolve", "report", "help", "--help", "-h",
+        "send", "ask", "ping", "doctor", "inbox", "history", "resolve", "report", "skill",
+        "help", "--help", "-h",
     ]
 
     static func run(arguments: [String]) -> Int32 {
@@ -48,6 +51,22 @@ enum TrillCLI {
                 FileHandle.standardError.write(Data("trill: \(message)\n".utf8))
                 return 1
             }
+        case "history":
+            switch parseHistory(Array(arguments.dropFirst())) {
+            case .success(let invocation):
+                return roundTrip(invocation.request) { response in
+                    renderHistory(response, json: invocation.json)
+                }
+            case .failure(let message):
+                FileHandle.standardError.write(Data("trill: \(message)\n".utf8))
+                return 1
+            }
+        case "skill":
+            // The one verb with no socket in it. An agent meeting trill for
+            // the first time asks for the skill *before* it knows whether the
+            // daemon is up, and "2 daemon unreachable" would be a strange way
+            // to be handed a document that shipped inside this binary.
+            return runSkill(Array(arguments.dropFirst()))
         case "resolve":
             switch parseResolve(Array(arguments.dropFirst())) {
             case .success(let request):
@@ -423,6 +442,151 @@ enum TrillCLI {
         ))
     }
 
+    // MARK: - history
+
+    /// The request to send, plus the one flag that never leaves this process.
+    struct HistoryInvocation: Equatable {
+        var request: SocketProvider.Request
+        var json: Bool
+    }
+
+    enum HistoryParseResult: Equatable {
+        case success(HistoryInvocation)
+        case failure(String)
+    }
+
+    /// `trill history [--limit N] [--source SLUG] [--kind KIND] [--unread]
+    ///                [--since 2h] [--search TEXT] [--json]`
+    ///
+    /// **The read half of `send`.** Everything else in this CLI writes;
+    /// `inbox` opens a window, which is not a listing anything can read. This
+    /// is the verb that answers *what fired* — from a script, from a hook,
+    /// from an agent with no screen — over the same rows the inbox window
+    /// draws.
+    ///
+    /// `--since` is resolved to an instant *here*, not on the daemon: the
+    /// window a caller meant is the window at the moment they asked, and a
+    /// duration sent down the wire would quietly measure from whenever the
+    /// socket got round to it.
+    static func parseHistory(_ args: [String], now: Date = .now) -> HistoryParseResult {
+        var query = HistoryQuery()
+        var json = false
+
+        var iterator = args.makeIterator()
+        while let flag = iterator.next() {
+            func value() -> String? { iterator.next() }
+            switch flag {
+            case "--json": json = true
+            case "--unread": query.unreadOnly = true
+            case "--limit":
+                // Refused rather than clamped: the scan is bounded at the same
+                // number, so a bigger `--limit` is a promise this verb could
+                // not keep, and silently narrowing it would make a short list
+                // look like the whole of history.
+                guard let raw = value(), let rows = Int(raw),
+                      (1...HistoryQuery.scanLimit).contains(rows)
+                else {
+                    return .failure("--limit wants 1…\(HistoryQuery.scanLimit) rows")
+                }
+                query.limit = rows
+            case "--source":
+                guard let raw = value(), !raw.isEmpty else {
+                    return .failure("--source wants a sender's slug (or a bundle id)")
+                }
+                query.source = raw
+            case "--kind":
+                guard let raw = value(), let kind = NotificationEvent.Kind(rawValue: raw) else {
+                    return .failure("--kind wants ask|fault|chat|pulse|done|note")
+                }
+                query.kind = kind
+            case "--search":
+                guard let raw = value(), !raw.trimmingCharacters(in: .whitespaces).isEmpty else {
+                    return .failure("--search wants something to look for")
+                }
+                query.search = raw
+            case "--since":
+                guard let raw = value(), let instant = HistoryQuery.instant(raw, now: now) else {
+                    return .failure("--since wants a duration (30m, 2h, 7d) or an ISO-8601 instant")
+                }
+                query.since = instant
+            default:
+                return .failure("unknown flag '\(flag)' (see `trill help`)")
+            }
+        }
+
+        return .success(HistoryInvocation(
+            request: SocketProvider.Request(v: 1, verb: "history", event: nil, history: query),
+            json: json
+        ))
+    }
+
+    /// Newest first, one row per line. `--json` is the same rows as an array,
+    /// each `{"event": …, "decision": …, "readAt": …}` — the event half being
+    /// exactly what `trill send --json` accepts, so a row can be piped back.
+    ///
+    /// Exit 5 is the third verdict, the same one `doctor` has: history off
+    /// means trill has no idea what fired, and an empty list would report that
+    /// as a quiet night. Note that the `--json` shape differs between the two
+    /// — an object when it can't tell, an array when it can — so a `jq`
+    /// consumer branches on the exit code before it indexes.
+    static func renderHistory(_ response: SocketProvider.Response, json: Bool) -> Int32 {
+        if let unavailable = response.historyUnavailable {
+            if json {
+                struct Unavailable: Encodable { let historyUnavailable: String }
+                if let data = try? JSONEncoder.trill.encode(Unavailable(historyUnavailable: unavailable)),
+                   let line = String(data: data, encoding: .utf8) {
+                    print(line)
+                }
+            } else {
+                FileHandle.standardError.write(Data("trill: \(unavailable)\n".utf8))
+            }
+            return 5
+        }
+
+        let rows = response.history ?? []
+        if json {
+            if let data = try? JSONEncoder.trill.encode(rows),
+               let line = String(data: data, encoding: .utf8) {
+                print(line)
+            }
+            return 0
+        }
+
+        for row in rows {
+            print(historyLine(row))
+        }
+        // Both notes go to stderr, where a diagnostic belongs: stdout is the
+        // listing, and a pipe reading it must not find prose in the rows.
+        if rows.isEmpty {
+            FileHandle.standardError.write(Data("trill: nothing matched\n".utf8))
+        }
+        if (response.scanned ?? 0) >= HistoryQuery.scanLimit {
+            FileHandle.standardError.write(Data(
+                "trill: read the most recent \(HistoryQuery.scanLimit) events; older history is in the inbox\n".utf8
+            ))
+        }
+        return 0
+    }
+
+    /// One history row as a line. Columns are padded but never *cut*: a
+    /// mirrored app's source is a whole bundle id, and a truncated one is a
+    /// row you can't match against `rules.json`.
+    static func historyLine(_ row: InboxEntry, timeZone: TimeZone = .current) -> String {
+        let stamp = DateFormatter()
+        stamp.dateFormat = "MM-dd HH:mm"
+        stamp.timeZone = timeZone
+        // The dot is the inbox's own word for it: trill never put this in
+        // front of anybody. Not "you haven't opened it" — see `InboxEntry`.
+        let unread = row.isUnread ? "•" : " "
+        return "\(stamp.string(from: row.event.timestamp)) \(unread) "
+            + "\(pad(row.event.kind.rawValue, 5)) \(pad(row.decision, 8)) "
+            + "\(pad(row.event.source, 12)) \(row.event.title)"
+    }
+
+    private static func pad(_ text: String, _ width: Int) -> String {
+        text.count >= width ? text : text + String(repeating: " ", count: width - text.count)
+    }
+
     // MARK: - resolve
 
     enum ResolveParseResult: Equatable {
@@ -718,6 +882,10 @@ enum TrillCLI {
       trill ping                 # is the daemon up?
       trill doctor [--all] [--notify] [--json] [BUNDLE_ID …]
       trill inbox [--asks]       # open the inbox window (--asks: asks only)
+      trill history [--limit N] [--source SLUG] [--kind KIND] [--unread]
+                    [--since 2h] [--search TEXT] [--json]
+      trill skill [NAME]         # print the agent skill this binary ships
+      trill skill install [--client claude|codex|opencode|pi] [--dir PATH]
       trill report [--print]     # file a bug, with this Mac's details filled in
       trill help
 
@@ -788,6 +956,31 @@ enum TrillCLI {
                              elsewhere, or kept off screen by a rule or quiet
                              hours)
 
+    history is the read half of send: what trill actually fired, newest first,
+    out of the same rows the inbox window draws. `inbox` opens a window;
+    this one a script can read. Columns are time, an unread dot, kind,
+    delivery, source, title — and --json gives each row as
+    {"event": …, "decision": …, "readAt": …}, where the event half is exactly
+    what `trill send --json` takes, so a row can be piped back.
+
+      trill history --since 2h --unread          # what did I miss?
+      trill history --kind ask --json | jq -r '.[].event.id'
+
+    "Unread" means trill never put it in front of anybody — held back by a
+    rule, by quiet hours, or drawn at a locked screen — not "you haven't
+    looked". One call reads the most recent 1000 events and says so on stderr
+    when it fills; older history is in the window. With `persistHistory` off
+    there is nothing to read and it says so (5), rather than reporting an
+    empty list as a quiet night.
+
+    skill prints the agent skill compiled into this binary — the routing
+    document a coding agent loads to drive trill — and `skill install` writes
+    it into each agent client's skills directory. It never overwrites: a file
+    that differs is somebody's edit, and a symlink is somebody else's to
+    manage (on a haus machine the layer already installed it). Both are named
+    and left alone, and the run exits 3 so a caller knows it was only partly
+    honoured.
+
     doctor asks macOS which apps still draw their own banners or play their
     own sounds — the ones you'd otherwise see twice. With no arguments it
     checks the apps your rules.json names; --all checks every app on the Mac.
@@ -798,8 +991,11 @@ enum TrillCLI {
     Disk Access. Without it there is no answer to give and it says so (5)
     rather than exiting 0 while blind.
 
-    exit codes: 0 ok · 1 bad usage · 2 daemon unreachable · 3 daemon refused
+    exit codes: 0 ok · 1 bad usage · 2 daemon unreachable
+                3 refused — the daemon declined the request, or `skill install`
+                  declined to overwrite
                 4 doctor found apps still notifying natively
-                5 doctor could not read macOS's settings (needs Full Disk Access)
+                5 can't tell — doctor could not read macOS's settings (needs
+                  Full Disk Access); history is switched off
     """
 }

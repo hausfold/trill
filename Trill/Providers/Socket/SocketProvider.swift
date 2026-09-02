@@ -11,7 +11,7 @@ struct SocketProvider: NotificationProvider {
     /// One JSON object per line. `v` is the wire version.
     struct Request: Codable, Equatable {
         var v: Int?
-        /// "send" | "ask" | "ping" | "doctor" | "inbox" | "resolve"
+        /// "send" | "ask" | "ping" | "doctor" | "inbox" | "resolve" | "history"
         var verb: String
         var event: NotificationEvent?
         /// resolve: the ids or keys whose banners and fins are answered.
@@ -33,6 +33,10 @@ struct SocketProvider: NotificationProvider {
         /// wait as long as the question stands — an ask parks on the ledge
         /// rather than expiring, so that is a real option.
         var timeout: Double?
+        /// history: which rows to read back. One nested object rather than
+        /// six loose keys, so the query the CLI parsed and the query the
+        /// filter runs are the same value with nothing lost in between.
+        var history: HistoryQuery?
     }
 
     struct Response: Codable {
@@ -61,6 +65,22 @@ struct SocketProvider: NotificationProvider {
         /// `dropped` (see `AskBroker.Outcome`). Present even when `choice`
         /// isn't, because *why* nobody answered is the useful half.
         var outcome: String?
+        /// history only: the rows that answered, newest first. Optional for
+        /// the same reason `findings` is — an older CLI parses a `send` reply
+        /// unchanged — and empty means *nothing matched*, which is a real
+        /// answer here and not the absence of one.
+        var history: [InboxEntry]?
+        /// history only: how many rows the fetch looked at. The verb reads a
+        /// bounded slice (`HistoryQuery.scanLimit`), so a caller that filled
+        /// it has to be told the tail is out of view rather than left to read
+        /// a short list as a complete one.
+        var scanned: Int?
+        /// history only, and the counterpart of `auditUnavailable`: set when
+        /// there is no history to read at all — the user turned `persistHistory`
+        /// off, so nothing was ever written. The reply then means "can't
+        /// tell", and an empty `history` would be the lie: it would say
+        /// "nothing fired" about a night trill never recorded.
+        var historyUnavailable: String?
     }
 
     static func defaultSocketPath() -> String {
@@ -82,6 +102,15 @@ struct SocketProvider: NotificationProvider {
     /// because the answer lives on the main actor and the reply can wait —
     /// the socket writes back whenever the count arrives.
     private let resolve: @Sendable ([String], @escaping @Sendable (Int) -> Void) -> Void
+    /// Reads stored history back for the `history` verb — the same injection
+    /// reason a third time: the provider owns the wire, and trill's database
+    /// belongs to `AppRuntime`. Asynchronous like `resolve` because the handle
+    /// lives on the main actor.
+    ///
+    /// A `nil` page is "can't tell", not "nothing": history is a user switch,
+    /// and the default here answers `nil` on purpose so a provider built
+    /// without a store can never report an empty list as an empty night.
+    private let history: @Sendable (HistoryQuery, @escaping @Sendable (HistoryPage?) -> Void) -> Void
     /// Where a blocked `trill ask` waits. Injected for the same reason as
     /// everything else here: the provider owns the wire, not the screen — it
     /// registers the caller and never learns what became of the banner.
@@ -92,12 +121,14 @@ struct SocketProvider: NotificationProvider {
         listedApps: @escaping @Sendable () -> [String] = { [] },
         openInbox: @escaping @Sendable (Bool) -> Void = { _ in },
         resolve: @escaping @Sendable ([String], @escaping @Sendable (Int) -> Void) -> Void = { _, done in done(0) },
+        history: @escaping @Sendable (HistoryQuery, @escaping @Sendable (HistoryPage?) -> Void) -> Void = { _, done in done(nil) },
         askBroker: AskBroker = AskBroker()
     ) {
         self.path = path
         self.listedApps = listedApps
         self.openInbox = openInbox
         self.resolve = resolve
+        self.history = history
         self.askBroker = askBroker
     }
 
@@ -119,6 +150,7 @@ struct SocketProvider: NotificationProvider {
             let listedApps = self.listedApps
             let openInbox = self.openInbox
             let resolve = self.resolve
+            let history = self.history
             let askBroker = self.askBroker
 
             let server = SocketServer(path: path) { peer in
@@ -198,6 +230,35 @@ struct SocketProvider: NotificationProvider {
                         reply((try? JSONEncoder.trill.encode(answer)) ?? Data(#"{"ok":false}"#.utf8))
                     }
                     return
+                case .history(let query):
+                    // Deferred like `resolve`, and for the same reason: the
+                    // database handle lives on the main actor. `SocketServer`
+                    // holds the connection until the peer closes it, so an
+                    // out-of-band reply is exactly as safe as an inline one.
+                    history(query) { page in
+                        let answer: Response
+                        if let page {
+                            answer = Response(
+                                ok: true, id: nil, error: nil,
+                                history: page.entries, scanned: page.scanned
+                            )
+                        } else {
+                            // Not an error and emphatically not an empty list:
+                            // history is off, so there is nothing to have
+                            // missed *and no way to know* whether anything
+                            // did. Same three-verdict shape as `doctor`.
+                            answer = Response(
+                                ok: true, id: nil, error: nil,
+                                historyUnavailable:
+                                    "history is off — set \"persistHistory\": true in ~/.config/trill/config.json"
+                            )
+                        }
+                        // A fresh encoder, like `resolve` and `ask` above:
+                        // this runs on whatever thread the main actor hands
+                        // it back to, and JSONEncoder isn't Sendable.
+                        reply((try? JSONEncoder.trill.encode(answer)) ?? Data(#"{"ok":false}"#.utf8))
+                    }
+                    return
                 case .failure(let message):
                     response = Response(ok: false, id: nil, error: message)
                 }
@@ -223,6 +284,7 @@ struct SocketProvider: NotificationProvider {
         case doctor(DoctorRequest)
         case inbox(asksOnly: Bool)
         case resolve([String])
+        case history(HistoryQuery)
         case failure(String)
     }
 
@@ -320,6 +382,12 @@ struct SocketProvider: NotificationProvider {
                 .filter { !$0.isEmpty }
             guard !keys.isEmpty else { return .failure("resolve requires at least one key") }
             return .resolve(Array(keys.prefix(NotificationEvent.Limits.resolvedKeys)))
+        case "history":
+            // A missing query is the default one — `trill history` with no
+            // flags is the common call, and an omitted object should mean the
+            // same as an empty one. Clamped because the CLI is not the only
+            // thing that can write to this socket.
+            return .history((request.history ?? HistoryQuery()).clamped())
         case let other:
             return .failure("unknown verb '\(other)'")
         }
