@@ -40,7 +40,7 @@
     in
     {
       # Consume trill from anywhere: `overlays.default` puts `trill` into pkgs.
-      # The rice adds this overlay and installs pkgs.trill in place of the cask.
+      # haus adds this overlay and installs pkgs.trill in place of the cask.
       overlays.default = final: prev: {
         trill = final.callPackage ./nix/package.nix {
           inherit (release) version sha256;
