@@ -112,9 +112,9 @@ extension TrillCLI {
                 }
                 directory = raw
             case "--client":
-                // The same unset-variable trap as --dir: an empty client used
-                // to reach the table and be refused as "unknown client" —
-                // true, and not the sentence for what the caller did.
+                // The same unset-variable trap as --dir: let through, an
+                // empty client reaches the table and is refused as "unknown
+                // client" — true, and not the sentence for what the caller did.
                 guard let raw = iterator.next(), !raw.isEmpty else {
                     return skillUsage("--client wants one of: \(skillClients.joined(separator: ", "))")
                 }
