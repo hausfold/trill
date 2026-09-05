@@ -82,12 +82,19 @@ extension TrillCLI {
     /// standard's word: a tool that ships a second skill and installs only its
     /// first reaches no standalone user with it.
     ///
-    /// It never clobbers, and the two refusals are different sentences. A file
-    /// that exists and *differs* is somebody's edit. A path that is a
-    /// **symlink** belongs to whatever manages the link — on a haus machine
-    /// that is `haus.ai.skill`, pointing into a read-only Nix store, and
-    /// writing through it would either revert on the next rebuild or fail with
-    /// an `EPERM` the user has to decode. Saying which is the whole job.
+    /// It never clobbers, and the two ways it declines are different answers.
+    /// A file that exists and *differs* is somebody's edit, and a file it
+    /// cannot write is a directory somebody else owns: both are the caller's
+    /// request not honoured, named and left alone, and the run exits 3 so the
+    /// caller learns it was only partly honoured. A path that is a **symlink**
+    /// belongs to whatever manages the link — on a haus machine that is
+    /// `haus.ai.skill`, pointing into a read-only Nix store, and writing
+    /// through it would either revert on the next rebuild or fail with an
+    /// `EPERM` the user has to decode. That is the end state holding, not a
+    /// refusal: named, left alone, and a run that finds only links exits 0,
+    /// because a non-zero there would have every agent on a normal haus
+    /// machine report a broken command and retry with force. The three rules
+    /// are A3 of the workshop's `docs/agent-surface.md`.
     static func runSkillInstall(_ args: [String], home: URL? = nil) -> Int32 {
         var directory: String?
         var client: String?
@@ -105,7 +112,10 @@ extension TrillCLI {
                 }
                 directory = raw
             case "--client":
-                guard let raw = iterator.next() else {
+                // The same unset-variable trap as --dir: an empty client used
+                // to reach the table and be refused as "unknown client" —
+                // true, and not the sentence for what the caller did.
+                guard let raw = iterator.next(), !raw.isEmpty else {
                     return skillUsage("--client wants one of: \(skillClients.joined(separator: ", "))")
                 }
                 client = raw
@@ -143,6 +153,11 @@ extension TrillCLI {
 
         var wrote = 0
         var current = 0
+        // Counted apart from `left` because the two are opposite answers
+        // wearing the same word: a symlink is the desired end state holding, a
+        // file that differs is the request not honoured, and only the second
+        // may reach the exit code.
+        var managed = 0
         var left = 0
         for target in targets {
             for skill in EmbeddedSkills.all {
@@ -155,7 +170,7 @@ extension TrillCLI {
                 // straight through it.
                 if isSymlink(folder) || isSymlink(destination) {
                     note("left alone \(destination.path) — a symlink, so something else manages it (on a haus machine, haus.ai.skill already did)")
-                    left += 1
+                    managed += 1
                     continue
                 }
                 if let existing = FileManager.default.contents(atPath: destination.path) {
@@ -186,10 +201,19 @@ extension TrillCLI {
             }
         }
 
-        note("skills: \(wrote) written, \(current) already current, \(left) left alone")
+        // The whole run was somebody else's install holding. Say that in a
+        // sentence rather than as a count of zero: nothing was asked for that
+        // does not already exist.
+        if wrote == 0, current == 0, left == 0, managed > 0 {
+            note("nothing to install: every skill here is already a symlink something else manages (on a haus machine, haus.ai.skill)")
+            note("to place a copy somewhere nothing else manages: trill skill install --dir <path>")
+            return 0
+        }
+        note("skills: \(wrote) written, \(current) already current, \(managed) managed elsewhere, \(left) left alone")
         // Non-zero so a caller learns its request was only partly honoured —
         // "3 refused" reads the same here as it does for the daemon: trill
-        // understood and declined.
+        // understood and declined. Only `left` counts: a symlink was never
+        // this verb's file to write.
         return left > 0 ? 3 : 0
     }
 
