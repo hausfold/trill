@@ -57,7 +57,7 @@ quiet hours, a locked screen) — not "unopened".
 | 0 | **accepted** by the daemon — not necessarily drawn | see below |
 | 1 | bad usage | fix the flags; `--title` is required unless `--json` |
 | 2 | daemon unreachable | Trill isn't running — tell the user to launch it |
-| 3 | refused: bad JSON, empty title, a verb this daemon doesn't know, `skill install` not overwriting | fix the call, or update Trill |
+| 3 | refused: bad JSON, empty title, a verb this daemon doesn't know, `skill install` leaving a file that differs alone (a symlink haus manages is not that: exit 0) | fix the call, or update Trill |
 | 4 | `doctor`: apps found still notifying natively | report the list |
 | 5 | **can't tell**: `doctor` can't read macOS's settings, or `history` is switched off | needs Full Disk Access · **not** "all quiet" and **not** "nothing fired" |
 
