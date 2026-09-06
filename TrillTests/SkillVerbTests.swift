@@ -87,7 +87,10 @@ final class SkillVerbTests: XCTestCase {
             at: target.appendingPathComponent("trill"), withDestinationURL: elsewhere
         )
 
-        XCTAssertEqual(TrillCLI.runSkillInstall(["--dir", target.path]), 3)
+        XCTAssertEqual(
+            TrillCLI.runSkillInstall(["--dir", target.path]), 0,
+            "the link is somebody else's install holding — the end state, not a refusal; a 3 here has every agent on a haus machine retry with force"
+        )
         XCTAssertFalse(
             FileManager.default.fileExists(atPath: elsewhere.appendingPathComponent("SKILL.md").path),
             "nothing may be written through the link"
@@ -96,6 +99,9 @@ final class SkillVerbTests: XCTestCase {
 
     func testTheWaysInstallRefusesToGuessWhere() throws {
         XCTAssertEqual(TrillCLI.runSkillInstall(["--dir", ""]), 1, "an empty --dir is an unset variable")
+        XCTAssertEqual(TrillCLI.runSkillInstall(["--client", ""]), 1, "and so is an empty --client")
+        XCTAssertEqual(TrillCLI.runSkillInstall(["--dir"]), 1, "a flag with nothing after it is usage, not a silent exit")
+        XCTAssertEqual(TrillCLI.runSkillInstall(["--client"]), 1)
         XCTAssertEqual(TrillCLI.runSkillInstall(["--dir", "/tmp", "--client", "claude"]), 1)
         XCTAssertEqual(TrillCLI.runSkillInstall(["--client", "emacs"]), 1)
         XCTAssertEqual(TrillCLI.runSkillInstall(["--wat"]), 1)

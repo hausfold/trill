@@ -371,8 +371,12 @@ Xcode's. `scripts/generate-skills.sh` bakes `ai/**/SKILL.md` into
 **committed**, and `scripts/check-skills.sh` regenerates into a temp file and
 diffs — so editing the Markdown without regenerating is a red CI run rather than
 a binary confidently printing last week's prose. `install` never clobbers: a
-file that differs is somebody's edit, and a **symlink is haus's**, refused by
-name rather than by `EPERM`.
+file that differs is somebody's edit, left alone and exit 3, and a **symlink is
+haus's**, named rather than met with an `EPERM` — and not counted as a
+refusal, because on a haus machine that link is the layer's install holding,
+so the run exits 0. `--dir` with `--client`, or either flag with a missing or
+empty value, is usage before anything is written. The three rules are A3 of
+the workshop's `docs/agent-surface.md`.
 
 `nix/skill.nix` ships the prose as `pkgs.trill-skill` (`$out/trill/SKILL.md`)
 and runs the same guard script — the frontmatter half only, because it has no

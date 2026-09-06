@@ -996,10 +996,11 @@ enum TrillCLI {
     skill prints the agent skill compiled into this binary — the routing
     document a coding agent loads to drive trill — and `skill install` writes
     it into each agent client's skills directory. It never overwrites: a file
-    that differs is somebody's edit, and a symlink is somebody else's to
-    manage (on a haus machine the layer already installed it). Both are named
-    and left alone, and the run exits 3 so a caller knows it was only partly
-    honoured.
+    that differs is somebody's edit, named and left alone, and the run exits 3
+    so a caller knows it was only partly honoured. A symlink is somebody
+    else's to manage (on a haus machine the layer already installed it): named,
+    left alone, and not a refusal — the run exits 0. --dir with --client, or
+    either flag with no value, is refused before anything is written.
 
     doctor asks macOS which apps still draw their own banners or play their
     own sounds — the ones you'd otherwise see twice. With no arguments it
