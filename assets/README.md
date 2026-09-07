@@ -10,16 +10,18 @@ and sits next to perch's `green` cards and pounce's `peach` input bar.
 
 | file | what it is |
 |---|---|
+| `trill-icon-master.svg` | **The mark's source of record.** The same geometry in a 100-unit viewBox, colours as nebelung hexes; the brand kit's `docs/design.md` is the standard it answers to. The PNG master renders from it, at any size. |
 | `trill-icon-master.png` | 2048×2048 source for the macOS app-icon slots. |
 | `trill-banner.png` | 1200×348 identity banner — the yellow wordmark beside the mark on a rounded graphite tile, on the family's shared banner lockup. What the README opens with. |
 
 Those hexes are **baked into the PNGs**. Nothing here follows
 `~/.config/trill/theme.json`, which retints the cards trill *draws* at runtime:
 these files are the trill surfaces a theme cannot reach. A palette change in
-nebelung means re-rendering the icon master and every slot by hand — and
-redrawing `trill-banner.png` from the brand kit, which the `sips` loop below
-cannot do for you: it derives square slots from the 2048² master and there is
-no source for the wordmark lockup in this repo.
+nebelung means swapping the hexes in `trill-icon-master.svg`, re-rendering the
+PNG master from it and then every slot — and redrawing `trill-banner.png` from
+the brand kit, which neither the SVG nor the `sips` loop below can do for you:
+the loop derives square slots from the 2048² master, and there is no source for
+the wordmark lockup in this repo.
 
 `Trill/Assets.xcassets/AppIcon.appiconset/*.png` are mechanically scaled from
 the master; `actool` compiles them into `Assets.car` and writes
@@ -27,6 +29,10 @@ the master; `actool` compiles them into `Assets.car` and writes
 resource. Regenerate every slot with:
 
 ```sh
+# the PNG master, from the vector one. resvg is what the committed PNG was
+# checked against; a different rasteriser will not land byte-for-byte on it.
+nix run nixpkgs#resvg -- assets/trill-icon-master.svg assets/trill-icon-master.png
+
 for pair in 16x16:16 16x16@2x:32 32x32:32 32x32@2x:64 128x128:128 \
             128x128@2x:256 256x256:256 256x256@2x:512 512x512:512 512x512@2x:1024; do
   sips -s format png -Z "${pair#*:}" assets/trill-icon-master.png \
@@ -34,9 +40,9 @@ for pair in 16x16:16 16x16@2x:32 32x32:32 32x32@2x:64 128x128:128 \
 done
 ```
 
-Keep the master rather than upscaling a slot — `512x512@2x` already wants 1024,
-and there is no vector master. If hausfold.co, a cask, or Icon Composer ever
-needs one, it has to be drawn.
+Keep the PNG master rather than upscaling a slot — `512x512@2x` already wants
+1024. If something ever wants vector rather than a raster slot, it takes
+`trill-icon-master.svg`; nothing does today.
 
 ## Two things the master deliberately does not do
 
