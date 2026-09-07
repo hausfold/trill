@@ -124,8 +124,9 @@ invariants and its hard cases — read that before changing one.
 **`~/.config/trill/config.json` is the source of truth for every app-level
 switch**; Settings is a view onto it, live both ways through the watcher shape
 `rules.json` uses. UserDefaults holds only UI ephemera — window frame, selected
-pane, the one-shot flags the Full Disk Access flow arms across a relaunch. One
-symlinked into the Nix store is refused read-only, and Settings says so.
+pane, the one-shot flags the Full Disk Access flow arms across a relaunch. A
+`config.json` symlinked into the Nix store is refused read-only, and Settings
+says so.
 
 - A switch goes into `AppConfig` both ways (`init(json:)` and `json`) and a
   pane. An unnamed key is its default; unknown keys survive writes verbatim.
