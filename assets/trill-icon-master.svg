@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="2048" height="2048">
+  <!-- trill, the tile and the app icon source. The card wears the ears.
+       Source of record for this mark: the PNGs beside it render from this file.
+       Shapes, colour roles and the rules they answer to are in the brand kit's
+       docs/design.md, under Components. The ears are the family path, used
+       verbatim: move, scale or recolour them, never redraw them. -->
+  <clipPath id="trill-tile"><rect width="100" height="100" rx="24"/></clipPath>
+  <g clip-path="url(#trill-tile)">
+    <rect width="100" height="100" fill="#343434"/>
+    <g fill="#f7e2b5" transform="translate(14 0) scale(0.72)">
+      <path d="M 18 13 Q 34 18 47 24 Q 34 35 30.5 57 Q 20 34 18 13 Z"/>
+      <path d="M 82 13 Q 66 18 53 24 Q 66 35 69.5 57 Q 80 34 82 13 Z"/>
+    </g>
+    <rect x="14" y="52" width="72" height="34" rx="10" fill="#494949"/>
+    <circle cx="26" cy="63" r="4.5" fill="#f7e2b5"/>
+    <rect x="36" y="59" width="38" height="5" rx="2.5" fill="#5c5c5c"/>
+    <rect x="36" y="69" width="26" height="5" rx="2.5" fill="#5c5c5c"/>
+  </g>
+</svg>
