@@ -25,7 +25,7 @@ where that would work.
 | whether `trill` resolves on PATH | by install source: `nix/package.nix` ships `bin/trill`, `scripts/dev-install.sh` links into a login-PATH directory, and a script-less install is `SystemIntegration.ensureCLILink`, which defers to anything already answering. Keep [`docs/install.md`](./docs/install.md)'s table honest |
 | the palette (source hex) | `nebelung` |
 | the family the text is set in | here — `fontFamily` in `config.json`; the name comes from the desktop (`haus.fonts.sans.name`), and trill installs and validates no font |
-| the mark — app icon, README banner | here: `assets/trill-icon-master.png`, `assets/trill-banner.png`, nebelung's `yellow` / `surface0` / `surface1` / `surface2` baked in, so a palette change re-renders the master and the `Trill/Assets.xcassets/AppIcon.appiconset` slots ([`assets/README.md`](./assets/README.md)) — `~/.config/trill/theme.json` never reaches them. Keep the icon flat; macOS 26 adds inset, shadow, gloss |
+| the mark — app icon, README banner | here: `assets/trill-icon-master.png`, `assets/trill-banner.png`, nebelung's `yellow` / `surface0` / `surface1` / `surface2` baked in, so a palette change re-renders the master and the `Trill/Assets.xcassets/AppIcon.appiconset` slots ([`assets/README.md`](./assets/README.md)); the banner has no source here and is redrawn from the brand kit. `~/.config/trill/theme.json` never reaches them. Keep the icon flat; macOS 26 adds inset, shadow, gloss |
 | DND / Focus toggling ("Hush") | `haus`, deep-linked from Settings; *reading* the Focus is here (`Platform/FocusWatch`) |
 | which calendars sync at all | Apple's Calendar / Internet Accounts — trill reads only what EventKit has |
 | the tunnel fronting the GitHub bridge (cloudflared, DNS, the org webhook) | `haus` — trill listens on localhost only |
@@ -50,8 +50,10 @@ invariants and its hard cases — read that before changing one.
 - **No sound**, even for critical. **No notification content in logs** — ids and
   source slugs; `Logger` privacy annotations are load-bearing. **Never steal
   focus**: non-activating panels, and only a window the user summoned takes key.
-- **System Mirror is quarantined.** `SQLITE_OPEN_READONLY`, schema-probed each
-  session, off with a visible reason on drift; no usernoted type or column name
+- **System Mirror is quarantined.** `SQLITE_OPEN_READONLY`, schema-probed every
+  session — tables *and* the columns the reader reads — off with a visible
+  reason on drift; opt-in and experimental, and the app stays fully useful
+  without it. No usernoted type or column name
   out of `Providers/SystemMirror/` (a `UsernotedRecord` crosses); every decision
   `SystemMirrorMapper`'s and pure. `systemMirrorApps` is absent, a list, or `[]`, read through
   `SystemMirrorMapper.isAllowed` on the slug `rules.json` matches, unticked rows
@@ -80,26 +82,36 @@ invariants and its hard cases — read that before changing one.
   `NotificationSettingsAudit.walkable` is the only door the walkthrough,
   **Silence…** and `doctor --notify` take: no row (bit 7,
   `com.apple.SoftwareUpdateNotification`) is a notice, never a step, and a
-  `silenceNative` click with nothing walkable opens the pane. The Apps pane
+  `silenceNative` click with nothing walkable opens the pane. The tick is a
+  *request* and the line under it a *reading* — a row goes green because the
+  audit says macOS is quiet, never because the switch moved. **Silence… is
+  offered only on apps trill draws.** The Apps pane
   lists `everyListedApp`, not `findings`.
 - **A resolver is named on the wire and declared in `rules.json`.** An `ask`
   clears through `trill resolve`, an event carrying `resolves`, or a `--until`
   poller: argv via `/usr/bin/env`, no shell, wire arguments only into
   `$1`…`$9`, never a leading `-`; a poller that gives up leaves the fin.
   **`trill ask` blocks the caller, never the compositor** — `AskBroker` resolves
-  once, first wins, and anything but a pressed pill exits **75**. `reply`
+  once, first wins, and anything but a pressed pill exits **75**. Resolution is
+  one-way: nothing puts an answered question back on screen. `reply`
   actions are daemon-minted; a fin restored after a restart loses its pills.
 - **A Focus is read, never written, and it is a routing rule.** `PolicyEngine`
-  takes `SystemFocus` (`FocusReader`) beside the clock; `critical` punches
+  takes `SystemFocus` (`FocusReader`) beside the clock: chatter goes to the
+  inbox, **faults still land**, and an `ask` goes **straight to the ledge** — a
+  question swallowed is a caller blocked forever. `critical` punches
   through, quiet hours have the last word.
   `~/Library/DoNotDisturb/DB/Assertions.json`, the same three verdicts,
   can't-tell failing open, and only `storeAssertionRecords` says on —
   `storeInvalidationRecords` is history.
-- **Shyness is ambient, a rendering rule.** Polled, never notified;
-  `NSScreen.isCaptured`, not `CGDisplayIsCaptured`. The indicator's geometry,
-  never `kCGWindowName` (Screen Recording permission). The queue never learns
-  it.
-- **The catch-up card is a tally, never a replay.** `PresenceSentinel` listens,
+- **Shyness is ambient, a rendering rule.** Screen capture, camera or mic (one
+  indicator, no telling them apart) or a mirrored display, and every card draws
+  its **redacted form**. Polled, never notified, because no API reports
+  capture: `NSScreen.isCaptured` is UIKit's and `CGDisplayIsCaptured` died in
+  10.9. Read the indicator's *geometry*, never `kCGWindowName` (Screen
+  Recording permission). The queue never learns it.
+- **The catch-up card is a tally, never a replay.** One low card on unlock and
+  only then, counted by kind (asks lead), capped at a day back, and **not drawn
+  at all when nothing landed**. `PresenceSentinel` listens,
   never reads; ignores quiet hours; composes like `DigestCard` into the queue;
   its click is a query (`InboxScope.since`). **A banner drawn at a locked screen
   was never seen** — `AppDatabase.insert` stores it unread with the decision.
@@ -112,12 +124,16 @@ invariants and its hard cases — read that before changing one.
   never redacts (`--redact` and shyness are for cards drawn *at* someone); every
   action is a pill except `reply`.
 - **A progress card is an update, not an arrival.** `progress` (0…1) plus a
-  `key` takes over the card wearing that key; `isProgressTick` keeps ticks out
-  of the database and digest tallies; a tick never re-arms the clock. The card
-  parks as a fin through `expire`, yields to a question when a sixth lands,
-  comes down after `progressStallTimeout`, and is never written to the ledge
-  store or restored. `scripts/nix-progress.sh` is the reference driver,
-  heartbeat included.
+  `key` takes over the card wearing that key — the only exception to **a
+  re-send is a second arrival** besides the ledge's supersede. It never
+  replaces an `ask`, whatever key it carries. `isProgressTick` keeps ticks out
+  of the database and digest tallies; a tick never re-arms the clock; a card
+  the user swatted hushes its own ticks until the ending. The card
+  parks as a fin through `expire`, later ticks fill it in place, it yields to a
+  question when a sixth lands, comes down after `progressStallTimeout`, and is
+  never written to the ledge store or restored; **the ending takes it down and
+  draws the one card worth drawing**. `scripts/nix-progress.sh` is the
+  reference driver, heartbeat included.
 
 ## Settings are a file
 
