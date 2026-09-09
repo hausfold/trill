@@ -2,7 +2,7 @@
 
 Trill's mark is the family's paired cat-ears sitting over its own detail: a
 notification banner — an avatar dot and two lines of text — which is the thing
-trill draws. Flat geometry in four
+trill draws. The standard tile is flat geometry in four
 [nebelung](https://github.com/hausfold/nebelung) tokens: `yellow` (#F7E2B5) for
 the ears and the dot, `surface0` (#343434) for the tile, `surface1` (#494949)
 for the banner card, `surface2` (#5C5C5C) for the text lines. It reads at 16 px
@@ -24,8 +24,9 @@ the way nebelung's second fog layer does.
 Those hexes are **baked into the PNGs**. Nothing here follows
 `~/.config/trill/theme.json`, which retints the cards trill *draws* at runtime:
 these files are the trill surfaces a theme cannot reach. A palette change in
-nebelung means swapping the hexes in `trill-icon-master.svg`, re-rendering the
-PNG master from it and then every slot — and redrawing `trill-banner.png` from
+nebelung means swapping the hexes in **both** SVGs — `trill-icon-master.svg`
+and `trill-square-inverted.svg` — re-rendering each PNG from its own source and
+then every slot — and redrawing `trill-banner.png` from
 the brand kit, which neither the SVG nor the `sips` loop below can do for you:
 the loop derives square slots from the 2048² master, and there is no source for
 the wordmark lockup in this repo.
@@ -33,12 +34,11 @@ the wordmark lockup in this repo.
 `Trill/Assets.xcassets/AppIcon.appiconset/*.png` are mechanically scaled from
 the master; `actool` compiles them into `Assets.car` and writes
 `CFBundleIconName`, so the app icon is a build product, not a checked-in bundle
-resource. Regenerate every slot with:
+resource. Regenerate both PNGs and every slot with:
 
 ```sh
 # both PNGs, from their vector sources. resvg is what the committed PNGs were
 # checked against; a different rasteriser will not land byte-for-byte on them.
-# Only the first is an app-icon master; the inverted tile has no slots.
 nix run nixpkgs#resvg -- assets/trill-icon-master.svg assets/trill-icon-master.png
 nix run nixpkgs#resvg -- assets/trill-square-inverted.svg assets/trill-square-inverted.png
 
