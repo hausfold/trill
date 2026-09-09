@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="2048" height="2048">
+  <!-- trill, the inverted tile. The card wears the ears.
+       Source of record for this mark: the PNGs beside it render from this file.
+       Shapes, colour roles and the rules they answer to are in the brand kit's
+       docs/design.md, under Components. The ears are the family path, used
+       verbatim: move, scale or recolour them, never redraw them.
+       The text lines sit ON the inverted card, so they step darker (mantle at
+       0.45) rather than dimming to the card's own colour, the way nebelung's
+       second fog layer does. -->
+  <clipPath id="trill-inv-tile"><rect width="100" height="100" rx="24"/></clipPath>
+  <g clip-path="url(#trill-inv-tile)">
+    <rect width="100" height="100" fill="#f7e2b5"/>
+    <g fill="#343434" transform="translate(14 0) scale(0.72)">
+      <path d="M 18 13 Q 34 18 47 24 Q 34 35 30.5 57 Q 20 34 18 13 Z"/>
+      <path d="M 82 13 Q 66 18 53 24 Q 66 35 69.5 57 Q 80 34 82 13 Z"/>
+    </g>
+    <rect x="14" y="52" width="72" height="34" rx="10" fill="#343434"/>
+    <circle cx="26" cy="63" r="4.5" fill="#f7e2b5"/>
+    <rect x="36" y="59" width="38" height="5" rx="2.5" fill="#191919" opacity="0.45"/>
+    <rect x="36" y="69" width="26" height="5" rx="2.5" fill="#191919" opacity="0.45"/>
+  </g>
+</svg>
