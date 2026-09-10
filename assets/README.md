@@ -8,6 +8,13 @@ the ears and the dot, `surface0` (#343434) for the tile, `surface1` (#494949)
 for the banner card, `surface2` (#5C5C5C) for the text lines. It reads at 16 px
 and sits next to perch's `green` cards and pounce's `peach` input bar.
 
+The light tile is the same drawing in nebelung's latte set. That ramp runs the
+other way, so the tile is `base` (#F1F1F1), its lightest neutral, and the card
+`surface1` (#C0C0C0) and the text lines `surface2` (#B0B0B0) step darker than
+the tile instead of lighter; the ears and the dot are latte `yellow` (#D99137).
+A light artifact is latte, and there is no light *inverted* tile — an inverted
+one already carries its own colour.
+
 The inverted tile turns that over — yellow ground, `surface0` ears and card,
 the dot still yellow — and swaps the two text lines for `mantle` (#191919) at
 0.45, because on the inverted card a gray steps darker rather than lighter,
@@ -17,16 +24,18 @@ the way nebelung's second fog layer does.
 |---|---|
 | `trill-icon-master.svg` | **The mark's source of record.** The same geometry in a 100-unit viewBox, colours as nebelung hexes; the brand kit's `docs/design.md` is the standard it answers to. The PNG master renders from it, at any size. |
 | `trill-icon-master.png` | 2048×2048 source for the macOS app-icon slots. |
-| `trill-square-inverted.svg` | **The inverted tile's source of record**, same geometry, same viewBox: yellow ground, dark shapes. For a light surface, and for the logo sheet where the standard tile would disappear into the page. |
+| `trill-square-inverted.svg` | **The inverted tile's source of record**, same geometry, same viewBox: yellow ground, dark shapes. For a light *page*, where latte would clash with the page's own palette, and for the logo sheet where the standard tile would disappear into it. The light tile is the one for a light *artifact*. |
 | `trill-square-inverted.png` | 2048×2048, rendered from it. Not an app-icon source: the app icon is the standard tile. |
+| `trill-square-latte.svg` | **The light tile's source of record**, same geometry, same viewBox, in nebelung's latte set. |
+| `trill-square-latte.png` | 2048×2048, rendered from it. Not an app-icon source: the app icon is the standard tile. |
 | `trill-banner.png` | 1200×348 identity banner — the yellow wordmark beside the mark on a rounded graphite tile, on the family's shared banner lockup. What the README opens with. |
 
 Those hexes are **baked into the PNGs**. Nothing here follows
 `~/.config/trill/theme.json`, which retints the cards trill *draws* at runtime:
 these files are the trill surfaces a theme cannot reach. A palette change in
-nebelung means swapping the hexes in **both** SVGs — `trill-icon-master.svg`
-and `trill-square-inverted.svg` — re-rendering each PNG from its own source and
-then every slot — and redrawing `trill-banner.png` from
+nebelung means swapping the hexes in **all three** SVGs — `trill-icon-master.svg`,
+`trill-square-inverted.svg` and `trill-square-latte.svg` — re-rendering each PNG
+from its own source and then every slot — and redrawing `trill-banner.png` from
 the brand kit, which neither the SVG nor the `sips` loop below can do for you:
 the loop derives square slots from the 2048² master, and there is no source for
 the wordmark lockup in this repo.
@@ -34,13 +43,17 @@ the wordmark lockup in this repo.
 `Trill/Assets.xcassets/AppIcon.appiconset/*.png` are mechanically scaled from
 the master; `actool` compiles them into `Assets.car` and writes
 `CFBundleIconName`, so the app icon is a build product, not a checked-in bundle
-resource. Regenerate both PNGs and every slot with:
+resource. Regenerate the PNGs and every slot with:
 
 ```sh
-# both PNGs, from their vector sources. resvg is what the committed PNGs were
-# checked against; a different rasteriser will not land byte-for-byte on them.
+# resvg is what the committed PNGs were checked against; a different rasteriser
+# will not land byte-for-byte on them. The inverted and light PNGs round-trip
+# exactly; the master predates its SVG and does not, so re-rendering it rewrites
+# it and all ten slots below. Run that line deliberately, not as part of a
+# palette swap.
 nix run nixpkgs#resvg -- assets/trill-icon-master.svg assets/trill-icon-master.png
 nix run nixpkgs#resvg -- assets/trill-square-inverted.svg assets/trill-square-inverted.png
+nix run nixpkgs#resvg -- assets/trill-square-latte.svg assets/trill-square-latte.png
 
 for pair in 16x16:16 16x16@2x:32 32x32:32 32x32@2x:64 128x128:128 \
             128x128@2x:256 256x256:256 256x256@2x:512 512x512:512 512x512@2x:1024; do
