@@ -93,9 +93,9 @@ empties the moment you switch it off.
 banners, the ledge, the inbox and Settings alike; empty, the default, means
 whatever macOS is using. It is a family *name*, not a file: trill installs
 nothing, and CoreText answers a name this Mac doesn't have with the system face
-and no complaint, so Settings ▸ General says which of the two happened. Runs
-monospaced on purpose — a source slug, a timestamp — stay monospaced, and an SF
-Symbol keeps Apple's metrics.
+and no complaint, so Settings ▸ General says which of the two happened. Runs that
+are monospaced on purpose — a source slug, a timestamp — stay monospaced, and an
+SF Symbol keeps Apple's metrics.
 
 `systemMirrorApps` is the one key with no default, because its *absence* is
 itself a value: absent, the mirror draws every app it sees; a list means exactly

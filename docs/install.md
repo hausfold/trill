@@ -14,9 +14,9 @@ the app.
 Then, if you use a coding agent, `trill skill install` writes trill's
 [agent skill](../ai/SKILL.md) into every client it finds (Claude Code, Codex,
 OpenCode, pi), so *"tell me when this build finishes"* works first try. It never
-overwrites: anything already there and different is named and left alone. Skip
-it on a haus machine — the layer installed the same file, and the command says
-so rather than fighting it for the path.
+overwrites: anything already there and different is named and left alone. On a
+haus machine you can skip it — the layer installed the same file, and the
+command says so rather than fighting it for the path.
 
 ## Nix
 
@@ -57,7 +57,10 @@ link written there is gone at the next rebuild.
 
 The app's own turn is timid: it links only when nothing else already answers
 `trill`, never replaces a real file on the name, and never claims it from a
-Debug build. Turn it off with `"cliLink": false` in
+Debug build. On a desktop that copies the bundle to a fixed path there is no
+fourth row and nothing for the app to do — haus's
+`haus.notifications.compositor` ships its own `trill` wrapper, which resolves
+that fixed path at call time. Turn it off with `"cliLink": false` in
 `~/.config/trill/config.json`, or in **Settings ▸ General** — which also tells
 you what `trill` resolves to right now, and says so when the link is placed but
 its directory is on no PATH.

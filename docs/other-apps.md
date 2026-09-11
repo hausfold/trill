@@ -27,9 +27,9 @@ is what decides whether the mirror is any use to you. The card's *timestamp* is
 exact, so a late card still says when the thing happened.
 
 **Which apps it draws is yours to pick.** Settings' **Apps** pane lists every app
-System Settings itself lists, one tick each, and writes the ticked ones to
-[`systemMirrorApps`](rules.md#configjson--the-apps-own-switches). Ticking an app
-later starts it from the present rather than replaying what it missed.
+System Settings itself lists, one tick each, and writes the ticked ones to `systemMirrorApps` in
+[`config.json`](rules.md#configjson--the-apps-own-switches). Ticking an app later
+starts it from the present rather than replaying what it missed.
 
 ## 3. Silencing Apple's own banners — yours to click
 
@@ -48,10 +48,11 @@ trill doctor --notify   # …and put the findings on screen, click to be walked 
 trill doctor --json     # for a hook
 ```
 
-It reads Apple's per-app preferences read-only and reports every app that still
-has **Desktop** ticked or **Play sound** on. **Exit 4** means it found some, so a
-rebuild hook can gate on it. The default set is the bundle-id-shaped `source`
-values in your `rules.json`; naming bundle ids narrows it further.
+It reads Apple's per-app preferences read-only and reports every app in scope
+that still has **Desktop** ticked or **Play sound** on. **Exit 4** means it found
+some, so a rebuild hook can gate on it. The default scope is the bundle-id-shaped
+`source` values in your `rules.json`; naming bundle ids narrows it, `--all`
+widens it to the whole Mac.
 
 ### Exit 5 is a real answer: *can't tell*
 
@@ -77,13 +78,12 @@ narrows to what's left, and the replica drops the step you've done.
 
 The helper only walks the apps the audit that opened it named, and **Silence…**
 is offered only for apps trill draws: silencing one trill isn't drawing
-de-duplicates nothing, it just loses the notification. Widening to every app on
-the Mac takes typing `--all`.
+de-duplicates nothing — it just loses you the notification.
 
-On macOS 26 (Tahoe) the pane is a **Desktop** checkbox plus a
-Temporary/Persistent choice that only applies while Desktop is ticked, where
-macOS 14 and 15 have a None/Banners/Alerts radio. Notification Center and Lock
-Screen stay ticked either way — trill redraws the banner, it doesn't replace the
+The pane changed shape in macOS 26 (Tahoe): the old None/Banners/Alerts radio is
+now a **Desktop** checkbox plus a Temporary/Persistent choice that only applies
+while Desktop is ticked, and the replica mimes that one. Notification Center and
+Lock Screen stay ticked — trill redraws the banner, it doesn't replace the
 notification.
 
 ### An app with no row
