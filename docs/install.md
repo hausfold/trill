@@ -11,12 +11,12 @@ right-click dance. There's no Dock icon: a small dotted circle in the menu bar �
 Inbox, Settings, Report a Bug, Quit — is the whole chrome, and the banners are
 the app.
 
-Then, if you use a coding agent, `trill skill install` — it writes trill's
+Then, if you use a coding agent, `trill skill install` writes trill's
 [agent skill](../ai/SKILL.md) into every client it finds (Claude Code, Codex,
 OpenCode, pi), so *"tell me when this build finishes"* works first try. It never
 overwrites: anything already there and different is named and left alone. On a
-haus machine you can skip it — the layer installed the same file already, and
-the command will tell you so rather than fighting it for the path.
+haus machine you can skip it — the layer installed the same file, and the
+command says so rather than fighting it for the path.
 
 ## Nix
 
@@ -35,8 +35,7 @@ On [haus](https://github.com/hausfold/haus) it's one line —
 would drop Full Disk Access on the rebuild that installed the fix) and installs
 the agent skill into every AI client on the machine.
 
-Building and feel-testing from a checkout is `AGENTS.md` ▸ Verifying, which is
-where that decision is stated once.
+Building and feel-testing from a checkout is `AGENTS.md` ▸ Verifying.
 
 ## what puts `trill` on your PATH
 
@@ -56,17 +55,15 @@ by default on macOS, so hardcoding it writes a file that exists and a command
 that never runs. Nix-managed bins are skipped even when they *are* on PATH — a
 link written there is gone at the next rebuild.
 
-The app's own turn is deliberately timid. It places the link only when nothing
-else already answers `trill`, never replaces a real file sitting on the name,
-and never claims the name from a Debug build. Turn it off with `"cliLink":
-false` in `~/.config/trill/config.json`, or in **Settings ▸ General** — which
-also tells you what `trill` resolves to right now, and says so plainly when the
-link is placed but its directory is on no PATH.
+The app's own turn is timid: it links only when nothing else already answers
+`trill`, never replaces a real file on the name, and never claims it from a
+Debug build. On a desktop that copies the bundle to a fixed path there is no
+fourth row and nothing for the app to do — haus's
+`haus.notifications.compositor` ships its own `trill` wrapper, which resolves
+that fixed path at call time. Turn it off with `"cliLink": false` in
+`~/.config/trill/config.json`, or in **Settings ▸ General** — which also tells
+you what `trill` resolves to right now, and says so when the link is placed but
+its directory is on no PATH.
 
 **`trill: command not found` is not "trill isn't installed."** The app is always
 its own CLI: `/Applications/Trill.app/Contents/MacOS/Trill` takes every verb.
-
-(A desktop that copies the bundle to a fixed path adds no fourth row. haus's
-`haus.notifications.compositor` room puts nothing on PATH itself — grants are
-keyed per app path, and its own `trill` wrapper resolves that path at call time,
-which is the right shape when whether the bundle exists is a runtime fact.)

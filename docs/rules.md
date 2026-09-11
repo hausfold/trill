@@ -6,9 +6,8 @@ better, and the two files below are where that was decided. (`trill ask` is the
 exception: there the exit code is the pill pressed, and **75 means nobody
 answered, which is never consent.**)
 
-Everything trill decides is decided from two JSON files in
-`~/.config/trill/`. Both are hot-reloaded on save, and Settings is a *view*
-onto them: anything you can click you can type, and vice versa, without a
+Both files live in `~/.config/trill/`, both hot-reload on save, and Settings is a
+*view* onto them: anything you can click you can type, and vice versa, without a
 restart.
 
 ## `rules.json` — what gets through, and where
@@ -36,13 +35,11 @@ First matching rule wins. No match means banner.
   "quietHours": { "startMinute": 1320, "endMinute": 420 },
 
   // What a *Focus* means, per kind. trill reads the Focus macOS is in — it
-  // never turns one on or off. This block is the shipped default, so a file
-  // that never mentions it behaves exactly like this: chatter stops
-  // interrupting, faults still land, and a question parks on the ledge as a fin
-  // instead of being swallowed (somebody is blocked on the answer). Name one
-  // kind and the rest keep their defaults. `critical` punches through
-  // regardless, the way it does through quiet hours — and quiet hours have the
-  // last word over all of it.
+  // never turns one on or off. This block IS the shipped default, so a file
+  // that never mentions it behaves exactly like this, and naming one kind
+  // leaves the rest at theirs. `critical` punches through regardless, the way
+  // it does through quiet hours — and quiet hours have the last word over all
+  // of it.
   "focus": { "default": "inbox", "fault": "banner", "ask": "ledge" },
 
   // What `--until NAME` may name. The command lives here, in your file — never
@@ -93,12 +90,12 @@ reporting an empty list as a quiet night. Same for the inbox window, which
 empties the moment you switch it off.
 
 `fontFamily` is the proportional family every card, row and pane is set in —
-banners, the ledge, the inbox and Settings alike. Empty, the default, means
+banners, the ledge, the inbox and Settings alike; empty, the default, means
 whatever macOS is using. It is a family *name*, not a file: trill installs
 nothing, and CoreText answers a name this Mac doesn't have with the system face
-and no complaint, so Settings ▸ General says which of the two happened. Runs
-that are monospaced on purpose — a source slug, a timestamp — stay monospaced,
-and an SF Symbol keeps Apple's metrics.
+and no complaint, so Settings ▸ General says which of the two happened. Runs that
+are monospaced on purpose — a source slug, a timestamp — stay monospaced, and an
+SF Symbol keeps Apple's metrics.
 
 `systemMirrorApps` is the one key with no default, because its *absence* is
 itself a value: absent, the mirror draws every app it sees; a list means exactly
