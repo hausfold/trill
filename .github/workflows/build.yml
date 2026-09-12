@@ -6,6 +6,14 @@ on:
   pull_request:
   workflow_dispatch:
 
+# A second push to a PR branch makes the first run's answer worthless, and the
+# abandoned run still holds a runner — on the macOS ones, a queue slot the next
+# PR then waits behind. Only PR runs cancel: a push to main is a distinct commit
+# whose tick someone may need to read back.
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 env:
   DEVELOPER_DIR: /Applications/Xcode_26.2.app/Contents/Developer
 
