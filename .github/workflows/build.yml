@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
 
 # A second push to a PR branch makes the first run's answer worthless, and the
-# abandoned run still holds a runner — which on this repo is the macOS runner every
+# abandoned run still holds a runner — which on this repo is a macOS runner every
 # job here needs.
 #
 # Only a PR run is ever in a shared group. Everything else keys on the commit,
@@ -24,23 +24,51 @@ env:
   DEVELOPER_DIR: /Applications/Xcode_26.2.app/Contents/Developer
 
 jobs:
-  build-and-test:
-    name: Native build and tests
+  # Two macOS jobs, cut at the one boundary the steps actually have: a
+  # `-derivedDataPath`. `Test` and `Analyze` share a Debug DerivedData —
+  # `Analyze` is ~6s only because it reads what `Test` already built, so it must
+  # stay below it — while `Release build` and the instrumentation guard share a
+  # Release one. Nothing crosses, so neither job `needs:` the other and they run
+  # side by side.
+  #
+  # One job before this: 13s of fixed cost, 72s `Test`, 6s `Analyze`, 54s
+  # `Release build`, 3s of guard — 151s mean over seven runs, and the only job in
+  # the repo, so it was the gate by default.
+  #
+  # Run both ways, seven pairs alternating `main` with this shape,
+  # `workflow_dispatch`, one run in flight at a time so both arms saw the same
+  # runners: the gate goes 151s mean / 153s median to 103s / 107s, a median 61s
+  # off comparing the two shapes INSIDE each run (mean 55s, range 33-74s, n=14).
+  # The spread is the runner, not the split — `Test` ran 44-97s across the
+  # fourteen with no source change.
+  #
+  # ⚠️ Subtract the cold start before believing any arithmetic done on the old
+  # job's step list. `Release build` is 54s mean sitting behind the Debug build
+  # and 77s as the first xcodebuild on its own runner: everything before the
+  # compile phase — project load, build description, the asset catalog — goes
+  # 11s to 40s, ~22s once the runner's own speed is divided out. The Debug half
+  # was already paying it and still does; the Release half now pays it too, so
+  # the split MOVES that cost rather than removing it. Reading the naive
+  # arithmetic instead puts the saving at 68s, and perch's Release job pays the
+  # same ~30s (measured, 5 runs each way).
+  #
+  # ⚠️ The two halves are nearly balanced and the pole is shared: `Debug tests
+  # and analyze` was the gate in 3 of 7 post-split runs and `Release build and
+  # bundle guard` in 4, by a median 11s (1-53s). That is unlike perch, whose
+  # Debug half held the title 7/7 — trill has no iOS companion, so the runner-up
+  # is its own Release half. So there is no second cut to make here: whatever
+  # comes off either half lands on the other.
+  #
+  # The second macOS runner does NOT queue behind the first: 8s median to start
+  # in both arms. (Two runs in one pair waited 287s and 337s — one per arm,
+  # adjacent in time, so that is fleet weather and not the split.)
+  test:
+    name: Debug tests and analyze
     runs-on: macos-26
     steps:
       - uses: actions/checkout@v4
       - name: Show toolchain
         run: xcodebuild -version && swift --version
-
-      # Before the build, because these are the cheapest failures in the repo
-      # and two of them are invisible at runtime: a SKILL.md whose frontmatter
-      # is broken installs, lists and is never loaded, and an embedded copy that
-      # has drifted makes `trill skill` print last week's prose with this week's
-      # version number. The three-argument form is the one that checks the
-      # embed; nix/skill.nix runs the same script over the prose alone, because
-      # it has no Swift to compare against.
-      - name: Agent skills are well-formed and still embedded
-        run: scripts/check-skills.sh ai Trill/CLI/EmbeddedSkills.swift scripts/generate-skills.sh
       - name: Test
         run: |
           xcodebuild \
@@ -51,6 +79,8 @@ jobs:
             -derivedDataPath DerivedData \
             CODE_SIGNING_ALLOWED=NO \
             test
+      # MUST stay in this job and below `Test`: same `-derivedDataPath`, and the
+      # whole reason it is ~6s rather than another Debug build.
       - name: Analyze
         run: |
           xcodebuild \
@@ -61,6 +91,34 @@ jobs:
             -derivedDataPath DerivedData \
             CODE_SIGNING_ALLOWED=NO \
             analyze
+
+  # The Release half: one build and the thing that reads the bundle it leaves in
+  # DerivedData. Every step here needs a Release `Trill.app`, which is what makes
+  # it a group rather than a spread.
+  release-build:
+    name: Release build and bundle guard
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+      - name: Show toolchain
+        run: xcodebuild -version && swift --version
+
+      # Rides here rather than on the gate, and rather than in an ubuntu job of
+      # its own: it measures 0s, which is an order of magnitude under what a job
+      # costs around its steps, so rule 5 says it joins an existing one — and
+      # this is the half nothing is waiting on. It still fails as early as it
+      # ever did, since both jobs start together.
+      #
+      # Before the build, because these are the cheapest failures in the repo
+      # and two of them are invisible at runtime: a SKILL.md whose frontmatter
+      # is broken installs, lists and is never loaded, and an embedded copy that
+      # has drifted makes `trill skill` print last week's prose with this week's
+      # version number. The three-argument form is the one that checks the
+      # embed; nix/skill.nix runs the same script over the prose alone, because
+      # it has no Swift to compare against.
+      - name: Agent skills are well-formed and still embedded
+        run: scripts/check-skills.sh ai Trill/CLI/EmbeddedSkills.swift scripts/generate-skills.sh
+
       - name: Release build
         run: |
           xcodebuild \
@@ -83,5 +141,10 @@ jobs:
       # run the SAME guard: a check that only the PR build does is a check the
       # release can drift past. The script walks every Mach-O in the bundle,
       # not just the main executable, and fails when it finds none to examine.
+      #
+      # "Still holds on a stock `build`" is about the project setting, not about
+      # this job: `test` now runs on another runner entirely, so what this proves
+      # is that a Release `build` is clean on its own, with no `test` in front of
+      # it to have leaked the default in.
       - name: Release build carries no profiling instrumentation
         run: scripts/assert-no-instrumentation.sh DerivedData/Build/Products/Release/Trill.app
