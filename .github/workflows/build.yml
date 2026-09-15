@@ -28,14 +28,40 @@ jobs:
   # `-derivedDataPath`. `Test` and `Analyze` share a Debug DerivedData —
   # `Analyze` is ~6s only because it reads what `Test` already built, so it must
   # stay below it — while `Release build` and the instrumentation guard share a
-  # Release one and reuse nothing from Debug. Nothing crosses, so neither job
-  # `needs:` the other and they run side by side.
+  # Release one. Nothing crosses, so neither job `needs:` the other and they run
+  # side by side.
   #
-  # The sources compiled twice inside one job before this: ~79s of Debug in
-  # `Test`, then ~53s of Release from nothing. That job was 155s over eight PR
-  # runs and it was the only job in the repo, so it was the gate by default.
+  # One job before this: 13s of fixed cost, 72s `Test`, 6s `Analyze`, 54s
+  # `Release build`, 3s of guard — 151s mean over seven runs, and the only job in
+  # the repo, so it was the gate by default.
   #
-  # PLACEHOLDER: run both ways before trusting this paragraph.
+  # Run both ways, seven pairs alternating `main` with this shape,
+  # `workflow_dispatch`, one run in flight at a time so both arms saw the same
+  # runners: the gate goes 151s mean / 153s median to 103s / 107s, a median 61s
+  # off comparing the two shapes INSIDE each run (mean 55s, range 33-74s, n=14).
+  # The spread is the runner, not the split — `Test` ran 44-97s across the
+  # fourteen with no source change.
+  #
+  # ⚠️ Subtract the cold start before believing any arithmetic done on the old
+  # job's step list. `Release build` is 54s mean sitting behind the Debug build
+  # and 77s as the first xcodebuild on its own runner: everything before the
+  # compile phase — project load, build description, the asset catalog — goes
+  # 11s to 40s, ~22s once the runner's own speed is divided out. The Debug half
+  # was already paying it and still does; the Release half now pays it too, so
+  # the split MOVES that cost rather than removing it. Reading the naive
+  # arithmetic instead puts the saving at 68s, and perch's Release job pays the
+  # same ~30s (measured, 5 runs each way).
+  #
+  # ⚠️ The two halves are nearly balanced and the pole is shared: `Debug tests
+  # and analyze` was the gate in 3 of 7 post-split runs and `Release build and
+  # bundle guard` in 4, by a median 11s (1-53s). That is unlike perch, whose
+  # Debug half held the title 7/7 — trill has no iOS companion, so the runner-up
+  # is its own Release half. So there is no second cut to make here: whatever
+  # comes off either half lands on the other.
+  #
+  # The second macOS runner does NOT queue behind the first: 8s median to start
+  # in both arms. (Two runs in one pair waited 287s and 337s — one per arm,
+  # adjacent in time, so that is fleet weather and not the split.)
   test:
     name: Debug tests and analyze
     runs-on: macos-26
