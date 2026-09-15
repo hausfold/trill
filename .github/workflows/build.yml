@@ -52,6 +52,16 @@ jobs:
   # arithmetic instead puts the saving at 68s, and perch's Release job pays the
   # same ~30s (measured, 5 runs each way).
   #
+  # Both of those come from the workshop's `script/probes/README.md`, section
+  # *trill's split, run both ways*, and neither is derivable from the step means
+  # above: the 68s is perch's sums done on the eight `pull_request` runs that
+  # section measures, not on the seven `workflow_dispatch` ones here, and the
+  # ~30s is perch's own front end warm against cold. That section also carries
+  # the per-run table and the counterfactual behind the 61s — *other shape* is
+  # the halves summed with the cold start applied, which is what keeps it 61s
+  # rather than the 67.5s the naive sum gives. Read it there before quoting
+  # either number onward.
+  #
   # ⚠️ The two halves are nearly balanced and the pole is shared: `Debug tests
   # and analyze` was the gate in 3 of 7 post-split runs and `Release build and
   # bundle guard` in 4, by a median 11s (1-53s). That is unlike perch, whose
@@ -103,11 +113,13 @@ jobs:
       - name: Show toolchain
         run: xcodebuild -version && swift --version
 
-      # Rides here rather than on the gate, and rather than in an ubuntu job of
-      # its own: it measures 0s, which is an order of magnitude under what a job
-      # costs around its steps, so rule 5 says it joins an existing one — and
-      # this is the half nothing is waiting on. It still fails as early as it
-      # ever did, since both jobs start together.
+      # Rides here rather than in an ubuntu job of its own: it measures 0s,
+      # which is an order of magnitude under what a job costs around its steps,
+      # so rule 5 says it joins an existing job rather than taking one. Which of
+      # the two is a coin toss and deliberately not an argument — the banner
+      # above measures THIS half as the gate in 4 of 7 runs, so "the half
+      # nothing waits on" is not a reason that survives, and 0s does not need
+      # one. It still fails as early as it ever did: both jobs start together.
       #
       # Before the build, because these are the cheapest failures in the repo
       # and two of them are invisible at runtime: a SKILL.md whose frontmatter

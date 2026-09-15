@@ -212,11 +212,14 @@ a pure function that way. Feel-testing banners needs a real session: build, run,
   `build.yml` runs the guard first in its Release half:
   `scripts/check-skills.sh ai Trill/CLI/EmbeddedSkills.swift scripts/generate-skills.sh`.
   The gate is two macOS jobs cut at the `-derivedDataPath` — Debug test +
-  analyze on one, Release build + the instrumentation guard on the other — which
-  took it from 151s to 103s mean. The guard rides the Release half because it
-  measures 0s and that is the half nothing waits on; the workflow's own banner
-  carries the measurement, including the ~22s of cold start the split moves onto
-  the Release job rather than removing.
+  analyze on one, Release build + the instrumentation guard on the other — and
+  is worth a median 61s, comparing the two shapes inside each run over seven
+  pairs. (The arm means, 151s against 103s, are the comparison `docs/ci.md` says
+  gets this wrong on a pole this noisy; quote the 61s.) The guard rides the
+  Release half because it measures 0s, not because that half is idle — that job
+  takes the gate in 4 of 7 runs. The workflow's own banner carries the
+  measurement, including the ~22s of cold start the split moves onto the Release
+  job rather than removing.
 - **Debug builds carry `com.hausfold.trill.debug` and their own
   `Application Support/Trill (debug)` — leave both.** TCC keys Full Disk Access
   by bundle id and `kTCCServiceSystemPolicyAllFiles` never prompts, so sharing
