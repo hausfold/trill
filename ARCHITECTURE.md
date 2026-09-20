@@ -161,12 +161,23 @@ rather than any app's name:
   edge.** It is subtracted from the usable frame. A narrow overlay is a HUD
   and a tall one is a curtain (the wallpaper, a screen tint) — neither
   shortens the screen.
-- **The rightmost ordinary window in the top half of the display donates its
-  top-right corner.** The stack hangs from *that* point, so it reads as one
-  more pane of the layout. A window taller than the usable frame is
-  fullscreen or is sitting over the bar; its corner is not a gap anyone
-  chose, so it is ignored. With nothing to line up with, the anchor is the
-  usable frame inset all round — the behaviour that shipped first.
+- **The pane tiled in the top-right corner shows the window manager's
+  padding, and the stack hangs from that stop on every workspace.** An
+  ordinary window within `paddingReach` of the usable corner is that pane;
+  the distance from the corner to its own is `DesktopLayout.Padding`, and
+  the anchor is the usable frame less it, so the top card's corner is the
+  pane's corner and the stack reads as one more pane of the layout. The
+  stop is a property of the WM, not of the workspace in front:
+  `DesktopLayoutProbe` remembers the last padding it measured on each
+  display, so a workspace holding one floating window — or none — gets the
+  same corner the tiled ones did rather than the floating window's own,
+  and switching workspaces never moves the stack. (It used to hang from
+  the rightmost window in the top half, which sent it chasing a floating
+  terminal into the middle of the display.) A window taller than the
+  usable frame is fullscreen or is sitting over the bar; its corner is not
+  a gap anyone chose, so it is ignored. Before any pane has been measured,
+  the anchor is the usable frame inset all round — the behaviour that
+  shipped first.
 
 `DesktopLayoutProbe` deliberately does **not** pass
 `.excludeDesktopElements`: sketchybar draws at `kCGBackstopMenuLevel` (-20),

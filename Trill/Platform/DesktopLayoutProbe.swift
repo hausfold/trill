@@ -64,6 +64,33 @@ enum DesktopLayoutProbe {
             return DesktopLayout.Window(frame: frame, isOverlay: layer != 0)
         }
     }
+
+    /// The padding last measured on each display, by `ScreenDescriptor.id`.
+    ///
+    /// The stop is a property of the window manager, not of the workspace in
+    /// front: a workspace holding one floating window, or none, hangs its
+    /// stack from the corner the tiled workspaces showed, so switching
+    /// workspaces never moves the stack — and never sends it chasing a
+    /// floating window into the middle of the display. Before any pane has
+    /// been measured on a display it is `BannerGeometry.inset` all round, the
+    /// behaviour that shipped first. This is the one thing the probe
+    /// remembers between readings.
+    private static var lastPadding: [String: DesktopLayout.Padding] = [:]
+
+    /// The padding a display's stack hangs from: measured off the pane in
+    /// the top-right corner when one is there, remembered from the last
+    /// reading that had one when not.
+    static func padding(
+        on display: String,
+        visible: CGRect,
+        windows: [DesktopLayout.Window]
+    ) -> DesktopLayout.Padding {
+        if let measured = DesktopLayout.measuredPadding(visible: visible, windows: windows) {
+            lastPadding[display] = measured
+            return measured
+        }
+        return lastPadding[display] ?? .uniform(BannerGeometry.inset)
+    }
 }
 
 extension ScreenDescriptor {
@@ -72,15 +99,18 @@ extension ScreenDescriptor {
     @MainActor
     init(screen: NSScreen, windows: [DesktopLayout.Window]) {
         let number = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber
+        let id = number?.stringValue ?? screen.localizedName
         let onThisScreen = windows.filter { $0.frame.intersects(screen.frame) }
         self.init(
-            id: number?.stringValue ?? screen.localizedName,
+            id: id,
             frame: screen.frame,
             visibleFrame: screen.visibleFrame,
             contentFrame: DesktopLayout.anchor(
                 visible: screen.visibleFrame,
                 windows: onThisScreen,
-                inset: BannerGeometry.inset
+                padding: DesktopLayoutProbe.padding(
+                    on: id, visible: screen.visibleFrame, windows: onThisScreen
+                )
             ),
             isBuiltin: number.map { CGDisplayIsBuiltin(CGDirectDisplayID($0.uint32Value)) != 0 } ?? false
         )

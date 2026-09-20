@@ -9,10 +9,12 @@ struct ScreenDescriptor: Sendable, Equatable {
     var frame: CGRect
     /// Bounds minus menu bar / Dock — banners never overlap either.
     var visibleFrame: CGRect
-    /// Where the desktop's *own* windows sit on this display: the rect a
+    /// Where the desktop's *own* windows stop on this display: the rect a
     /// third-party bar and the window manager's gaps have already been
-    /// subtracted from. `nil` when nothing could be measured, in which case
-    /// placement falls back to `visibleFrame` inset by `BannerGeometry.inset`.
+    /// subtracted from — the gap as last measured off a tiled pane, so a
+    /// workspace with nothing tiled keeps the same corner. `nil` when nothing
+    /// could be measured, in which case placement falls back to
+    /// `visibleFrame` inset by `BannerGeometry.inset`.
     ///
     /// This exists because `visibleFrame` only knows about Apple's furniture.
     /// A user running sketchybar (or any overlay bar) with the menu bar
@@ -70,10 +72,12 @@ enum DisplayRouter {
     }
 }
 
-/// Reads the desktop the user actually arranged — overlay bars and the top
-/// right window's own corner — and hands the compositor a rect to align to.
-/// Pure: the platform probe (`DesktopLayoutProbe`) collects the rects, this
-/// decides what they mean, so every rule here is testable without a display.
+/// Reads the desktop the user actually arranged — overlay bars and the gap
+/// the window manager leaves at the top-right corner — and hands the
+/// compositor a rect to align to. Pure: the platform probe
+/// (`DesktopLayoutProbe`) collects the rects and remembers the last gap it
+/// measured, this decides what the rects mean, so every rule here is
+/// testable without a display.
 enum DesktopLayout {
     /// One on-screen window, as much of it as placement cares about.
     struct Window: Sendable, Equatable {
@@ -126,35 +130,76 @@ enum DesktopLayout {
         return CGRect(x: visible.minX, y: bottom, width: visible.width, height: top - bottom)
     }
 
-    /// The rect banners lay themselves out inside. When an ordinary window is
-    /// open in the top half of the display, that window's own top-right
-    /// corner *is* the anchor — so the stack reads as one more pane of the
-    /// layout rather than as something pasted over it. With nothing to line
-    /// up with, it falls back to the usable frame inset all round.
-    ///
-    /// A window taller than the usable frame is ignored: it is fullscreen, or
-    /// it is sitting over the bar, and either way its corner is not a gap the
-    /// user chose.
-    static func anchor(visible: CGRect, windows: [Window], inset: CGFloat) -> CGRect {
+    /// A pane sits at most this far in from the usable frame's corner: the
+    /// window manager's outer gap, with room for the generous ones. Anything
+    /// further in is a floating window somewhere on the screen, and a
+    /// floating window is not a stop — the stack must not chase it into the
+    /// middle of the display.
+    static let paddingReach: CGFloat = 64
+
+    /// How far in from the usable frame the desktop's own windows stop: the
+    /// window manager's outer gap, *measured* off the pane tiled in the
+    /// top-right corner rather than read from any WM's config. The stack
+    /// hangs from this stop whether or not a pane is there to show it — a
+    /// workspace holding one floating window still gets the corner the tiled
+    /// ones use, not the floating window's own.
+    struct Padding: Sendable, Equatable {
+        var top: CGFloat
+        var right: CGFloat
+        /// Where the pane's bottom edge sat, so the stack keeps to the band
+        /// the panes occupy rather than running to the usable frame's floor.
+        var bottom: CGFloat
+
+        /// The same distance on every side — the fallback before any pane has
+        /// been measured, which is the behaviour that shipped first.
+        static func uniform(_ inset: CGFloat) -> Padding {
+            Padding(top: inset, right: inset, bottom: inset)
+        }
+    }
+
+    /// The padding the pane tiled in the top-right corner shows, or nil when
+    /// no ordinary window is there to show it: a floating window in the
+    /// middle of the display, an empty workspace, a fullscreen window over the
+    /// bar (taller than the usable frame, so its corner is not a gap anyone
+    /// chose). Among several windows at the corner — a pane and a palette
+    /// dragged over it — the one nearest the corner wins.
+    static func measuredPadding(visible: CGRect, windows: [Window]) -> Padding? {
         let usable = usableFrame(visible: visible, windows: windows)
-        let aligned = windows
+        let reach = -edgeTolerance...paddingReach
+        let pane = windows
             .filter { window in
                 !window.isOverlay
                     && window.frame.width >= minimumWindowSide
                     && window.frame.height >= minimumWindowSide
-                    && window.frame.maxY >= usable.midY
-                    && window.frame.maxY <= usable.maxY + edgeTolerance
-                    && window.frame.intersects(usable)
+                    && reach.contains(usable.maxX - window.frame.maxX)
+                    && reach.contains(usable.maxY - window.frame.maxY)
             }
-            .max { $0.frame.maxX < $1.frame.maxX }
+            .min { lhs, rhs in
+                let lhsDistance = (usable.maxX - lhs.frame.maxX) + (usable.maxY - lhs.frame.maxY)
+                let rhsDistance = (usable.maxX - rhs.frame.maxX) + (usable.maxY - rhs.frame.maxY)
+                return lhsDistance < rhsDistance
+            }
+        guard let corner = pane?.frame else { return nil }
+        return Padding(
+            top: max(usable.maxY - corner.maxY, 0),
+            right: max(usable.maxX - corner.maxX, 0),
+            bottom: max(corner.minY - usable.minY, 0)
+        )
+    }
 
-        guard let corner = aligned?.frame else {
-            return usable.insetBy(dx: inset, dy: inset)
-        }
-        let top = min(corner.maxY, usable.maxY)
-        let right = min(corner.maxX, usable.maxX)
-        let bottom = max(min(corner.minY, top), usable.minY)
-        return CGRect(x: usable.minX, y: bottom, width: right - usable.minX, height: top - bottom)
+    /// The rect banners lay themselves out inside: the usable frame less the
+    /// padding, one rule for every workspace. The top-right corner of the
+    /// result is the stop, and with the padding measured off a tiled pane it
+    /// is that pane's own corner — so the stack reads as one more pane of
+    /// the layout rather than as something pasted over it.
+    static func anchor(visible: CGRect, windows: [Window], padding: Padding) -> CGRect {
+        let usable = usableFrame(visible: visible, windows: windows)
+        return CGRect(
+            x: usable.minX,
+            y: usable.minY + padding.bottom,
+            width: usable.width - padding.right,
+            height: usable.height - padding.top - padding.bottom
+        )
     }
 }
 
@@ -206,7 +251,7 @@ enum BannerGeometry {
     ///
     /// It is the desktop's own window grid when the platform could measure one
     /// (`ScreenDescriptor.contentFrame`), so the top card's corner lands on the
-    /// same corner the user's top-right window has: clear of an overlay bar,
+    /// same corner the user's tiled windows stop at: clear of an overlay bar,
     /// and in the window manager's gap rather than 12pt from a screen edge
     /// nobody's windows use. With nothing measured it is the visible frame
     /// inset all round, which is the behaviour that shipped first.
