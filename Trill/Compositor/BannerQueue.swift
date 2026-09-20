@@ -61,7 +61,8 @@ final class BannerQueue {
         }
     }
 
-    /// Fins the ledge holds at most. Past this the *oldest* ask yields —
+    /// Fins the ledge holds at most. Past this the oldest *job* yields, and
+    /// only once none of those is left does the oldest ask (`trimParked`) —
     /// the ledge is a glanceable strip, not a second queue, and everything
     /// it evicts already survives in the inbox like every delivered event.
     static let parkedCapacity = 5
@@ -198,12 +199,10 @@ final class BannerQueue {
         // then frozen onto the entry — a card that changed screens because
         // you reached for the other keyboard is a card you lose.
         routing = displays()
-        // A re-sent ask supersedes its own fin. Without this, a lane that
-        // says "still blocked" every ten minutes grows a column of fins for
-        // one question — and the ledge holds five, so three such lanes would
-        // evict everything else. Only the *parked* copy yields: a visible
-        // banner and a fresh arrival are two arrivals, which is what the
-        // coalesce window is for.
+        // A re-sent ask supersedes its own fin (`supersedeParked` carries the
+        // why). Only the *parked* copy yields: a visible banner and a fresh
+        // arrival are two arrivals, which is what the coalesce window is for.
+        //
         // …but a *progress* event never does it: a build ticking under a key
         // an unanswered question happens to share would take that fin off the
         // ledge silently, with nobody told and its asker still blocked. A bar
