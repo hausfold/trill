@@ -214,8 +214,9 @@ final class InboxTests: XCTestCase {
             action("Broken", .openURL, "ssh://nope"),
             action("Hook", .command, "rebuild"),
             action("Good", .openURL, "https://example.com"),
+            action("Note", .openURL, "obsidian://open?vault=notes&file=x"),
         ])
-        XCTAssertEqual(InboxList.pills(for: event).map(\.label), ["Good"])
+        XCTAssertEqual(InboxList.pills(for: event).map(\.label), ["Good", "Note"])
     }
 
     func testASingleActionStillDrawsAPill() {

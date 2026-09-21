@@ -251,6 +251,13 @@ final class EventPipelineTests: XCTestCase {
         )
         XCTAssertTrue(
             NotificationEvent(
+                source: "tracker", title: "note",
+                actions: [.init(id: "o", label: "Open note", kind: .openURL, target: "obsidian://open?vault=notes&file=x")]
+            ).hasDefaultAction,
+            "an app scheme named in openableSchemes opens, unlike slack: above"
+        )
+        XCTAssertTrue(
+            NotificationEvent(
                 source: "ci", title: "noisy apps",
                 actions: [.init(id: "s", label: "Silence", kind: .silenceNative, target: nil)]
             ).hasDefaultAction,
