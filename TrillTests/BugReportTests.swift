@@ -173,9 +173,11 @@ final class BugReportTests: XCTestCase {
     // MARK: - The CLI half
 
     func testReportIsASubcommandSoTheBinaryDoesNotLaunchTheDaemonForIt() {
-        // TrillMain routes on this set: a verb missing from it starts the
-        // compositor instead of running the command, which for `trill report`
-        // would mean a second copy of the app rather than a browser tab.
+        // The catalogue every verb has to be in to be discoverable — `help`
+        // lists it, and a verb missing from it is one nothing tells a caller
+        // about. TrillMain no longer ROUTES on it (#67: a token missing from
+        // this set used to start the compositor and hang), but `report` being
+        // absent would still be a verb with no front door.
         XCTAssertTrue(TrillCLI.subcommands.contains("report"))
     }
 
