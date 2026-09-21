@@ -12,6 +12,6 @@
 # Hand-edit only to bootstrap a brand-new release line. `version` carries no
 # leading "v"; `sha256` is the release .zip's SHA-256 in hex.
 {
-  version = "2026.09.20";
-  sha256 = "36e35056fa28b636208f241517bd683b794f6bbf8e13421a16fa55475ee9d70c";
+  version = "2026.09.21";
+  sha256 = "5caabf379e339218f25abe35b40cb85fcdcc05d92824f33657537b941f1c197a";
 }
