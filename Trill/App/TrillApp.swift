@@ -7,6 +7,11 @@ import SwiftUI
 ///   `trill send --title …`         → a short-lived CLI talking to the
 ///                                    daemon's socket, no NSApplication.
 ///
+/// Which one runs is `launch(for:)`. The line it draws is not "is this a
+/// verb" — `TrillCLI` owns that — but "did a person type this at all": an
+/// argument that is not the launcher's own goes to the CLI, which answers it
+/// or refuses it, and never to a second compositor.
+///
 /// The `trill` command on PATH is a symlink to
 /// `Trill.app/Contents/MacOS/Trill`. Whoever installed the bundle places it:
 /// `pkgs.trill` ships a `bin/trill`, and `scripts/dev-install.sh` links into a
@@ -16,17 +21,87 @@ import SwiftUI
 /// See `SystemIntegration.ensureCLILink`.
 @main
 enum TrillMain {
+    /// What this process was asked to be.
+    ///
+    /// Two answers, not three: a token that is not a verb still goes to
+    /// `TrillCLI`, which has owned "unknown command" since #67 and answers it
+    /// with exit 1. Routing deliberately does NOT consult
+    /// `TrillCLI.subcommands` — that set is the catalogue `help` prints, and
+    /// a verb added to `run` but forgotten there would otherwise be routed
+    /// here to a refusal it does not deserve. One place decides what a verb
+    /// is, and it is the switch in `TrillCLI.run`.
+    ///
+    /// The case that matters is what USED to happen (#67). An argument that
+    /// was not a verb fell straight through to `app.run()`, so `trill
+    /// version`, `trill --version` and every mistyped verb started a second
+    /// compositor. Not a race for the socket — `SocketServer.startLocked`
+    /// sees the live one and throws, `SocketProvider` finishes the stream,
+    /// and the supervisor re-probes forever — which is worse: the second copy
+    /// sits there mute, reaching nothing and exiting never. Measured on mbp
+    /// 2026-09-21: `trill version` was still a live process beside the real
+    /// daemon when it was killed by hand. The issue's own report is worse
+    /// again — one held an ssh session open for 21 hours.
+    enum Launch: Equatable {
+        /// A person's argument. `TrillCLI` takes it from here — a verb it
+        /// knows, or its `default:` printing "unknown command" and 1.
+        case cli
+        /// No arguments, or only ones the launcher put there.
+        case daemon
+    }
+
+    /// Pure, because `main()` is not testable: it ends in `exit` or
+    /// `NSApplication.run`, and a test can return from neither.
+    static func launch(for arguments: [String]) -> Launch {
+        guard let first = arguments.first else { return .daemon }
+        return isLauncherArgument(first) ? .daemon : .cli
+    }
+
+    /// The argument shapes macOS itself passes — exactly these, and nothing
+    /// shaped like them.
+    ///
+    ///   `-psn_0_12345`         LaunchServices' process serial number, on the
+    ///                          launches that still carry one.
+    ///   `-NSFoo` / `-AppleFoo` Cocoa's defaults-argument domain: the
+    ///                          `-Key Value` pairs Xcode injects on a scheme
+    ///                          Run (`-NSDocumentRevisionsDebugMode YES`,
+    ///                          `-ApplePersistenceIgnoreState YES`).
+    ///
+    /// Literal prefixes rather than a rule that generalises them, because
+    /// every generalisation is a new place for #67 to live: "a dash then a
+    /// capitalised word" reads `-Version`, `-Verbose` and `-Help` as the
+    /// launcher's and hangs on all three, which is the bug this file exists
+    /// to close. Anything not on this list is a person's word and gets an
+    /// answer, even if that answer is a refusal.
+    ///
+    /// Too NARROW is the safe direction to be wrong in here only because it
+    /// is the loud one: a real launch shape missing from this list stops the
+    /// daemon coming up, and `TrillTests` is app-hosted, so the suite is
+    /// itself a launch through this function — see
+    /// `LaunchDispatchTests.testTheLaunchThisTestIsRunningInsideIsOneOfThem`,
+    /// which reads the host's own argv back through it. A list that went
+    /// stale would take every test with it rather than one.
+    ///
+    /// There is no argv door for a file or a URL to widen this: the bundle
+    /// declares no `CFBundleDocumentTypes` and no `CFBundleURLTypes`, so
+    /// LaunchServices has nothing to hand over.
+    private static let launcherPrefixes = ["-psn_", "-NS", "-Apple"]
+
+    private static func isLauncherArgument(_ argument: String) -> Bool {
+        launcherPrefixes.contains { argument.hasPrefix($0) }
+    }
+
     static func main() {
         let arguments = Array(CommandLine.arguments.dropFirst())
-        if let first = arguments.first, TrillCLI.subcommands.contains(first) {
+        switch launch(for: arguments) {
+        case .cli:
             exit(TrillCLI.run(arguments: arguments))
+        case .daemon:
+            let app = NSApplication.shared
+            let delegate = TrillAppDelegate()
+            app.delegate = delegate
+            app.setActivationPolicy(.accessory) // belt-and-braces with LSUIElement
+            app.run()
         }
-
-        let app = NSApplication.shared
-        let delegate = TrillAppDelegate()
-        app.delegate = delegate
-        app.setActivationPolicy(.accessory) // belt-and-braces with LSUIElement
-        app.run()
     }
 }
 
