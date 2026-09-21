@@ -18,6 +18,9 @@ import Foundation
 /// One JSON line out, one JSON line back, exit code says what happened:
 /// 0 ok · 1 bad usage · 2 daemon unreachable · 3 daemon refused.
 ///
+/// "Bad usage" includes a verb trill does not know: 3 is "understood, and
+/// declined", and a token that never parsed was never understood.
+///
 /// `ask` is the exception, and deliberately: it *blocks*, and its exit code is
 /// the index of the pill the user pressed — which is why its own failures
 /// live up at 64/69/70/75 (`AskExit`), where they can't be mistaken for an
@@ -100,9 +103,36 @@ enum TrillCLI {
                 FileHandle.standardError.write(Data("trill: \(message)\n".utf8))
                 return AskExit.usage
             }
-        default:
+        case "help", "--help", "-h":
             print(usage)
-            return arguments.first.map { ["help", "--help", "-h"].contains($0) } == true ? 0 : 1
+            return 0
+        default:
+            guard let first = arguments.first else {
+                // Nothing at all is the daemon's launch, not a call — it never
+                // arrives here from `TrillMain`. A caller that built an empty
+                // argv anyway gets the usage rather than silence.
+                print(usage)
+                return 1
+            }
+            // 1, not 3. Three is "understood, and declined" — the daemon
+            // rejecting an event, or `skill install` refusing to overwrite a
+            // file somebody edited. A token trill cannot parse was never
+            // understood, so it is the same answer an unknown FLAG under a real
+            // verb already gives ("unknown flag '…' (see `trill help`)", 1)
+            // rather than a second code for one mistake. The shipped skill's
+            // exit table said 3 here; it is the table that was wrong.
+            // Before #67 this branch was unreachable for anything but `help`:
+            // `TrillMain` only routed a token it already knew, so the rest
+            // started a second daemon and hung.
+            // One line, and the pointer at `help` rather than the manual
+            // itself: this is what every other usage failure in this file
+            // does, and #67 is a complaint about scripted calls, so a
+            // refusal that dumps the manual's 135 lines into a captured
+            // stderr is a smaller version of the same complaint.
+            FileHandle.standardError.write(
+                Data("trill: unknown command '\(first)' (see `trill help`)\n".utf8)
+            )
+            return 1
         }
     }
 
