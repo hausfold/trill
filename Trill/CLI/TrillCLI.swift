@@ -26,10 +26,6 @@ import Foundation
 /// live up at 64/69/70/75 (`AskExit`), where they can't be mistaken for an
 /// answer.
 enum TrillCLI {
-    static let subcommands: Set<String> = [
-        "send", "ask", "ping", "doctor", "inbox", "history", "resolve", "report", "skill",
-        "help", "--help", "-h",
-    ]
 
     static func run(arguments: [String]) -> Int32 {
         switch arguments.first {

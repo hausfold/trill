@@ -25,11 +25,9 @@ enum TrillMain {
     ///
     /// Two answers, not three: a token that is not a verb still goes to
     /// `TrillCLI`, which has owned "unknown command" since #67 and answers it
-    /// with exit 1. Routing deliberately does NOT consult
-    /// `TrillCLI.subcommands` — that set is the catalogue `help` prints, and
-    /// a verb added to `run` but forgotten there would otherwise be routed
-    /// here to a refusal it does not deserve. One place decides what a verb
-    /// is, and it is the switch in `TrillCLI.run`.
+    /// with exit 1. One place decides what a verb is — the switch in
+    /// `TrillCLI.run` — and nothing here keeps a second list of them to fall
+    /// out of step with it.
     ///
     /// The case that matters is what USED to happen (#67). An argument that
     /// was not a verb fell straight through to `app.run()`, so `trill

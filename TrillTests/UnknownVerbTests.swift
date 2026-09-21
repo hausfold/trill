@@ -5,7 +5,7 @@ import XCTest
 /// did not recognise (#67). Nothing was slow and nothing was unreachable: the
 /// binary has two personalities, and the argument never reached the one that
 /// could refuse it. `TrillMain` routed only a token already in
-/// `TrillCLI.subcommands`; everything else fell through to `NSApplication.run()`
+/// its own list of verbs; everything else fell through to `NSApplication.run()`
 /// and became a second daemon in the foreground of whoever's shell, printing
 /// nothing and never returning. One of them held an ssh session open for 21
 /// hours, and `--version` is the first thing an install check reaches for.

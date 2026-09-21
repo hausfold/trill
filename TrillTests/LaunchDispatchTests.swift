@@ -5,8 +5,8 @@ import XCTest
 ///
 /// It is not "is this a verb": `TrillCLI` owns that, and answers a token it
 /// does not know with exit 1. It is "did a person type this at all", because
-/// before #67 the answer to that was never asked. Anything outside
-/// `TrillCLI.subcommands` fell through to `NSApplication.run()`, so a mistyped
+/// before #67 the answer to that was never asked. Anything outside the CLI's
+/// own list of verbs fell through to `NSApplication.run()`, so a mistyped
 /// verb at a shell started a second compositor — one that never even gets the
 /// socket (`SocketServer.startLocked` throws on the live one), so it sits
 /// mute, reaching nothing, exiting never.
@@ -34,15 +34,6 @@ final class LaunchDispatchTests: XCTestCase {
                 TrillMain.launch(for: [token]), .cli,
                 "`\(token)` is a person's word — the CLI answers or refuses it, never a second compositor"
             )
-        }
-    }
-
-    /// Declared verbs go the same way, which is the point: routing does not
-    /// consult `subcommands`, so a verb added to `TrillCLI.run` and forgotten
-    /// in the catalogue still reaches its case.
-    func testEveryDeclaredSubcommandReachesTheCLI() {
-        for verb in TrillCLI.subcommands {
-            XCTAssertEqual(TrillMain.launch(for: [verb, "--title", "x"]), .cli)
         }
     }
 
@@ -84,15 +75,17 @@ final class LaunchDispatchTests: XCTestCase {
         )
     }
 
-    /// `subcommands` no longer routes anything — it is what `help` lists, so
-    /// a verb absent from it is one nothing tells a caller about. Checked
-    /// against the nine `TrillCLI.run` answers today, by hand: nothing here
-    /// can see a tenth being added.
-    func testEveryVerbRunAnswersTodayIsAlsoDiscoverable() {
+    /// What makes a verb discoverable is `TrillCLI.usage` — the string
+    /// `help` prints — and nothing else. There is no second list: #69 took
+    /// routing off `subcommands`, and the follow-up deleted the set, because
+    /// a catalogue nothing reads is a catalogue that drifts. Checked against
+    /// the nine verbs `run` answers today, by hand: nothing here can see a
+    /// tenth being added.
+    func testEveryVerbRunAnswersTodayIsAlsoInTheHelpManual() {
         for verb in ["send", "ask", "ping", "doctor", "inbox", "history", "resolve", "report", "skill"] {
             XCTAssertTrue(
-                TrillCLI.subcommands.contains(verb),
-                "\(verb) has a case in TrillCLI.run but `trill help` would not list it"
+                TrillCLI.usage.contains("trill \(verb)"),
+                "`\(verb)` has a case in TrillCLI.run but `trill help` never names it"
             )
         }
     }
