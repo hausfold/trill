@@ -55,7 +55,7 @@ done`/`fault`) — that takes the fin down. Ticks are live, not history; a bare 
 
 `--urgency` (`low`/`normal`/`critical`) is loudness, a different axis: a fault can be low, a note
 critical. `--thread` groups banners, `--source <slug>` is what rules match on, `--redact` keeps body
-and subtitle off it, and `--action "Label=https://…"` (or `Label=app:ID`, or `Label=lane:repo/name`
+and subtitle off it, and `--action "Label=https://…"` (or `obsidian://…`, `Label=app:ID`, or `Label=lane:repo/name`
 for a scruff lane; repeatable) adds up to 3 buttons — the first is what clicking the card does.
 
 `history` is the read half of `send` and the only listing anything can parse — `inbox` opens a

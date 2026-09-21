@@ -133,9 +133,10 @@ enum SystemMirrorMapper {
     /// The two pills a mirrored card can honestly offer.
     ///
     /// Not three: `req.durl` is a private scheme (`messages://open?…`), and
-    /// `Action.openableSchemes` is http/https/file on purpose — a pill that
-    /// opens nothing is worse than one that isn't drawn. Activating the app
-    /// lands the user in the same place a click on Apple's own banner would.
+    /// `Action.openableSchemes` admits an app scheme only by name — a pill
+    /// that opens nothing is worse than one that isn't drawn, and nothing here
+    /// knows which of usernoted's schemes resolve. Activating the app lands
+    /// the user in the same place a click on Apple's own banner would.
     static func actions(bundleID: String, appName: String) -> [NotificationEvent.Action] {
         [
             NotificationEvent.Action(

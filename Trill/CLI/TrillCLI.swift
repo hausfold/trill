@@ -8,7 +8,8 @@ import Foundation
 ///              [--kind ask|fault|chat|pulse|done|note]
 ///              [--progress 0.42|42%] --key NAME
 ///              [--urgency low|normal|critical] [--redact] [--url https://…]
-///              [--action "Label=https://…"] [--action "Label=lane:repo/name"]…
+///              [--action "Label=https://…"] [--action "Label=obsidian://…"]
+///              [--action "Label=lane:repo/name"]…
 ///   echo '{"title":"Backup complete"}' | trill send --json
 ///   trill history [--since 2h] [--unread] [--json]
 ///   trill skill [install]
@@ -202,7 +203,7 @@ enum TrillCLI {
                 } else if NotificationEvent.Action.opensAsURL(target) {
                     action = .init(id: "action-\(actions.count)", label: label, kind: .openURL, target: target)
                 } else {
-                    return .failure("--action target must be an http(s)/file URL, app:bundle.id or lane:repo/name")
+                    return .failure("--action target must be an http(s)/file/obsidian URL, app:bundle.id or lane:repo/name")
                 }
                 actions.append(action)
             default:
@@ -890,8 +891,8 @@ enum TrillCLI {
                  [--symbol SFNAME] [--thread NAME]
                  [--kind ask|fault|chat|pulse|done|note] [--progress 0.42|42%]
                  [--urgency low|normal|critical] [--redact] [--url URL]
-                 [--action "Label=https://…"] [--action "Label=app:bundle.id"]
-                 [--action "Label=lane:repo/name"]
+                 [--action "Label=https://…"] [--action "Label=obsidian://…"]
+                 [--action "Label=app:bundle.id"] [--action "Label=lane:repo/name"]
                  [--key NAME] [--resolves KEY]… [--until RESOLVER[:args]]
       trill send --json          # full NotificationEvent JSON on stdin
       trill ask QUESTION [--pill LABEL]… [--body TEXT] [--subtitle TEXT]

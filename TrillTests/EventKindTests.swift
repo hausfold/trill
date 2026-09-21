@@ -55,6 +55,19 @@ final class EventKindTests: XCTestCase {
         XCTAssertEqual(event.actions[1].target, "com.mitchellh.ghostty")
     }
 
+    func testSendOpensANamedAppScheme() throws {
+        // The refusal that sent the tracker's "added" banner to Apple's plain
+        // one: a scheme outside the list fails the whole `send`, button and
+        // all, so a deep link has to clear the parser, not just the router.
+        guard case .success(let event) = TrillCLI.parseSend([
+            "--title", "Added to Today",
+            "--action", "Open note=obsidian://open?vault=notes&file=tracker%2Fbuy%20milk",
+        ]) else { return XCTFail("parse failed") }
+
+        XCTAssertEqual(event.actions[0].kind, .openURL)
+        XCTAssertTrue(event.hasDefaultAction)
+    }
+
     func testSendRefusesAKindItDoesNotKnow() {
         if case .success = TrillCLI.parseSend(["--title", "x", "--kind", "loud"]) {
             XCTFail("bad kind must fail")

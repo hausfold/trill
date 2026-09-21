@@ -124,7 +124,15 @@ struct NotificationEvent: Codable, Sendable, Identifiable, Equatable {
         /// Schemes trill will hand to the workspace. Anything else is a
         /// refused click, so `hasDefaultAction` and `ActionRouter` both ask
         /// here rather than each keeping their own list.
-        static let openableSchemes = ["https", "http", "file"]
+        ///
+        /// The web and the filesystem, plus app schemes named one at a time.
+        /// `obsidian` is the first: `app:bundle.id` already lets a banner
+        /// launch an app, so a deep link is that same capability landing on
+        /// the *thing* instead of the app's last window. Named rather than
+        /// open-ended — an unknown scheme opens whatever registered for it,
+        /// and a pill that raises the wrong app is worse than one that isn't
+        /// drawn.
+        static let openableSchemes = ["https", "http", "file", "obsidian"]
 
         /// Would an `open_url` action with this target actually open?
         static func opensAsURL(_ target: String?) -> Bool {
