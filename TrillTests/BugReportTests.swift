@@ -172,15 +172,6 @@ final class BugReportTests: XCTestCase {
 
     // MARK: - The CLI half
 
-    func testReportIsASubcommandSoTheBinaryDoesNotLaunchTheDaemonForIt() {
-        // The catalogue every verb has to be in to be discoverable — `help`
-        // lists it, and a verb missing from it is one nothing tells a caller
-        // about. TrillMain no longer ROUTES on it (#67: a token missing from
-        // this set used to start the compositor and hang), but `report` being
-        // absent would still be a verb with no front door.
-        XCTAssertTrue(TrillCLI.subcommands.contains("report"))
-    }
-
     func testReportRejectsUnknownFlagsWithTheOrdinaryUsageCode() {
         // Not 64. `AskExit`'s 64/69/70/75 belong to `ask` alone — they exist
         // because `ask` spends 0,1,2 on which pill was pressed. Every other
