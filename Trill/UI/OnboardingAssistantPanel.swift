@@ -130,8 +130,6 @@ struct Walkthrough: Equatable {
 /// which is the size you reach for when text sits *beside* the thing it
 /// describes; here the text **is** the product, so everything moved up a
 /// couple of steps and the panel widened to carry it.
-/// The helper's own scale, one step up from the rest of the app: it is read
-/// at arm's length beside System Settings rather than leaned into.
 ///
 /// Computed rather than stored, because `AppFont` reads the family out of
 /// `config.json` — a `static let` would freeze whatever was configured the
@@ -187,12 +185,12 @@ struct OnboardingAssistantView: View {
     /// a cursor because the user is free to fix them in any order — or to fix
     /// three at once in a pane they already had open.
     ///
-    /// **`confirmed` can stay empty on a Mac where everything went right.** macOS 26
-    /// doesn't write `com.apple.ncprefs` when you change the pane — usernoted
-    /// takes the change and the file is only flushed much later (a 92-app
-    /// store measured byte-identical to a 17-day-old copy, across a change
-    /// made and System Settings quit). So the poll is a *bonus* confirmation,
-    /// not the mechanism: `advanced` is what actually moves the walkthrough.
+    /// **`confirmed` can stay empty on a Mac where everything went right.**
+    /// Nothing is confirmed without Full Disk Access, because that is what it
+    /// takes to read the store at all (`NotificationSettingsAudit`'s
+    /// `settingsStore` carries which store and why). So the poll is a *bonus*
+    /// confirmation, not the mechanism: `advanced` is what actually moves the
+    /// walkthrough.
     /// Both sets, and the queries over them, live in `Walkthrough` — pure and
     /// tested, because when the walkthrough ends and which ending it shows are
     /// the two things here worth getting wrong.
@@ -204,9 +202,8 @@ struct OnboardingAssistantView: View {
     /// by the same one-second poll. The panel reads live state rather than the
     /// findings it was handed, so the row, the instruction and the demo all
     /// narrow themselves as the user flips switches — the panel showing the
-    /// change is what tells them it was picked up. It used to say so in words
-    /// instead ("Picked up the instant you change it"), which is a promise
-    /// where this is a demonstration.
+    /// change is what tells them it was picked up. Saying so in a line of copy
+    /// instead would be a promise where this is a demonstration.
     @State private var live: [String: NativeNotificationSettings] = [:]
     /// True while System Settings is the frontmost app. trill opened it, so
     /// the button to open it is dead weight until they've navigated away.
@@ -584,12 +581,12 @@ struct OnboardingAssistantView: View {
     /// refreshes the live reading the row, the sentence and the demo are
     /// drawn from, plus whether System Settings is still in front.
     ///
-    /// **The tick-off is opportunistic, not the mechanism.** On macOS 26 that
-    /// store simply doesn't move when the user changes the pane (see
-    /// `walkthrough`), so it advances on the user's own "Done" and
-    /// this poll is the bonus that fires where it still works: older macOS,
-    /// an app silenced before the panel opened, or after macOS eventually
-    /// flushes. Polling rather than watching the file because the store is
+    /// **The tick-off is opportunistic, not the mechanism.** A Mac without
+    /// Full Disk Access reads nothing at all (see `walkthrough`), so the
+    /// walkthrough advances on the user's own "Done" and this poll is the
+    /// bonus that fires where the read lands: an app silenced before the panel
+    /// opened, or one fixed in a pane they already had open.
+    /// Polling rather than watching the file because the store is
     /// cfprefsd-owned and undocumented, and a one-second read of a small
     /// plist costs nothing next to guessing at a change-notification
     /// mechanism Apple doesn't promise.
@@ -1146,8 +1143,8 @@ final class OnboardingAssistantPanelController: NSObject, NSWindowDelegate {
 
         self.onDismiss = onDismiss
 
-        // A deterministic content height per mode, not one measured off
-        // SwiftUI (`fittingSize` can read stale on macOS 26) — an NSPanel
+        // A deterministic content height per mode, not one measured at
+        // runtime (`fittingSize` can read stale on macOS 26) — an NSPanel
         // that guesses wrong clips the content or leaves a dead band under
         // it. The ad-hoc-signing warning is the only conditional block.
         //
