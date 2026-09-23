@@ -9,8 +9,9 @@
 # client on a Mac running trill and on no other. Two consequences for a rename:
 # the name is a promise haus's `.#tool-skills` check proves at build time, so a
 # rename here is a red rebuild there until haus's list moves with the lock bump
-# — and that proof only runs on a Mac, because this flake outputs darwin systems
-# only and haus's Linux CI drops the entry to null. Don't "fix" any of it by
+# — and haus's Linux CI runs that proof too, reading this derivation off
+# `overlays.default` because this flake outputs darwin systems only. So it has
+# to stay in the overlay and stay platform-agnostic. Don't "fix" any of it by
 # adding trill to bench's FAMILY.
 #
 # `trill skill install` exists now, and does NOT overlap this. It is the
