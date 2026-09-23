@@ -195,8 +195,12 @@ same PR as `ai/SKILL.md`.
 - `nix/skill.nix` ships the prose as `pkgs.trill-skill` (`$out/trill/SKILL.md`)
   and runs the same guard on the frontmatter alone. haus installs it
   (`modules/ai/tool-skills.nix`, gated on `haus.notifications.compositor`), so
-  **a rename here is a red rebuild there** — its `.#tool-skills` check, Mac-only
-  — until haus's list moves with the lock bump.
+  **a rename here is a red rebuild there** — its `.#tool-skills` check — until
+  haus's list moves with the lock bump. That check reads this derivation off
+  `overlays.default` rather than off `packages`, because this flake outputs
+  darwin systems only and the skill is a `platforms.all` `runCommand`: so the
+  name is proved on haus's Linux CI too, and keeping it in the overlay and
+  platform-agnostic is what keeps it that way.
 - trill is a flake input of haus and `OVERRIDABLE`, never one of `bench`'s
   `FAMILY` repos: it lands through its own PRs, and `bench release trill` is its
   only bench verb.
