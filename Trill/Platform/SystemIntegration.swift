@@ -195,20 +195,12 @@ enum SystemIntegration {
     /// Make `trill` resolve on PATH, whatever installed this bundle.
     ///
     /// The app binary IS the CLI — one executable, two personalities — so a
-    /// running trill has always been one symlink away from being scriptable,
-    /// and for a long time nothing created it. Every install source dropped a
-    /// bundle and stopped: `trill send` failed on a Mac with trill live in the
-    /// menu bar, and the callers that worked worked by hunting for the bundle
-    /// themselves (`scruff notify` still carries that fallback list). That hunt
-    /// is a reasonable thing for one Go program to do and an unreasonable
-    /// thing to document as the way to use a CLI.
+    /// running trill is one symlink away from being scriptable. Without it,
+    /// `trill send` fails on a Mac with trill live in the menu bar, and a
+    /// caller has to hunt for the bundle itself (`scruff notify` still does).
     ///
     /// The order matters. **Ask first, link second**: a source that ships its
-    /// own `trill` — nix's `bin/trill`, a desktop linking the copy it placed
-    /// at a fixed path, a cask's `binary` — owns the name, and its answer
-    /// points at the bundle whose permission grants and daemon socket the
-    /// user actually has. Overwriting that with a link to *this* bundle would
-    /// hand `trill send` a second daemon.
+    /// own `trill` owns the name (`cliLinkPlan` has why).
     ///
     /// Never fatal, never blocking: this is a convenience, and a compositor
     /// that refused to draw because it couldn't write a symlink would have
@@ -294,30 +286,7 @@ enum SystemIntegration {
         return .linked(link.path)
     }
 
-    /// One login shell, two answers: what `trill` resolves to today, and the
-    /// PATH the user actually has.
-    ///
-    /// `-l` is load-bearing — the profile is where PATH gets assembled, and a
-    /// non-login shell would answer for an environment nobody types in. Both
-    /// facts come from ONE spawn: two would cost a second rc-file evaluation
-    /// at launch and could disagree.
-    ///
-    /// Everything about how it asks is defence against the rc file. A login
-    /// shell sources `.zshenv`/`.zprofile`/`.zlogin` (or `.bash_profile`), and
-    /// those routinely PRINT — a version-manager banner, a greeting, somebody's
-    /// `echo`. So the answers are fenced with sentinels rather than read off
-    /// fixed line numbers: one line of banner would otherwise shift the whole
-    /// reading down and hand `resolved` a greeting, which the caller would
-    /// dutifully treat as another installer owning the name.
-    ///
-    /// stdin is `/dev/null` so an rc file that reads it can't steal the
-    /// terminal a development build was launched from, and the whole thing is
-    /// on a deadline so an rc file that BLOCKS costs a delayed answer rather
-    /// than a wedged probe and a stuck `zsh` for the life of the app.
-    ///
-    /// Best-effort throughout: a shell that fails, hangs, or isn't there at
-    /// all yields "nothing resolves, no PATH", and the caller degrades to
-    /// reporting rather than to failing.
+    /// How long the login-shell probe may take before it is killed.
     private static let shellProbeTimeout: TimeInterval = 10
 
     /// The environment a process trill spawns is given — *built*, never
@@ -356,6 +325,30 @@ enum SystemIntegration {
         return child
     }
 
+    /// One login shell, two answers: what `trill` resolves to today, and the
+    /// PATH the user actually has.
+    ///
+    /// `-l` is load-bearing — the profile is where PATH gets assembled, and a
+    /// non-login shell would answer for an environment nobody types in. Both
+    /// facts come from ONE spawn: two would cost a second rc-file evaluation
+    /// at launch and could disagree.
+    ///
+    /// Everything about how it asks is defence against the rc file. A login
+    /// shell sources `.zshenv`/`.zprofile`/`.zlogin` (or `.bash_profile`), and
+    /// those routinely PRINT — a version-manager banner, a greeting, somebody's
+    /// `echo`. So the answers are fenced with sentinels rather than read off
+    /// fixed line numbers: one line of banner would otherwise shift the whole
+    /// reading down and hand `resolved` a greeting, which the caller would
+    /// dutifully treat as another installer owning the name.
+    ///
+    /// stdin is `/dev/null` so an rc file that reads it can't steal the
+    /// terminal a development build was launched from, and the whole thing is
+    /// on a deadline so an rc file that BLOCKS costs a delayed answer rather
+    /// than a wedged probe and a stuck `zsh` for the life of the app.
+    ///
+    /// Best-effort throughout: a shell that fails, hangs, or isn't there at
+    /// all yields "nothing resolves, no PATH", and the caller degrades to
+    /// reporting rather than to failing.
     private static func loginShellReading() async -> (resolved: String?, path: [String]) {
         let shell = ProcessInfo.processInfo.environment["SHELL"] ?? "/bin/zsh"
         let timeout = shellProbeTimeout
