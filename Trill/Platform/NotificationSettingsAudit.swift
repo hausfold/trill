@@ -105,8 +105,8 @@ struct NativeNotificationSettings: Sendable, Equatable, Codable {
 /// Reads Apple's per-app notification preferences and reports which apps
 /// would double up with trill.
 ///
-/// **Read-only, and undocumented.** `com.apple.ncprefs` is a private
-/// preference domain: Apple documents no reader, no writer, and no bit
+/// **Read-only, and undocumented.** The per-app store (`settingsStore`)
+/// is private: Apple documents no reader, no writer, and no bit
 /// layout. So this file follows the same quarantine rule System Mirror does —
 /// it decodes defensively, never writes (silencing an app is always the
 /// user's click in System Settings, never ours), and a layout it can't make
@@ -136,14 +136,10 @@ struct NativeNotificationSettings: Sendable, Equatable, Codable {
 enum NotificationSettingsAudit {
     private static let log = Logger(subsystem: "com.hausfold.trill", category: "audit")
 
-    /// trill reads exactly the three bits it needs, and deliberately ignores
-    /// the rest. Several other bits in this field (lock-screen visibility,
-    /// time-sensitive, critical) have plausible community mappings that this
-    /// machine's data does *not* corroborate, so acting on them would be
-    /// guessing. Alert style and sound are the two that matter and the two
-    /// that are solid.
+    /// The only bits trill reads; everything else in the word is ignored
+    /// (see the type comment for why).
     enum Flag {
-        /// Bits 3–5 hold the on-screen alert. Neither set = the **Desktop**
+        /// Bits 3 and 4 hold the on-screen alert. Neither set = the **Desktop**
         /// checkbox is clear. Confirmed against a Tahoe pane showing
         /// Desktop ✓ / Persistent for an app whose bit 4 is set.
         static let temporary: UInt64 = 1 << 3
@@ -287,11 +283,7 @@ enum NotificationSettingsAudit {
 
     // MARK: - The audit
 
-    /// The apps trill is expected to keep quiet, in the order they should be
-    /// dealt with.
-    ///
-    /// `scope` is what "a listed app" means in practice — see
-    /// `NotificationSettingsAudit.Scope`.
+    /// Which apps an audit covers.
     enum Scope: Sendable, Equatable {
         /// Exactly these bundle ids (a `trill doctor com.foo.bar` invocation,
         /// or the sources named in `rules.json`).
@@ -349,8 +341,6 @@ enum NotificationSettingsAudit {
         NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) != nil
     }
 
-    /// The noisy apps in scope, worst first (alerts before banners, sound
-    /// breaking ties), then alphabetical so the order is stable between runs.
     /// The live audit, or **nil when the store can't be read** — the caller
     /// must render that as "can't tell", never as "nothing to do".
     static func liveFindings(
@@ -361,6 +351,8 @@ enum NotificationSettingsAudit {
         return findings(scope: scope, settings: all, isInstalled: isInstalled)
     }
 
+    /// The noisy apps in scope, worst first (alerts before banners, sound
+    /// breaking ties), then alphabetical so the order is stable between runs.
     static func findings(
         scope: Scope,
         settings: [String: NativeNotificationSettings],
