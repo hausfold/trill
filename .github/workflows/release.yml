@@ -38,22 +38,25 @@ permissions:
 # against the release the first just published. The queue holds the twin until
 # the first run ends, and `gate` then finds the release there and skips every
 # job after it, so the twin finishes green having done nothing. Finish a red
-# release with `gh run rerun --failed`, which keeps gate's first answer; a full
-# re-run after the release exists is skipped the same way.
+# release with `gh run rerun --failed`, which keeps gate's first answer, unless
+# a twin of it ran: a twin queued behind a red run finds no release and
+# publishes it, so look at the tag's other run before re-running this one.
 concurrency:
-  group: release-${{ github.ref }}
+  group: release-${ github.ref }
   cancel-in-progress: false
 
 jobs:
   gate:
     name: tag not yet released
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     outputs:
-      fresh: ${{ steps.check.outputs.fresh }}
+      fresh: ${ steps.check.outputs.fresh }
     steps:
       - id: check
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${ github.token }
         run: |
           if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             echo "::notice::$GITHUB_REF_NAME is already released; this is a duplicate run, nothing to do"
