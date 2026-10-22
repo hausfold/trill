@@ -17,6 +17,7 @@ import Foundation
 ///
 /// One JSON line out, one JSON line back, exit code says what happened:
 /// 0 ok · 1 bad usage · 2 daemon unreachable · 3 daemon refused.
+/// `doctor` adds 4 (apps still noisy) and 5 (can't tell); `history` adds 5.
 ///
 /// "Bad usage" includes a verb trill does not know: 3 is "understood, and
 /// declined", and a token that never parsed was never understood.
@@ -110,21 +111,11 @@ enum TrillCLI {
                 print(usage)
                 return 1
             }
-            // 1, not 3. Three is "understood, and declined" — the daemon
-            // rejecting an event, or `skill install` refusing to overwrite a
-            // file somebody edited. A token trill cannot parse was never
-            // understood, so it is the same answer an unknown FLAG under a real
-            // verb already gives ("unknown flag '…' (see `trill help`)", 1)
-            // rather than a second code for one mistake. The shipped skill's
-            // exit table said 3 here; it is the table that was wrong.
-            // Before #67 this branch was unreachable for anything but `help`:
-            // `TrillMain` only routed a token it already knew, so the rest
-            // started a second daemon and hung.
-            // One line, and the pointer at `help` rather than the manual
-            // itself: this is what every other usage failure in this file
-            // does, and #67 is a complaint about scripted calls, so a
-            // refusal that dumps the manual's 135 lines into a captured
-            // stderr is a smaller version of the same complaint.
+            // 1, not 3 (see the header): the same answer an unknown flag under
+            // a real verb gives, rather than a second code for one mistake.
+            // One line pointing at `help`, never the manual itself: #67 is a
+            // complaint about scripted calls, and dumping the whole usage into
+            // a captured stderr is a smaller version of the same complaint.
             FileHandle.standardError.write(
                 Data("trill: unknown command '\(first)' (see `trill help`)\n".utf8)
             )
@@ -881,10 +872,7 @@ enum TrillCLI {
     /// reached over ssh there is no browser to hand it to, and a reporter who
     /// can see the lines can paste them anywhere.
     static func runReport(_ args: [String]) -> Int32 {
-        // 1, not AskExit.usage: 64/69/70/75 are `ask`'s alone, and they exist
-        // only because `ask` spends the low numbers on which pill was pressed.
-        // Every other verb's contract is the one at the top of this file —
-        // 0 ok · 1 bad usage — and `report` is every other verb.
+        // 1, not AskExit.usage: those codes are `ask`'s alone (see `AskExit`).
         // One spelling, no `-n` alias: an alias nobody documents is surface you
         // cannot remove later, because you can't know who found it.
         for flag in args where flag != "--print" {
