@@ -151,7 +151,7 @@ enum DesktopLayout {
         var bottom: CGFloat
 
         /// The same distance on every side — the fallback before any pane has
-        /// been measured, which is the behaviour that shipped first.
+        /// been measured.
         static func uniform(_ inset: CGFloat) -> Padding {
             Padding(top: inset, right: inset, bottom: inset)
         }
@@ -204,7 +204,7 @@ enum DesktopLayout {
 }
 
 /// Where banners live and how they stack. Top-right, a spaced column —
-/// clamped to the visible frame, deliberately *near* Apple's geometry so
+/// clamped to `anchor(on:)`, deliberately *near* Apple's geometry so
 /// muscle memory holds, without gluing to their exact metrics.
 ///
 /// **A column, not a deck.** Cards used to lap 6pt over one another so a
@@ -246,15 +246,16 @@ enum BannerGeometry {
 
     // MARK: - Where the stack sits
 
-    /// The rect the whole stack lays itself out inside — every other function
-    /// here measures from this and never from `visibleFrame` directly.
+    /// The rect the whole stack lays itself out inside — every stack function
+    /// here measures from this and never from `visibleFrame` directly. Only
+    /// the `Ledge`, which hugs the screen edge, reads `visibleFrame`.
     ///
     /// It is the desktop's own window grid when the platform could measure one
     /// (`ScreenDescriptor.contentFrame`), so the top card's corner lands on the
     /// same corner the user's tiled windows stop at: clear of an overlay bar,
     /// and in the window manager's gap rather than 12pt from a screen edge
     /// nobody's windows use. With nothing measured it is the visible frame
-    /// inset all round, which is the behaviour that shipped first.
+    /// inset all round.
     static func anchor(on screen: ScreenDescriptor) -> CGRect {
         screen.contentFrame ?? screen.visibleFrame.insetBy(dx: inset, dy: inset)
     }
@@ -271,7 +272,7 @@ enum BannerGeometry {
     static let foldListInset: CGFloat = 12
 
     /// The most rows a card can grow before its own bottom edge leaves the
-    /// visible frame. **This is the cap — there is no magic row count.** A
+    /// anchor. **This is the cap — there is no magic row count.** A
     /// ten-message thread lists all ten because ten fit; a two-hundred-message
     /// one lists what fits and admits the rest in a single "and N earlier"
     /// line, because a card taller than the display is worse than no card.
@@ -348,9 +349,9 @@ enum BannerGeometry {
 
     // MARK: - Placement
 
-    /// How many banners fit on this screen without escaping the visible
-    /// frame. The queue holds anything beyond this — resize/topology changes
-    /// shrink the visible set, never lose events. Counted for collapsed
+    /// How many banners fit on this screen without escaping the anchor. The
+    /// queue holds anything beyond this — resize/topology changes shrink the
+    /// visible set, never lose events. Counted for collapsed
     /// cards: expanding one is a hover-scoped event, and a card the expansion
     /// pushes off screen is dropped by the compositor and comes straight back
     /// on unhover.
@@ -364,7 +365,7 @@ enum BannerGeometry {
     /// Frames for a whole stack, index 0 topmost, in the same global
     /// coordinate space as the descriptor. Cards may differ in height (a
     /// hovered fold expands), so placement is cumulative rather than a closed
-    /// form. A card that would escape the visible frame — and every card
+    /// form. A card that would escape the anchor — and every card
     /// after it, since it only gets worse — comes back nil.
     static func stackFrames(on screen: ScreenDescriptor, sizes: [CGSize]) -> [CGRect?] {
         let area = anchor(on: screen)
@@ -447,7 +448,7 @@ enum BannerGeometry {
     }
 
     /// Frame for the banner at `index` (0 = topmost) in a stack of uniform
-    /// cards. Returns nil when the slot would leave the visible frame.
+    /// cards. Returns nil when the slot would leave the anchor.
     static func slotFrame(
         on screen: ScreenDescriptor,
         index: Int,
