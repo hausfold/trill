@@ -318,10 +318,6 @@ final class AppRuntime {
         )
         resolutionMonitor = monitor
 
-        // `self.database`, read at call time rather than captured: history
-        // can be switched off (or back on) while trill runs, and a captured
-        // handle would keep mirroring the ledge into a database the user just
-        // turned off.
         queue.onParkedForResolution = { [weak self] entries in
             // Questions only, on the way to disk: the ledge also holds the
             // fin of a *running job* now, and that one is worth nothing after
@@ -379,8 +375,7 @@ final class AppRuntime {
     var inboxActionRouter: ActionRouter { actionRouter }
 
     /// The bundle ids the current rules name — what both `trill doctor` and
-    /// the Settings audit mean by "a listed app". Read live, so an edited
-    /// rules.json is reflected without a restart.
+    /// the Settings audit mean by "a listed app".
     var listedApps: [String] {
         Self.listedApps(rules: rulesWatcher.current())
     }
