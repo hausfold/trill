@@ -350,8 +350,7 @@ final class ConfigFileStore: @unchecked Sendable {
             at: file.deletingLastPathComponent(), withIntermediateDirectories: true
         )
         // Atomic, so a reader (this app's own watcher included) never sees a
-        // half-written file. The rename that makes it atomic is also what the
-        // watcher has to re-arm after — `watch()` handles that.
+        // half-written file.
         try (data + Data("\n".utf8)).write(to: file, options: .atomic)
         raw = merged
         // The file may not have existed when the watcher armed, and an atomic
@@ -370,8 +369,9 @@ final class ConfigFileStore: @unchecked Sendable {
         source?.cancel()
         source = nil
         watchedFD = -1
-        // Nothing to watch yet. `start()` is called again after any write, and
-        // a config that has never been written is all defaults anyway.
+        // Not started: a store that `start()` never armed (a test's) watches
+        // nothing. A file that doesn't exist yet fails the `open` below, and the
+        // first `write` re-arms once it does.
         guard observer != nil else { return }
 
         watchedFD = open(file.path, O_EVTONLY)
