@@ -1,9 +1,9 @@
 import Foundation
 
 /// The one event model every provider maps into and every surface renders
-/// from. Provider-specific shapes (socket JSON, usernoted rows, future
-/// webhook payloads) are translated at the provider boundary and never leak
-/// past it.
+/// from. Provider-specific shapes (socket JSON, usernoted rows, GitHub
+/// webhook payloads, EventKit occurrences) are translated at the provider
+/// boundary and never leak past it.
 struct NotificationEvent: Codable, Sendable, Identifiable, Equatable {
     enum Urgency: String, Codable, Sendable, Comparable {
         case low, normal, critical
@@ -104,9 +104,9 @@ struct NotificationEvent: Codable, Sendable, Identifiable, Equatable {
             /// An action kind this build has never heard of — a newer sender
             /// talking to an older trill. Inert by construction, and the
             /// reason an unknown kind costs the *action* rather than the
-            /// whole event: scruff and trill update independently (trill is
-            /// deliberately not a flake input), so version skew between them
-            /// is the normal case, not the broken one.
+            /// whole event: scruff and trill update independently (neither
+            /// pins the other), so version skew between them is the normal
+            /// case, not the broken one.
             case unsupported
 
             init(from decoder: Decoder) throws {
@@ -329,10 +329,8 @@ extension NotificationEvent {
     /// dead buttons, so the two have to answer identically.
     ///
     /// It mirrors `performDefault` exactly: the *first* declared action is the
-    /// only one a click runs, so only that one is inspected. A `command`
-    /// action is not pressable because hooks aren't wired yet (PRD M2) and the
-    /// router only logs; a `open_url` whose target isn't a scheme the router
-    /// will open is refused here for the same reason it is refused there.
+    /// only one a click runs, so only that one is inspected, and which kinds
+    /// it refuses is `Action.isPerformable`'s answer.
     ///
     /// The one thing it can't promise is that a bundle id resolves to an
     /// installed app — that's a LaunchServices lookup, and this stays pure.

@@ -113,7 +113,6 @@ final class TrillAppDelegate: NSObject, NSApplicationDelegate {
     private var settingsWindow: NSWindow?
     private var statusItem: NSStatusItem?
     private let windowManager = UtilityWindowManager()
-    /// Set when the FDA assistant sees the grant land, read once by the
     /// Disarms `reopenSettingsOnLaunch` when the grant landed and the process
     /// was never actually restarted (Apple's "Later" button).
     private var reopenDisarmTask: Task<Void, Never>?
@@ -286,9 +285,6 @@ final class TrillAppDelegate: NSObject, NSApplicationDelegate {
                 defer: false
             )
             window.title = SettingsView.windowTitle
-            // A settings window that reopens where you left it, at the size
-            // you left it. Autosave restores nothing on first run, which is
-            // what the explicit size above is for.
             window.titlebarSeparatorStyle = .none
             window.contentView = NSHostingView(
                 rootView: SettingsView(
@@ -310,6 +306,9 @@ final class TrillAppDelegate: NSObject, NSApplicationDelegate {
                     celebrateUnlock: celebrateUnlock
                 )
             )
+            // A settings window that reopens where you left it, at the size
+            // you left it. Autosave restores nothing on first run, which is
+            // what the explicit size above is for.
             if !window.setFrameUsingName(Self.settingsFrameAutosaveName) {
                 window.center()
             }
@@ -339,9 +338,8 @@ final class TrillAppDelegate: NSObject, NSApplicationDelegate {
         // under AeroSpace means behind the tile the user is staring at. So
         // open the deep link while trill is still the frontmost regular
         // app, and tidy our own window up on the next runloop turn.
-        // No `onDismiss`. Reopening Settings here is a leftover from the
-        // flow that relaunched trill itself: now that the helper closes the
-        // instant the grant lands, macOS is *still* showing its own
+        // `onDismiss` never reopens Settings: the helper closes the instant
+        // the grant lands, while macOS is *still* showing its own
         // "Quit & Reopen" sheet — and a settings window raising itself over
         // that sheet buries the thing the user has to answer. Closing to
         // nothing hands System Settings back its own screen. The relaunch
@@ -399,12 +397,12 @@ final class TrillAppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    /// `reopenSettingsOnLaunch` does double duty: it's what makes the
-    /// post-relaunch Settings window appear, *and* what authorises
-    /// `applicationWillTerminate` to finish Apple's "Quit & Reopen". Both
-    /// only make sense while that sheet could still be answered — if the user
-    /// takes the "Later" branch no relaunch ever comes, and left armed the
-    /// flag would pop Settings open during some unrelated launch weeks later.
+    /// `reopenSettingsOnLaunch` is what makes the post-relaunch Settings
+    /// window appear, and it only makes sense while Apple's "Quit & Reopen"
+    /// sheet could still be answered — if the user takes the "Later" branch
+    /// no relaunch ever comes, and left armed the flag would pop Settings open
+    /// during some unrelated launch weeks later. The timed path stands the
+    /// relaunch watchdog down with it.
     private func disarmReopenOnLaunch(runtime: AppRuntime, after seconds: UInt64) {
         reopenDisarmTask?.cancel()
         guard seconds > 0 else {

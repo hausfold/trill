@@ -318,7 +318,7 @@ struct ScreenWatchNote: View {
 ///
 /// The button opens System Settings → Focus and nothing else. trill holds no
 /// way to turn a Focus on or off and is not going to grow one: that dial is
-/// the desktop’s (haus’s "Hush" lane drives it here) and the user’s.
+/// the desktop’s (haus’s `focus` room drives it) and the user’s.
 struct FocusNote: View {
     let followingFocus: Bool
     @ObservedObject private var sentinel = FocusSentinel.shared
@@ -804,11 +804,7 @@ struct AppsPane: View {
                 appList
             }
 
-            // The other kind of finding: noisy, and macOS offers nobody a
-            // switch. Stated here, once, standing still — not walked through,
-            // because a walkthrough step for it is a demo of two controls that
-            // aren't on the pane and a Done button asking the user to affirm a
-            // change nobody could make.
+            // Stated, never walked — see `unlisted`.
             if !unlisted.isEmpty {
                 SettingsCard {
                     SettingsRow(
@@ -994,8 +990,6 @@ struct AppRow: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
             Spacer(minLength: 12)
-            // Only on rows trill draws: silencing an app trill isn't drawing
-            // is not de-duplication, it's just losing the notification.
             if isDrawn, app.isNoisy, app.hasSettingsRow {
                 Button("Silence…", action: onSilence)
             }
